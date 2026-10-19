@@ -1,0 +1,172 @@
+"""Experiment-only, bounded Python sampling grammar; not an arbitrary Python sandbox.
+
+Only two assignments are admitted: x = linspace(literal, literal, literal), then
+y = [scalar arithmetic for a in x]. No imports, attributes, subscripting, nested
+comprehensions, arbitrary calls or statements. A fresh isolated Python process
+executes the validated program with scalar inputs and a single trusted helper.
+"""
+
+import ast
+import hashlib
+import json
+import math
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+VERSION = "bounded-python-sampler/1"
+
+
+def number(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("Use finite scalar numbers")
+    if abs(value) > 1e12 or not math.isfinite(value):
+        raise ValueError("Scalar magnitude exceeds this experiment's bounds")
+    return float(value)
+
+
+def validate(body: object) -> tuple[str, dict[str, float], tuple[float, float, int]]:
+    if not isinstance(body, dict) or set(body) != {"code", "inputs"}:
+        raise ValueError("Provide code and scalar inputs only")
+    code, inputs = body["code"], body["inputs"]
+    if not isinstance(code, str) or len(code) > 4000:
+        raise ValueError("Keep sampling code under 4000 characters")
+    if not isinstance(inputs, dict) or len(inputs) > 64:
+        raise ValueError("Provide at most 64 scalar inputs")
+    if any(not isinstance(k, str) or not re.fullmatch(r"v\d{1,2}", k) for k in inputs):
+        raise ValueError("Inputs use declared v0…v99 bindings")
+    values = {k: number(v) for k, v in inputs.items()}
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, RecursionError) as exc:
+        raise ValueError("Invalid Python sampling syntax") from exc
+    if len(list(ast.walk(tree))) > 256 or len(tree.body) != 2:
+        raise ValueError("Use only the x and y sampling assignments")
+    first, second = tree.body
+    for statement, name in ((first, "x"), (second, "y")):
+        if (
+            not isinstance(statement, ast.Assign)
+            or len(statement.targets) != 1
+            or not isinstance(statement.targets[0], ast.Name)
+            or statement.targets[0].id != name
+        ):
+            raise ValueError("Use only the x and y sampling assignments")
+    assert isinstance(first, ast.Assign) and isinstance(second, ast.Assign)
+    call = first.value
+    if (
+        not isinstance(call, ast.Call)
+        or not isinstance(call.func, ast.Name)
+        or call.func.id != "linspace"
+        or len(call.args) != 3
+        or call.keywords
+    ):
+        raise ValueError("x must be linspace(start, stop, count) with numeric literals")
+    try:
+        args = [number(ast.literal_eval(arg)) for arg in call.args]
+    except (ValueError, TypeError) as exc:
+        raise ValueError("linspace requires numeric literals") from exc
+    low, high, count = args
+    if low >= high or not count.is_integer() or not 2 <= count <= 501:
+        raise ValueError("Use an increasing range and 2–501 samples")
+    expression = second.value
+    if not isinstance(expression, ast.ListComp) or len(expression.generators) != 1:
+        raise ValueError("y must be scalar arithmetic for a in x")
+    generator = expression.generators[0]
+    if (
+        not isinstance(generator.target, ast.Name)
+        or generator.target.id != "a"
+        or not isinstance(generator.iter, ast.Name)
+        or generator.iter.id != "x"
+        or generator.ifs
+        or generator.is_async
+    ):
+        raise ValueError("Use a single bounded comprehension: for a in x")
+
+    def arithmetic(node: ast.AST) -> None:
+        if isinstance(node, ast.Constant):
+            number(node.value)
+        elif isinstance(node, ast.Name) and node.id in {*values, "a"}:
+            return
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+            arithmetic(node.operand)
+        elif isinstance(node, ast.BinOp) and isinstance(
+            node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+        ):
+            if isinstance(node.op, ast.Pow):
+                try:
+                    exponent = number(ast.literal_eval(node.right))
+                except (ValueError, TypeError) as exc:
+                    raise ValueError("Powers require a literal exponent") from exc
+                if abs(exponent) > 6:
+                    raise ValueError("Power magnitude must be at most 6")
+            arithmetic(node.left)
+            arithmetic(node.right)
+        else:
+            raise ValueError("Only bound scalar arithmetic is available in this adapter")
+
+    arithmetic(expression.elt)
+    return code, values, (low, high, int(count))
+
+
+def execute(body: object) -> dict:
+    code, inputs, _ = validate(body)
+
+    def linspace(low: float, high: float, count: int) -> list[float]:
+        count = int(count)
+        return [float(low + (high - low) * i / (count - 1)) for i in range(count)]
+
+    namespace: dict = {"__builtins__": {}, "linspace": linspace, **inputs}
+    try:
+        tree = ast.parse(code)
+
+        class FloatingConstants(ast.NodeTransformer):
+            def visit_Constant(self, node: ast.Constant) -> ast.Constant:
+                return ast.copy_location(ast.Constant(float(node.value)), node)
+
+        # Scalar arithmetic never constructs unbounded Python integers.
+        tree.body[1] = FloatingConstants().visit(tree.body[1])
+        exec(compile(tree, "<artifact-sampler>", "exec"), namespace)
+        points = [
+            [number(x), number(y)] for x, y in zip(namespace["x"], namespace["y"], strict=True)
+        ]
+    except (ArithmeticError, TypeError, ValueError) as exc:
+        raise ValueError("Sampling produced an undefined or out-of-bounds result") from exc
+    return {
+        "points": points,
+        "code_sha256": hashlib.sha256(code.encode()).hexdigest(),
+        "runtime": {
+            "adapter": VERSION,
+            "python": sys.version.split()[0],
+            "adapter_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        },
+    }
+
+
+def sample(body: object) -> dict:
+    validate(body)
+    try:
+        result = subprocess.run(
+            [sys.executable, "-I", str(Path(__file__).resolve()), "--child"],
+            input=json.dumps(body),
+            capture_output=True,
+            text=True,
+            timeout=3,
+            env={},
+            cwd=Path(__file__).parent,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("Python sampling timed out") from exc
+    if result.returncode or len(result.stdout) > 100_000:
+        raise ValueError("Python sampling failed")
+    data = json.loads(result.stdout)
+    if "error" in data:
+        raise ValueError(data["error"])
+    return data
+
+
+if __name__ == "__main__" and sys.argv[1:] == ["--child"]:
+    try:
+        print(json.dumps(execute(json.loads(sys.stdin.read(131072))), allow_nan=False))
+    except (ValueError, TypeError) as error:
+        print(json.dumps({"error": str(error)}))

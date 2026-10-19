@@ -1,0 +1,475 @@
+.nm-object {
+  position: absolute;
+  width: 370px;
+  padding: 15px 18px;
+  color: var(--canvas-text, #36303d);
+  border-left: 2px solid var(--canvas-accent, #c5b6d3);
+  background: var(--canvas-bg, #fcfbf9);
+  font-family: var(--font-body, sans-serif);
+  box-sizing: border-box;
+}
+.nm-object.is-selected {
+  border-left-color: var(--canvas-accent, #8b62b0);
+  background: var(--canvas-surface, #f8f4fb);
+}
+.nm-object header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.nm-object h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+}
+.er-app .nm-object button {
+  font-size: 12px;
+  padding: 4px 3px;
+  color: var(--canvas-accent, #6e557f);
+}
+.nm-object header > button:first-child {
+  margin-left: -17px;
+  opacity: 0;
+  cursor: grab;
+}
+.nm-object:hover header > button:first-child,
+.nm-object:focus-within header > button:first-child {
+  opacity: 1;
+}
+.nm-state {
+  display: flex;
+  gap: 12px;
+  margin: 8px 0 16px;
+  font-size: 11px;
+  color: var(--canvas-muted, #6b7c70);
+}
+.nm-state small {
+  color: var(--canvas-muted, #918496);
+}
+.nm-state .is-blocked {
+  color: var(--canvas-warning, #a66e43);
+}
+.nm-ports > small {
+  display: block;
+  color: var(--canvas-muted, #92839b);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  margin: 12px 0 5px;
+}
+.nm-ports > button,
+.nm-ports > div {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.nm-ports > div > button:first-child {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.nm-ports b {
+  font-weight: 500;
+  color: var(--canvas-text, #38303f);
+}
+.nm-outputs b {
+  font-size: 18px;
+}
+.nm-object footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  opacity: 0;
+}
+.nm-object:hover footer,
+.nm-object.is-selected footer,
+.nm-object:focus-within footer {
+  opacity: 1;
+}
+.nm-object footer select {
+  min-width: 0;
+  max-width: 130px;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--canvas-accent, #796687);
+}
+.nm-object footer button:last-child {
+  margin-left: auto;
+}
+.nm-key-result {
+  font-family: Cambria, serif !important;
+  font-size: 32px !important;
+  color: var(--canvas-text, #332b3b) !important;
+}
+.nm-object.is-compact {
+  width: 290px;
+}
+.nm-check {
+  font-size: 11px;
+  color: var(--canvas-success, #65816c);
+  margin-top: 12px;
+}
+.nm-check.is-fail {
+  color: var(--canvas-danger, #a35b41);
+}
+.nm-math-preview {
+  border-top: 1px solid var(--canvas-border, #e7dfec);
+  margin-top: 16px;
+  padding-top: 12px;
+  overflow: auto;
+}
+.nm-math-preview > div {
+  margin: 12px 0;
+  font-size: 19px;
+  pointer-events: none;
+}
+.nm-breadcrumb {
+  position: absolute;
+  top: 12px;
+  left: 20px;
+  z-index: 28;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  background: var(--canvas-surface, #fcfbf9ed);
+  border-radius: 6px;
+  padding: 5px 8px;
+  max-width: calc(100% - 40px);
+  flex-wrap: wrap;
+}
+.nm-breadcrumb span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.er-app .nm-breadcrumb button {
+  font-size: 12px;
+  padding: 4px 5px;
+  color: var(--canvas-muted, #8b7e94);
+}
+.nm-breadcrumb [aria-current] {
+  color: var(--canvas-accent, #64487c) !important;
+}
+.nm-review {
+  width: 540px;
+  max-width: calc(100vw - 40px);
+  max-height: 85vh;
+  overflow: auto;
+  background: var(--canvas-surface, #fdfcfa);
+  border: 1px solid var(--canvas-border, #e3dbe8);
+  border-radius: 12px;
+  padding: 24px;
+  font-family: var(--font-body, sans-serif);
+  box-shadow: 0 15px 80px var(--canvas-shadow, #30213b20);
+}
+.nm-review header {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  justify-content: space-between;
+}
+.nm-review h2 {
+  font-size: 22px;
+  margin: 5px 0 20px;
+  letter-spacing: -0.03em;
+}
+.nm-review small {
+  font-size: 10px;
+  color: var(--canvas-muted, #8f7e99);
+}
+.nm-review label {
+  display: flex;
+  gap: 9px;
+  font-size: 13px;
+}
+.nm-name,
+.nm-connect > label {
+  flex-direction: column;
+}
+.nm-name input,
+.nm-connect select {
+  padding: 10px 12px;
+  border: 1px solid var(--canvas-border, #dcd2e4);
+  border-radius: 5px;
+  background: var(--canvas-surface, white);
+  font: inherit;
+}
+.nm-review p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--canvas-muted, #807287);
+}
+.nm-interface-review {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin: 20px 0;
+}
+.nm-interface-review fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.nm-interface-review legend {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.nm-interface-review label {
+  margin: 12px 0;
+  align-items: flex-start;
+}
+.nm-interface-review small {
+  display: block;
+  margin-top: 3px;
+}
+.nm-review footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 24px;
+}
+.er-app .nm-review footer button:last-child {
+  background: var(--canvas-accent-strong, #85609e);
+  color: var(--canvas-on-accent, white);
+  border-radius: 5px;
+  padding: 9px 14px;
+}
+.nm-crossings {
+  font-size: 12px;
+  color: var(--canvas-accent, #7a6789);
+}
+.nm-crossings > div {
+  padding: 6px 0;
+  display: flex;
+  gap: 12px;
+}
+.nm-review [role="alert"] {
+  color: var(--canvas-danger, #a95e40);
+}
+.nm-binding-preview {
+  padding: 16px;
+  background: var(--canvas-accent-tint, #f0eaf5);
+  border-radius: 5px;
+  font-size: 15px;
+}
+.nm-binding-preview small {
+  display: block;
+  margin-top: 8px;
+}
+.nm-trace {
+  position: absolute;
+  z-index: 29;
+  top: 65px;
+  left: 20px;
+  max-height: 60vh;
+  overflow: auto;
+  width: 310px;
+  background: var(--canvas-surface, #fdfcfaf8);
+  border: 1px solid var(--canvas-border, #e2d9e8);
+  border-radius: 7px;
+  padding: 12px;
+  font-size: 12px;
+  box-shadow: 0 5px 15px var(--canvas-shadow, #3d2c4609);
+}
+.nm-trace header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.nm-trace > small {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--canvas-accent, #96839f);
+  margin: 16px 4px 6px;
+}
+.er-app .nm-trace > button {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  justify-content: flex-start;
+  font-size: 12px;
+  padding: 7px 4px;
+}
+.nm-trace button small {
+  color: var(--canvas-muted, #a093a7);
+  flex: 1;
+  text-align: right;
+  font-size: 10px;
+}
+.er-modal-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--canvas-backdrop, #faf8f3b8);
+  backdrop-filter: blur(3px);
+}
+.nm-object button[data-quantity-id][aria-pressed="true"] {
+  background: var(--canvas-accent-tint, #ece3f3);
+  border-radius: 4px;
+}
+.nm-failed-terms {
+  display: block;
+  margin-top: 5px;
+  color: var(--canvas-danger, #9b593c);
+}
+
+/* Exteriors share operations, not a universal result-card layout. */
+.nm-object[data-exterior="equation"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  width: 420px;
+}
+.nm-object[data-exterior="response"] {
+  width: 370px;
+}
+.nm-object[data-exterior="artifact"] {
+  width: 390px;
+}
+.nm-object.is-selected {
+  outline-offset: 5px;
+}
+.mx-preview {
+  margin: 12px 0;
+  min-width: 0;
+}
+.mx-math {
+  font:
+    23px "Cambria Math",
+    Georgia,
+    serif;
+  padding: 8px 0;
+  overflow-x: auto;
+}
+.mx-equation-text {
+  font:
+    22px "Cambria Math",
+    Georgia,
+    serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mx-note {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  max-height: 180px;
+  overflow: auto;
+}
+.mx-response {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+}
+.mx-axis {
+  stroke: var(--canvas-accent, #c8becf);
+  fill: none;
+}
+.mx-curve {
+  stroke: var(--canvas-accent, #785393);
+  stroke-width: 2;
+  fill: none;
+}
+.mx-response text {
+  fill: var(--canvas-muted, #75677e);
+  font: 10px sans-serif;
+}
+.mx-data strong,
+.mx-data small {
+  display: block;
+  margin-bottom: 8px;
+}
+.mx-data table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.mx-data th,
+.mx-data td {
+  padding: 7px;
+  text-align: left;
+  border-bottom: 1px solid var(--canvas-border, #e7dfec);
+}
+.er-app .mx-source {
+  display: block;
+  font-size: 11px;
+  color: var(--canvas-accent, #796687);
+  margin-top: 10px;
+  text-align: left;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.mx-unavailable {
+  color: var(--canvas-warning, #9b663a);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.nm-object[data-exterior="equation"]:hover,
+.nm-object[data-exterior="equation"]:focus-within {
+  border-color: var(--canvas-border, #d7ccdf);
+}
+.nm-state {
+  color: var(--canvas-muted, #716b79);
+}
+.er-external-reference {
+  display: grid;
+  gap: 8px;
+  padding: 14px 0;
+  max-width: 430px;
+}
+.er-external-reference > small {
+  color: var(--canvas-muted, #8b7e94);
+  font-size: 10px;
+}
+.er-external-reference > a {
+  color: var(--canvas-accent, #6e557f);
+  font-size: 18px;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+.er-external-reference > span {
+  font-size: 12px;
+  color: var(--canvas-muted, #7b7181);
+  overflow-wrap: anywhere;
+}
+.er-external-reference > button {
+  text-align: left;
+  justify-self: start;
+}
+.nm-object.is-compact h2 {
+  font-size: 23px;
+}
+.nm-object.is-compact .nm-state {
+  font-size: 15px;
+}
+.nm-object.is-compact .mx-source {
+  font-size: 14px;
+}
+.mx-response-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--canvas-muted, #7b7181);
+}
+
+.mx-evaluated {
+  display: block;
+  margin: 8px 0 12px;
+  font:
+    23px "Cambria Math",
+    Georgia,
+    serif;
+  color: var(--canvas-text, #38303f);
+}

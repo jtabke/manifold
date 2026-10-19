@@ -1,0 +1,34 @@
+{
+  "name": "manifold-canvas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 58311",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
+    "format": "prettier --write src/main.tsx src/style.css src/regions src/notebook/math.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
+    "format:check": "prettier --check src/main.tsx src/style.css src/regions src/notebook/math.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
+    "test": "node tools/run-checks.mjs",
+    "test:all-browser": "node tools/run-checks.mjs --browser"
+  },
+  "dependencies": {
+    "@fontsource-variable/dm-sans": "5.2.8",
+    "@fontsource-variable/manrope": "5.2.8",
+    "lucide-react": "0.468.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@vitejs/plugin-react": "5.0.4",
+    "prettier": "3.6.2",
+    "typescript": "5.9.3",
+    "vite": "7.3.7"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

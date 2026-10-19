@@ -1,0 +1,544 @@
+.mw-shell {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--canvas-bg, #f8f8f5);
+}
+.mw-workspaces {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 39px;
+  flex: none;
+  padding: 0 18px;
+  background: var(--canvas-surface, #fff);
+  border-bottom: 1px solid var(--canvas-border, #e4e4df);
+  color: var(--canvas-muted, #747780);
+}
+.er-app .mw-workspaces button {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mw-workspaces button[aria-pressed="true"] {
+  background: var(--canvas-accent-tint, #f1edf7);
+  color: var(--canvas-accent, #70558b);
+}
+.mw-space {
+  flex: 1;
+}
+.mw-columns {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  padding: 10px;
+  gap: 8px;
+}
+.mw-column {
+  display: flex;
+  position: relative;
+  min-width: 320px;
+  flex: none;
+  max-width: 100%;
+  scroll-snap-align: start;
+}
+.mw-tiled .mw-column {
+  max-width: none;
+}
+.mw-column-areas {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+.mw-area-wrap {
+  display: flex;
+  flex-direction: column;
+  min-height: 100px;
+  min-width: 0;
+}
+.mw-area {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  background: var(--canvas-bg, #fdfdfb);
+  border: 1px solid var(--canvas-border, #e0e0da);
+  border-radius: 6px;
+}
+.mw-area-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  height: 36px;
+  padding: 0 6px;
+  background: var(--canvas-surface, #fafaf7);
+  border-bottom: 1px solid var(--canvas-border, #e7e6e0);
+  border-radius: 6px 6px 0 0;
+}
+.er-app .mw-area-header button {
+  padding: 4px;
+  color: var(--canvas-muted, #797783);
+  cursor: pointer;
+}
+.er-app .mw-area-header button[aria-pressed="true"] {
+  color: var(--canvas-accent, #78568f);
+  background: var(--canvas-accent-tint, #eee7f4);
+}
+.mw-area-header select {
+  background: transparent;
+  color: var(--canvas-muted, #6a6973);
+  border: 0;
+  font:
+    12px "DM Sans Variable",
+    sans-serif;
+  max-width: 125px;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+.mw-area-header select[aria-label="Editor type"] {
+  color: var(--canvas-text, #393b44);
+  font-weight: 650;
+}
+.mw-area-header select[aria-label="View scenario"] {
+  max-width: 120px;
+}
+.er-app .mw-area-grip {
+  cursor: grab;
+  color: var(--canvas-muted, #aaa4b2);
+}
+.mw-area-content {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  position: relative;
+  border-radius: 0 0 6px 6px;
+}
+.mw-canvas-host,
+.mw-canvas-host > .er-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.mw-column-divider {
+  position: absolute;
+  width: 9px;
+  right: -9px;
+  top: 0;
+  bottom: 0;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 8;
+}
+.mw-column-divider:hover:after,
+.mw-column-divider:focus:after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 3px;
+  width: 2px;
+  background: var(--canvas-accent-tint, #a892bf);
+  border-radius: 2px;
+}
+.mw-row-divider {
+  height: 8px;
+  flex: none;
+  cursor: row-resize;
+  touch-action: none;
+}
+.mw-row-divider:hover {
+  background: var(--canvas-accent-tint, #d8cce6);
+}
+.mw-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.mw-maximized .mw-column {
+  width: 100% !important;
+  max-width: 100%;
+}
+.mw-area-menu,
+.mw-workspace-menu {
+  position: absolute;
+  z-index: 60;
+  background: var(--canvas-surface, #fff);
+  border: 1px solid var(--canvas-border, #e1dce6);
+  border-radius: 7px;
+  box-shadow: 0 8px 25px var(--canvas-shadow, #28203515);
+  padding: 6px;
+}
+.mw-area-menu {
+  top: 32px;
+  right: 4px;
+  min-width: 190px;
+}
+.er-app .mw-area-menu button {
+  display: flex;
+  width: 100%;
+  padding: 8px 11px;
+  text-align: left;
+  justify-content: flex-start;
+  font-size: 13px;
+}
+.mw-workspace-menu {
+  top: 38px;
+  left: 120px;
+  width: 235px;
+}
+.mw-workspace-menu label {
+  display: block;
+  padding: 9px;
+  font-size: 12px;
+  color: var(--canvas-muted, #777);
+}
+.mw-workspace-menu input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--canvas-border, #ddd6e6);
+  border-radius: 4px;
+  padding: 7px;
+  font:
+    14px "DM Sans Variable",
+    sans-serif;
+  margin-top: 6px;
+}
+.er-app .mw-workspace-menu button {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px;
+  cursor: pointer;
+}
+.mw-workspace-menu small {
+  display: block;
+  padding: 8px;
+}
+.mw-layout-error {
+  padding: 8px 20px;
+  color: var(--canvas-danger, #a56741);
+  background: var(--canvas-surface, #fff8f1);
+}
+.mw-empty-workspace {
+  margin: auto;
+  text-align: center;
+  color: var(--canvas-muted, #89858d);
+}
+.mw-empty-workspace h2 {
+  font-weight: 500;
+  color: var(--canvas-muted, #66606f);
+}
+.mw-equations {
+  padding: 24px 30px 70px;
+}
+.mw-equations section {
+  padding: 16px 6px;
+  border-radius: 4px;
+  margin-bottom: 7px;
+}
+.mw-equations section.is-linked {
+  background: var(--canvas-accent-tint, #f0eaf7);
+  box-shadow: 0 0 0 1px var(--canvas-shadow, #e5daee);
+}
+.mw-equation-line {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 27px;
+  min-height: 46px;
+}
+.mw-equation-line math {
+  max-width: 100%;
+}
+.er-app .mw-result {
+  font:
+    25px "Cambria Math",
+    Georgia,
+    serif;
+  padding: 0 2px;
+  border-bottom: 1px dotted var(--canvas-accent, #ad9dbf);
+  cursor: pointer;
+}
+.mw-equations textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font:
+    21px/1.6 "Cambria Math",
+    Georgia,
+    serif;
+  color: var(--canvas-text, #37323e);
+  border: 0;
+  border-bottom: 1px solid var(--canvas-accent, #b2a2ca);
+  background: var(--canvas-surface, #f9f7fd);
+  resize: vertical;
+  padding: 3px;
+}
+.mw-insert {
+  color: var(--canvas-muted, #92889c) !important;
+  margin-top: 14px;
+  cursor: text;
+}
+.mw-note {
+  font-size: 16px;
+  line-height: 1.8;
+  margin: 0;
+  white-space: pre-wrap;
+  cursor: text;
+}
+.mw-pass,
+.mw-fail {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.mw-pass {
+  color: var(--canvas-success, #43775d);
+  background: var(--canvas-success-tint, #edf4ef);
+}
+.mw-fail,
+.mw-error {
+  color: var(--canvas-danger, #a46540);
+}
+.mw-fail {
+  background: var(--canvas-danger-tint, #f8eee7);
+}
+.mw-readonly {
+  font-size: 12px;
+  color: var(--canvas-muted, #918799);
+}
+.mw-empty {
+  padding: 30px;
+  color: var(--canvas-muted, #89838e);
+  line-height: 1.7;
+}
+.mw-empty b {
+  font-weight: 500;
+  color: var(--canvas-muted, #645b6d);
+}
+.mw-empty button {
+  border: 1px solid var(--canvas-border, #ddd5e6);
+  color: var(--canvas-accent, #705188);
+  cursor: pointer;
+}
+.mw-source-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--canvas-muted, #88828d);
+  padding: 17px 20px 4px;
+}
+.mw-source-label b {
+  color: var(--canvas-text, #3c3f46);
+  font-size: 14px;
+  font-weight: 600;
+}
+.mw-source-label strong {
+  margin-left: auto;
+  font:
+    24px "Cambria Math",
+    Georgia,
+    serif;
+  color: var(--canvas-text, #3b3b48);
+}
+.mw-response svg {
+  display: block;
+  width: 100%;
+  max-height: calc(100% - 90px);
+}
+.mw-response text {
+  font:
+    12px "DM Sans Variable",
+    sans-serif;
+  fill: var(--canvas-muted, #6c7179);
+}
+.mw-point {
+  cursor: ew-resize;
+  touch-action: none;
+}
+.mw-point[aria-disabled="true"] {
+  cursor: pointer;
+}
+.mw-axis,
+.mw-curve {
+  cursor: pointer;
+}
+.mw-curve.is-linked {
+  stroke: var(--canvas-accent, #8a64ad);
+  stroke-width: 4px;
+}
+.mw-axis.is-linked text {
+  fill: var(--canvas-accent, #7c519c);
+  font-weight: 700;
+}
+.mw-response-value {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 15px 15px;
+  color: var(--canvas-muted, #80718e);
+  font-size: 12px;
+}
+.mw-relationships {
+  padding: 20px;
+}
+.mw-relationships > small {
+  letter-spacing: 1.1px;
+  font-size: 10px;
+  color: var(--canvas-muted, #a29aa9);
+}
+.er-app .mw-relationships button {
+  display: flex;
+  width: 100%;
+  gap: 12px;
+  padding: 12px 9px;
+  text-align: left;
+  justify-content: flex-start;
+  font-size: 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--canvas-border, #edebe9);
+  border-radius: 0;
+}
+.mw-relationships button > b {
+  font:
+    19px "Cambria Math",
+    Georgia,
+    serif;
+  min-width: 32px;
+  font-weight: 400;
+  color: var(--canvas-accent, #705985);
+}
+.mw-relationships button > span {
+  flex: 1;
+  color: var(--canvas-muted, #74727a);
+  overflow-wrap: anywhere;
+}
+.mw-relationships button > strong {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.mw-flow-arrow {
+  color: var(--canvas-accent, #c5b8d3);
+  font-size: 20px;
+  padding: 3px 22px;
+}
+.mw-relationship-focus {
+  background: var(--canvas-accent-tint, #f0ebf6);
+  border-radius: 5px;
+}
+.mw-python {
+  padding: 0 5px 20px;
+}
+.mw-python pre {
+  padding: 15px 20px;
+  margin: 0;
+  font:
+    13px/1.9 ui-monospace,
+    SFMono-Regular,
+    monospace;
+  color: var(--canvas-text, #4e4c59);
+  overflow: auto;
+}
+.mw-python mark {
+  background: var(--canvas-accent-tint, #e9def4);
+  color: var(--canvas-accent, #734698);
+  border-radius: 2px;
+}
+.mw-bindings {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 12px 18px 0;
+  gap: 4px;
+}
+.er-app .mw-bindings button {
+  font-size: 11px;
+  background: var(--canvas-accent-tint, #f2f0f5);
+  color: var(--canvas-muted, #80718d);
+  cursor: pointer;
+}
+.mw-bindings button.is-linked {
+  background: var(--canvas-accent-tint, #e9dff4);
+  color: var(--canvas-accent, #704493);
+}
+.mw-python > small {
+  display: block;
+  margin: 12px 20px;
+}
+.mw-python textarea {
+  width: calc(100% - 40px);
+  min-height: 180px;
+  box-sizing: border-box;
+  margin: 15px 20px 7px;
+  border: 1px solid var(--canvas-border, #ddd4e7);
+  padding: 12px;
+  border-radius: 4px;
+  font:
+    13px/1.8 ui-monospace,
+    monospace;
+}
+.mw-python textarea + div {
+  padding: 0 20px;
+}
+.mw-data-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.mw-data-table th,
+.mw-data-table td {
+  padding: 9px 22px;
+  border-bottom: 1px solid var(--canvas-border, #eeeae6);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mw-data-table th {
+  position: sticky;
+  top: 0;
+  background: var(--canvas-surface, #faf9f6);
+}
+.mw-data-table tr:hover {
+  background: var(--canvas-accent-tint, #f1ebf7);
+  cursor: pointer;
+}
+@media (max-width: 700px) {
+  .mw-workspaces {
+    padding: 0 8px;
+    gap: 0;
+  }
+  .er-app .mw-workspaces button {
+    padding: 5px 7px;
+  }
+  .mw-columns {
+    padding: 5px;
+  }
+  .mw-column {
+    min-width: 320px;
+  }
+  .mw-area-header select[aria-label="View scenario"] {
+    max-width: 90px;
+  }
+}
+/* The window bounds the strip; adding editors grows scroll width, never the app. */
+.er-app {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mw-shell,
+.mw-columns {
+  min-width: 0;
+}

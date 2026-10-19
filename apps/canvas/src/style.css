@@ -1,0 +1,98 @@
+:root {
+  font-family:
+    "DM Sans Variable",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: #343942;
+  background: #f7f8fa;
+  font-synthesis: none;
+  font-size: 12px;
+  --purple: #8069bb;
+  --purple-pale: #efebf7;
+  --teal: #408e85;
+  --coral: #bb7962;
+  --border: #e6e8ec;
+  --muted: #9397a1;
+  --text: #343942;
+  --sidebar: #25282e;
+  --sidebar-text: #a8acb6;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  border: 0;
+  background: none;
+  color: inherit;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: wait;
+}
+button,
+select,
+a,
+input {
+  outline-offset: 3px;
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid #9c88cc;
+}
+button {
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+button:hover {
+  background: #eeeaf5;
+}
+button svg {
+  flex-shrink: 0;
+}
+select {
+  color: #5e6370;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  padding: 5px 15px 5px 3px;
+  font-size: 11px;
+}
+input[type="checkbox"] {
+  accent-color: var(--purple);
+  width: 12px;
+  height: 12px;
+}
+input[type="range"] {
+  accent-color: var(--purple);
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1,
+h2,
+h3 {
+  font-family: "Manrope Variable", sans-serif;
+}
+.manifold-logo {
+  display: block;
+  width: 48px;
+  height: 30px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}

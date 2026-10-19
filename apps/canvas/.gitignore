@@ -1,0 +1,8 @@
+node_modules/
+dist/
+test-results/
+screenshots/
+public/cad/occt-import-js.js
+public/cad/occt-import-js.wasm
+public/cad/license.occt-import-js.txt
+public/cad/license.occt.txt
