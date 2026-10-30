@@ -25,3 +25,12 @@ htmlcov/
 # Local JavaScript dependencies and generated UI reports.
 node_modules/
 test-results/
+
+# Local research, evaluation history and generated acceptance reports.
+# Keep these on disk; they are not part of the public source distribution.
+/evidence/
+/experiments/
+/docs/briefs/
+/packages/foundation/*EVIDENCE.md
+/scripts/check_application_foundation.mjs
+/scripts/measure_application_foundation.mjs

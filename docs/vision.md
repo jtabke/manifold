@@ -79,7 +79,9 @@ reversible and earlier conclusions retain their evaluated context.
 ### Openness and composability
 
 Build on established tools through open interfaces. Favor local-first work, portable
-project information, inspectable computation and replaceable integrations. Specialized
+project information, inspectable computation and replaceable integrations. Saved work
+should remain useful when moved to another computer or shared as a native document;
+its meaning cannot depend on the original browser or machine. Specialized
 tools retain responsibility for specialized work.
 **Manifold connects capabilities; it does not need to own them.**
 

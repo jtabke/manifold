@@ -1,3 +1,4 @@
+import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import {
   SCROLL_SURFACE,
@@ -6,7 +7,7 @@ import {
   canvasOrigin,
   scrollCanvasTo,
   recenterCanvas,
-} from "../src/regions/canvasViewport.ts";
+} from "../src/regions/interaction/canvasViewport.ts";
 import { RegionSession, semanticKey } from "../src/regions/document.ts";
 import { archive, restore } from "../src/regions/artifacts.ts";
 import { documentKey, restoreMemory } from "../src/regions/workspaceMemory.ts";
@@ -57,7 +58,10 @@ const session = new RegionSession();
 const id = session.create({ x: -1200, y: -900 });
 session.write(id, "load := 12 N");
 const key = semanticKey(session.state);
-assert.deepEqual(restore(archive(session.state, [])).page, session.state);
+assert.deepEqual(
+  restore(legacyWorkspace(session.state, [])).page,
+  session.state,
+);
 const memory = {
   version: 1,
   document: documentKey(session.state),

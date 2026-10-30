@@ -1,4 +1,5 @@
 import { calculate, display, same, references } from "../notebook/math.ts";
+import { PageEdit } from "./pageEdits.ts";
 import {
   ancestors,
   project,
@@ -125,15 +126,12 @@ export function planConnection(
         "Drop onto an assumed quantity or an equation term to replace its source.",
       );
   }
-  const candidate = structuredClone(page),
-    context = candidate.contexts.find((c) => c.id === candidate.active)!;
-  if (context.id === "original")
-    candidate.regions.find((r) => r.id === target)!.text = text;
+  const draft = new PageEdit(page),
+    candidate = draft.page,
+    context = draft.context(candidate.active)!;
+  if (context.id === "original") draft.region(target)!.text = text;
   else context.overrides[target] = text;
-  (candidate.links ||= {})[target] = {
-    ...candidate.links?.[target],
-    [alias]: source,
-  };
+  draft.links(target)[alias] = source;
   const result = project(candidate);
   if (result.errors.has(target) && !remainsUnresolved(p, result, target))
     throw Error(result.errors.get(target));

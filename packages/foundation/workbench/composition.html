@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Manifold · Independent models</title>
+    <link rel="stylesheet" href="./composition.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <a href="./">Manifold / Foundation</a>
+          <h1>Define once.<br />Explore independently.</h1>
+          <p>
+            Shared model definitions, separate inputs, explicit connections.
+          </p>
+        </div>
+        <nav aria-label="Workspace">
+          <span id="saved">Unsaved</span><button id="save">Save locally</button
+          ><button id="download">Download work</button
+          ><label class="file"
+            >Open work<input
+              id="open"
+              type="file"
+              accept=".manifold,.json" /></label
+          ><button id="reload">Reopen local save</button
+          ><button id="undo">Undo</button>
+        </nav>
+      </header>
+      <p id="message" role="status">Preparing models…</p>
+      <div class="models">
+        <section>
+          <p class="eyebrow">SPRING / INSTANCE A</p>
+          <h2>First support</h2>
+          <p class="value" id="force-A"></p>
+          <p class="hint" id="revision-A"></p>
+          <label for="x-A">A displacement · mm</label>
+          <div class="row">
+            <input id="x-A" type="number" value="1" /><button id="apply-A">
+              Apply A input
+            </button>
+          </div>
+          <button id="compute-A">Compute A pressure</button>
+          <p class="result" id="result-A"></p>
+        </section>
+        <section>
+          <p class="eyebrow">SPRING / INSTANCE B</p>
+          <h2>Second support</h2>
+          <p class="value" id="force-B"></p>
+          <p class="hint" id="revision-B"></p>
+          <label for="x-B">B displacement · mm</label>
+          <div class="row">
+            <input id="x-B" type="number" value="1" /><button id="apply-B">
+              Apply B input
+            </button>
+          </div>
+          <button id="compute-B">Compute B pressure</button>
+          <p class="result" id="result-B"></p>
+        </section>
+        <section>
+          <p class="eyebrow">AMPLIFIER / INSTANCE C</p>
+          <h2>Connect a public port</h2>
+          <p class="value" id="force-C"></p>
+          <label for="bind-source">C load source</label
+          ><select id="bind-source">
+            <option value="A">A · Force / N</option>
+            <option value="B">B · Force / N</option></select
+          ><button id="review-binding">Review connection</button>
+          <p class="hint">
+            The connection records units and source interpretation. Changing a
+            label cannot change its target.
+          </p>
+          <button id="compute-C">Compute C pressure</button>
+          <p class="result" id="result-C"></p>
+        </section>
+      </div>
+      <section id="review" hidden>
+        <p class="eyebrow">REVIEW BEFORE APPLYING</p>
+        <h2 id="review-title"></h2>
+        <pre id="review-detail"></pre>
+        <div class="row">
+          <button id="apply-review">Apply reviewed change</button
+          ><button id="cancel-review">Cancel review</button>
+        </div>
+      </section>
+      <div class="columns">
+        <section>
+          <p class="eyebrow">DEFINITIONS / SHARED, PINNED</p>
+          <h2>Choose when to update</h2>
+          <label for="default-x">New spring default displacement · mm</label
+          ><input id="default-x" type="number" value="2" /><button
+            id="publish-template"
+          >
+            Publish spring revision
+          </button>
+          <p class="hint" id="template-head"></p>
+          <button id="review-update">Review A model update</button>
+          <p class="hint">
+            B keeps its selected revision. Instance overrides keep their
+            explicit values.
+          </p>
+        </section>
+        <section>
+          <p class="eyebrow">NESTED / QUALIFIED PATHS</p>
+          <h2>Two children, same local names</h2>
+          <p class="value" id="force-pair"></p>
+          <p id="nested"></p>
+          <p class="hint">
+            One shared spring definition. Local k and F resolve through each
+            child occurrence.
+          </p>
+        </section>
+        <section>
+          <p class="eyebrow">SOURCES / EXACT REVISIONS</p>
+          <h2>A number also has a source</h2>
+          <label for="stiffness">A source stiffness · N/mm</label
+          ><input id="stiffness" type="number" value="10" /><button
+            id="revise-source"
+          >
+            Accept source revision
+          </button>
+          <p class="hint">
+            A same-valued revision still changes computation identity.
+          </p>
+          <label for="source-file">Replace B table · JSON numeric rows</label
+          ><input id="source-file" type="file" accept=".json" /><button
+            id="review-rebind"
+          >
+            Review B source rebind
+          </button>
+          <p class="hint">
+            A new table revision needs an explicit selector rebind.
+          </p>
+        </section>
+        <section>
+          <p class="eyebrow">ALTERNATIVES / FROZEN MEANING</p>
+          <h2>Keep another A</h2>
+          <label for="preview-x">Alternative A displacement · mm</label
+          ><input id="preview-x" type="number" value="2" /><button id="preview">
+            Preview A input
+          </button>
+          <p id="preview-result"></p>
+          <div class="row">
+            <button id="compute-preview">Compute alternative</button
+            ><button id="keep">Keep alternative</button
+            ><button id="cancel-preview">Cancel preview</button>
+          </div>
+          <div id="alternatives"></div>
+        </section>
+      </div>
+      <footer>
+        <p>
+          Current means inputs, dependency revisions and method match. Physical
+          validity has not been assessed.
+        </p>
+        <p id="counters"></p>
+        <button id="review-cleanup">Review unused history</button>
+        <p id="cleanup-detail"></p>
+        <button id="apply-cleanup" disabled>Apply history cleanup</button>
+      </footer>
+    </main>
+    <script type="module" src="./composition.ts"></script>
+  </body>
+</html>

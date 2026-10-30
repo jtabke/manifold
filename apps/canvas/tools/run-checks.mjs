@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -7,22 +7,70 @@ const browser = process.argv.includes("--browser");
 const requested = process.argv.slice(2).filter((name) => name !== "--browser");
 const files = [];
 const checks = [
+  "check-drawing.mjs",
+  "check-drawing-browser.mjs",
+  "check-drawing-performance-browser.mjs",
+  "check-drawing-publication-profile.mjs",
   "check-areas.mjs",
   "check-artifacts.mjs",
+  "check-artifact-computations.mjs",
+  "check-sampling-plans.mjs",
+  "check-shared-sampling.mjs",
   "check-bare-expressions.mjs",
   "check-canvas-scene.mjs",
+  "check-portable-scene.mjs",
+  "check-canvas-document.mjs",
+  "check-targeted-authoring.mjs",
+  "check-foundation-models.mjs",
+  "check-authored-models.mjs",
+  "check-model-analyses.mjs",
+  "check-canvas-storage.mjs",
+  "check-canvas-capacity.mjs",
+  "check-storage-budget.mjs",
+  "check-save-yielding.mjs",
+  "check-canvas-retention.mjs",
+  "check-result-snapshots.mjs",
+  "check-calculation-history.mjs",
+  "check-workspace-owner.mjs",
+  "check-workspace-lifecycle.mjs",
+  "check-commands.mjs",
+  "check-shortcut-bindings.mjs",
+  "check-exploration.mjs",
   "check-data-feedback.mjs",
   "check-data-sources.mjs",
   "check-dataset-model.mjs",
   "check-infinite-viewport.mjs",
   "check-linking.mjs",
   "check-math.mjs",
+  "check-incremental-worksheet.mjs",
   "check-models.mjs",
   "check-progressive-links.mjs",
   "check-regions.mjs",
   "check-relationship-navigation.mjs",
   "check-workspace-polish.mjs",
   "check-blank-canvas-browser.mjs",
+  "check-native-workspace-browser.mjs",
+  "check-portable-scene-browser.mjs",
+  "check-layout-gestures-browser.mjs",
+  "check-overlap-browser.mjs",
+  "check-shortcut-help-browser.mjs",
+  "check-shortcut-config-browser.mjs",
+  "check-renderer-buffers-browser.mjs",
+  "check-canvas-scene-performance-browser.mjs",
+  "check-foundation-models-browser.mjs",
+  "check-authored-models-browser.mjs",
+  "check-model-analyses-browser.mjs",
+  "check-canvas-storage-browser.mjs",
+  "check-canvas-capacity-browser.mjs",
+  "check-canvas-retention-browser.mjs",
+  "check-calculation-history-browser.mjs",
+  "check-workspace-owner-browser.mjs",
+  "check-authoring-recovery-browser.mjs",
+  "check-canvas-actions-browser.mjs",
+  "check-canvas-navigation-browser.mjs",
+  "check-command-consistency-browser.mjs",
+  "check-exploration-browser.mjs",
+  "check-incremental-worksheet-browser.mjs",
   "check-equation-editing.mjs",
   "check-linking-browser.mjs",
   "check-dataset-browser.mjs",
@@ -48,6 +96,10 @@ if (!files.length)
 
 let server;
 try {
+  if (browser)
+    await mkdir(new URL("../../../evidence/current/canvas/", import.meta.url), {
+      recursive: true,
+    });
   let baseURL = process.env.MANIFOLD_BASE_URL;
   if (browser && !baseURL) {
     baseURL = "http://127.0.0.1:58312";

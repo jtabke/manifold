@@ -1,0 +1,25 @@
+{
+  "name": "manifold",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/canvas",
+    "packages/foundation"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "check": "make check",
+    "verify": "make verify-application-foundation"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@vitejs/plugin-react": "5.0.4",
+    "prettier": "3.6.2",
+    "typescript": "5.9.3",
+    "vite": "7.3.7"
+  }
+}

@@ -1,3 +1,4 @@
+import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { RegionSession, project } from "../src/regions/document.ts";
 import { csvQuantity } from "../src/regions/dataSources.ts";
@@ -42,10 +43,10 @@ assert.throws(
   () => s.quantityFromCell(data, 0, 1, "constructor", "kg*m/s^2"),
   /name/i,
 );
-const altered = JSON.parse(archive(s.state, []));
+const altered = JSON.parse(legacyWorkspace(s.state, []));
 altered.page.regions.find((r) => r.id === force).source.raw = "999";
 assert.throws(() => restore(JSON.stringify(altered)), /archive/i);
-const restored = restore(archive(s.state, []));
+const restored = restore(legacyWorkspace(s.state, []));
 assert.deepEqual(restored.page.regions, s.state.regions);
 s.undo();
 assert.ok(!s.state.regions.some((r) => r.id === force));

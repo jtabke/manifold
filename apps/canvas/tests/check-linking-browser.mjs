@@ -1,3 +1,4 @@
+import { readWorkspace } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
@@ -53,10 +54,7 @@ try {
     await editor().press("Enter");
   }
   await editor().press("Escape");
-  const source = page
-    .locator(".er-region")
-    .first()
-    .getByRole("button", { name: "Edit A", exact: true });
+  const source = page.getByRole("button", { name: "Link A", exact: true });
   await drag(await center(source), [730, 165]);
   await expect(
     page.getByRole("dialog", { name: "Link actions", exact: true }),
@@ -65,7 +63,7 @@ try {
   await ready();
   await expect(result()).toContainText("91.6667");
   checks.push(
-    "Drag a symbol into open space to create a Python plot of the existing quantity",
+    "Drag the explicit link handle into open space to plot the existing quantity without taking over text selection",
   );
   await page.mouse.click(115, 760);
   await editor().fill("R = @cooling area");
@@ -199,12 +197,7 @@ try {
     "The same link handle reveals producers and consumers with coordinated highlighting",
   );
   await close();
-  const archive = await page.evaluate(() =>
-    Object.values(localStorage).find(
-      (v) => v.includes('"artifacts"') && v.includes('"regions"'),
-    ),
-  );
-  expect(archive).toContain('"links"');
+  expect((await readWorkspace(page)).page.links).toBeTruthy();
   await page.reload();
   await ready();
   await expect(result()).toContainText("41.6667");
@@ -215,6 +208,10 @@ try {
     .click();
   await editor().fill("A_cool := 0.2 m²");
   await editor().press("Escape");
+  await expect(widget()).toHaveAttribute("data-status", "ready");
+  await widget()
+    .getByRole("button", { name: "Run Python", exact: true })
+    .click();
   await ready();
   await expect(page.locator('[data-result-for="R"]')).toContainText("0.2 m²");
   await expect(
@@ -266,6 +263,7 @@ try {
   expect(errors).toEqual([]);
   console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
 } catch (e) {
+  console.error({ pageErrors: errors });
   await mkdir("/tmp/manifold-linking", { recursive: true });
   await page.screenshot({ path: "/tmp/manifold-linking/failure.png" });
   console.error(await page.locator("body").innerText());

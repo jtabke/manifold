@@ -1,0 +1,137 @@
+.im-card {
+  position: absolute;
+  width: 370px;
+  padding: 18px;
+  border: 1px solid #d8d9d6;
+  border-radius: 10px;
+  background: #fff;
+  color: #283236;
+  font-size: 13px;
+  box-shadow: 0 2px 6px #2530330a;
+}
+.im-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.im-card header span,
+.im-meaning,
+.im-status,
+.im-card small {
+  color: #69777b;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.im-input {
+  padding: 10px 0;
+  border-top: 1px solid #eceeeb;
+}
+.im-card label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.im-card label span {
+  margin-left: auto;
+}
+.im-card input {
+  width: 100px;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid #d8d9d6;
+  border-radius: 4px;
+  color: inherit;
+  background: #fff;
+}
+.im-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.im-card button {
+  padding: 5px 8px;
+  border: 1px solid #d8d9d6;
+  border-radius: 4px;
+  background: #f7f8f6;
+  font: inherit;
+  cursor: pointer;
+}
+.im-card button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.im-card details {
+  margin-top: 8px;
+}
+.im-card select {
+  width: 100%;
+  margin: 8px 0;
+}
+.im-card fieldset {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d8d9d6;
+  margin-bottom: 8px;
+}
+.im-card output {
+  display: block;
+  margin-top: 12px;
+  font-size: 22px;
+}
+.im-card [role="alert"] {
+  color: #a43122;
+}
+.im-card[data-comparison="true"] {
+  background: #f9fbf7;
+}
+.im-card {
+  max-height: 680px;
+  overflow: auto;
+}
+.im-actions {
+  flex-wrap: wrap;
+}
+.im-editor {
+  width: min(720px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid #d8d9d6;
+  border-radius: 10px;
+  color: #283236;
+  background: #fff;
+}
+.im-editor::backdrop {
+  background: #25303355;
+}
+.im-editor header {
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  align-items: center;
+}
+.im-editor h2 {
+  font-size: 20px;
+}
+.im-editor label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.im-editor input:not([type="checkbox"]) {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+}
+.im-editor fieldset {
+  margin: 12px 0;
+  border: 1px solid #d8d9d6;
+}
+.im-editor button {
+  margin: 6px;
+  padding: 8px 12px;
+}
+.im-editor [role="alert"] {
+  color: #a43122;
+}

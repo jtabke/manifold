@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Application boundaries</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        color: var(--foreground, CanvasText);
+        font: 14px/1.5 var(--font-sans, system-ui);
+      }
+      main {
+        max-width: 850px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin: 0 0 6px;
+        padding-right: 90px;
+      }
+      h2 {
+        font-size: 1rem;
+        font-weight: 500;
+        margin: 18px 0 8px;
+      }
+      p {
+        margin: 0 0 14px;
+      }
+      .muted {
+        color: var(--muted-foreground, GrayText);
+      }
+      .basis {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        border-block: 1px solid var(--border, GrayText);
+        padding: 14px 0;
+      }
+      .basis strong {
+        display: block;
+        font-weight: 500;
+      }
+      .basis span {
+        display: block;
+        margin-top: 3px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 16px;
+      }
+      button {
+        font: inherit;
+        border: 1px solid var(--border, GrayText);
+        border-radius: 6px;
+        padding: 8px 14px;
+        color: inherit;
+        background: transparent;
+      }
+      button[aria-pressed="true"] {
+        color: var(--primary-foreground, HighlightText);
+        background: var(--primary, Highlight);
+        border-color: var(--primary, Highlight);
+      }
+      ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      li {
+        position: relative;
+        margin: 0;
+        padding: 0 0 18px 30px;
+      }
+      li::before {
+        content: "";
+        position: absolute;
+        top: 9px;
+        left: 7px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      li:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        top: 21px;
+        bottom: 1px;
+        left: 10px;
+        border-left: 1px solid var(--border, GrayText);
+      }
+      .role {
+        font-weight: 500;
+      }
+      .meaning {
+        color: var(--muted-foreground, GrayText);
+      }
+      .rule {
+        border-top: 1px solid var(--border, GrayText);
+        padding-top: 12px;
+      }
+      .rule strong {
+        font-weight: 500;
+      }
+      footer {
+        margin-top: 14px;
+        color: var(--muted-foreground, GrayText);
+      }
+      @media (max-width: 480px) {
+        .basis {
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+        .basis span {
+          margin-top: 0;
+        }
+        button {
+          min-height: 44px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>A small kernel, explicit application boundaries</h1>
+      <p class="muted">
+        Design baseline · bounded execution proof · modules, with optional
+        execution and storage hosts
+      </p>
+      <div class="basis" aria-label="The three semantic distinctions">
+        <div>
+          <strong>Stable identity</strong
+          ><span>Independent items and occurrences</span>
+        </div>
+        <div>
+          <strong>Typed revisions</strong
+          ><span>Immutable, versioned meaning</span>
+        </div>
+        <div>
+          <strong>Qualified references</strong
+          ><span>Pin/follow, parts and explicit absence</span>
+        </div>
+      </div>
+      <h2>Follow an operation</h2>
+      <div class="controls" aria-label="Operation flows">
+        <button type="button" data-flow="edit" aria-pressed="true">
+          Edit / Keep
+        </button>
+        <button type="button" data-flow="compute" aria-pressed="false">
+          Compute
+        </button>
+        <button type="button" data-flow="transfer" aria-pressed="false">
+          Save / transfer
+        </button>
+      </div>
+      <section
+        aria-live="polite"
+        aria-atomic="true"
+        aria-label="Selected operation flow"
+      >
+        <ol id="steps"></ol>
+        <p class="rule" id="rule"></p>
+      </section>
+      <footer>
+        The browser hosts the application. A server can serve code, run jobs or
+        store records; each role uses a separate port. Files contain inert data
+        and requirements.
+      </footer>
+    </main>
+    <script>
+      const flows = {
+        edit: {
+          steps: [
+            [
+              "Canvas or AI caller → typed intent",
+              "Same operation rules and source authority for every caller.",
+            ],
+            [
+              "Read snapshot → domain staging",
+              "Capture relevant revisions, absence and interpretation; preview is temporary.",
+            ],
+            [
+              "Reviewed candidate → application owner",
+              "Recheck guards and accept all changes once, or publish nothing.",
+            ],
+            [
+              "Immutable root → filtered subscriptions",
+              "Update affected representations; add one authored Undo step.",
+            ],
+            [
+              "Coherent capture → guarded persistence",
+              "Save can fail while accepted work remains usable and exportable.",
+            ],
+          ],
+          rule: "One authored writer. A projected value is edited through its source adapter; a drag or stale candidate cannot silently change accepted meaning.",
+        },
+        compute: {
+          steps: [
+            [
+              "Read snapshot → execution capture",
+              "Freeze method/version, typed inputs and actual transitive origins.",
+            ],
+            [
+              "Verified resources → immutable plan",
+              "No current-source fallback; missing bytes are an explicit outcome.",
+            ],
+            [
+              "Admission budget → execution adapter",
+              "Bound concurrency, bytes and time; cancellation is a request.",
+            ],
+            [
+              "Checked outputs → evidence acceptance",
+              "Validate types, assets and provenance before publishing a receipt.",
+            ],
+            [
+              "Matching key → current association",
+              "Late attempts remain historical; explicit Keep creates authored content.",
+            ],
+          ],
+          rule: "Evidence is separate from Undo. Success does not establish physical validity. The bounded scalar/vector proof passes; production API adoption is a separate step.",
+        },
+        transfer: {
+          steps: [
+            [
+              "Owner-issued capture → retained closure",
+              "Pin authored state, evidence and binding together during export.",
+            ],
+            [
+              "Codec + verified assets → portable package",
+              "Include exact source bytes or declare exact linked dependencies.",
+            ],
+            [
+              "Transfer → fresh compatible reader",
+              "No original browser cache, job process or machine identity is required.",
+            ],
+            [
+              "Staged validation → capability report",
+              "Report inspection, editing and recomputation support; execute nothing on Open.",
+            ],
+            [
+              "Validated adoption → new workspace binding",
+              "Failed Open preserves existing work; late jobs cannot attach to the new binding.",
+            ],
+          ],
+          rule: "A file and a local database are different representations of the same work. Durable Save uses generation checks and acknowledges only its exact capture.",
+        },
+      };
+      function selectFlow(name) {
+        const flow = flows[name];
+        const steps = document.getElementById("steps");
+        steps.replaceChildren(
+          ...flow.steps.map(([role, meaning]) => {
+            const li = document.createElement("li");
+            const label = document.createElement("div");
+            label.className = "role";
+            label.textContent = role;
+            const detail = document.createElement("div");
+            detail.className = "meaning";
+            detail.textContent = meaning;
+            li.append(label, detail);
+            return li;
+          }),
+        );
+        document.getElementById("rule").textContent = flow.rule;
+        document
+          .querySelectorAll("[data-flow]")
+          .forEach((button) =>
+            button.setAttribute(
+              "aria-pressed",
+              String(button.dataset.flow === name),
+            ),
+          );
+      }
+      document
+        .querySelectorAll("[data-flow]")
+        .forEach((button) =>
+          button.addEventListener("click", () =>
+            selectFlow(button.dataset.flow),
+          ),
+        );
+      selectFlow("edit");
+      // Local assertions exercise every flow without external code or network access.
+      for (const name of Object.keys(flows)) {
+        selectFlow(name);
+        console.assert(
+          document.querySelectorAll("#steps li").length === 5,
+          "Incomplete flow: " + name,
+        );
+        console.assert(
+          document.getElementById("rule").textContent.length > 0,
+          "Missing rule: " + name,
+        );
+        console.assert(
+          document.querySelectorAll('[aria-pressed="true"]').length === 1,
+          "Invalid selection",
+        );
+      }
+      selectFlow("edit");
+      console.log("All three operation flows passed local assertions.");
+    </script>
+  </body>
+</html>

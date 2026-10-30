@@ -1,22 +1,31 @@
+import { immutable, readMap } from "./immutable.ts";
+const work = { parses: 0, expressions: 0, assignments: 0, constraints: 0 };
+export function evaluationWork() {
+  return { ...work };
+}
+export function resetEvaluationWork() {
+  for (const key of Object.keys(work) as (keyof typeof work)[]) work[key] = 0;
+}
 /** Bounded arithmetic worksheet, not a symbolic algebra engine. No dynamic code execution. */
-export type Dimension = [number, number, number, number]; // kg, m, s, K
-export type Quantity = {
+export type Dimension = readonly [number, number, number, number]; // kg, m, s, K
+export type Quantity = Readonly<{
   value: number;
   dimension: Dimension;
   absolute?: boolean;
-};
-export type Expression =
+}>;
+export type Expression = Readonly<
   | { kind: "number"; value: number }
   | { kind: "name"; name: string }
   | { kind: "unary"; expression: Expression }
-  | { kind: "binary"; op: string; left: Expression; right: Expression };
-export type Statement = {
+  | { kind: "binary"; op: string; left: Expression; right: Expression }
+>;
+export type Statement = Readonly<{
   name: string;
   expression: Expression;
   raw: string;
   relation: "=" | "<=" | ">=" | "<" | ">";
   anonymous?: boolean;
-};
+}>;
 const scalar: Dimension = [0, 0, 0, 0];
 const temperature: Dimension = [0, 0, 0, 1];
 const units: Record<string, Quantity> = {
@@ -35,6 +44,12 @@ const units: Record<string, Quantity> = {
   kg: { value: 1, dimension: [1, 0, 0, 0] },
   K: { value: 1, dimension: temperature },
 };
+immutable(units);
+immutable(scalar);
+const mapDimension = (
+  d: Dimension,
+  map: (value: number, index: number) => number,
+): Dimension => [map(d[0], 0), map(d[1], 1), map(d[2], 2), map(d[3], 3)];
 export const same = (a: Dimension, b: Dimension) =>
   a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
 /** Recognize worksheet expressions without interpreting ordinary prose as math.
@@ -62,6 +77,7 @@ export function expressionBody(text: string): string | undefined {
   }
 }
 export function parse(text: string, expressionId?: string): Statement {
+  work.parses++;
   const body = expressionBody(text);
   if (body !== undefined && expressionId !== undefined) {
     // Stable private identities allow several anonymous results to coexist.
@@ -171,6 +187,7 @@ export function evaluate(
   expression: Expression,
   resolve: (name: string) => Quantity,
 ): Quantity {
+  work.expressions++;
   if (expression.kind === "number") {
     if (!Number.isFinite(expression.value))
       throw Error("The number is not finite.");
@@ -232,15 +249,16 @@ export function evaluate(
         );
       result = {
         value: a.value ** b.value,
-        dimension: a.dimension.map((d) => d * b.value) as Dimension,
+        dimension: mapDimension(a.dimension, (d) => d * b.value),
       };
     } else {
       if (op === "/" && b.value === 0) throw Error("Division by zero.");
       result = {
         value: op === "*" ? a.value * b.value : a.value / b.value,
-        dimension: a.dimension.map(
+        dimension: mapDimension(
+          a.dimension,
           (d, i) => d + (op === "*" ? b.dimension[i] : -b.dimension[i]),
-        ) as Dimension,
+        ),
       };
     }
   }
@@ -270,39 +288,137 @@ export function quantityLiteral(expression: Expression): boolean {
     unit(expression.right)
   );
 }
-export type Solved = {
-  statements: Map<string, Statement>;
-  values: Map<string, Quantity>;
-  errors: Map<string, string>;
-  constraints: Map<
+export type Solved = Readonly<{
+  statements: ReadonlyMap<string, Statement>;
+  values: ReadonlyMap<string, Quantity>;
+  errors: ReadonlyMap<string, string>;
+  constraints: ReadonlyMap<
     string,
-    { pass: boolean; bound: Quantity; statement: Statement }
+    Readonly<{ pass: boolean; bound: Quantity; statement: Statement }>
   >;
-};
-export function calculate(
-  regions: Calculation[],
-  overrides: Record<string, Quantity> = {},
-): Solved {
+}>;
+export type PreparedCalculation = Readonly<{
+  id: string;
+  text: string;
+  statement?: Statement;
+  error?: string;
+  dependencies: readonly string[];
+}>;
+export function prepareCalculation(
+  id: string,
+  text: string,
+): PreparedCalculation {
+  try {
+    const statement = parse(text, id);
+    return immutable({
+      id,
+      text,
+      statement,
+      dependencies: [
+        ...new Set([
+          ...references(statement.expression),
+          ...(statement.relation === "=" ? [] : [statement.name]),
+        ]),
+      ],
+    });
+  } catch (error) {
+    return immutable({
+      id,
+      text,
+      error: (error as Error).message,
+      dependencies: [],
+    });
+  }
+}
+export type CalculationState = Readonly<{
+  rows: readonly PreparedCalculation[];
+  overrides: Readonly<Record<string, Quantity>>;
+  users: ReadonlyMap<string, readonly string[]>;
+  solved: Solved;
+}>;
+const equalQuantity = (a?: Quantity, b?: Quantity) =>
+  a === b ||
+  (!!a &&
+    !!b &&
+    Object.is(a.value, b.value) &&
+    a.absolute === b.absolute &&
+    a.dimension.every((v, i) => Object.is(v, b.dimension[i])));
+/** One evaluator for cold calculations, incremental projections and sampled overrides. */
+export function solvePrepared(
+  rows: readonly PreparedCalculation[],
+  overrides: Readonly<Record<string, Quantity>> = {},
+  before?: CalculationState,
+): CalculationState {
   const statements = new Map<string, Statement>(),
     byName = new Map<string, string>(),
-    values = new Map<string, Quantity>(),
     errors = new Map<string, string>(),
-    constraints: Solved["constraints"] = new Map();
-  for (const region of regions) {
-    try {
-      const s = parse(region.text, region.id);
-      statements.set(region.id, s);
-      if (s.relation === "=") {
-        if (byName.has(s.name)) {
-          errors.set(region.id, `${s.name} is already defined.`);
-          errors.set(byName.get(s.name)!, `${s.name} is defined twice.`);
-        } else byName.set(s.name, region.id);
-      }
-    } catch (e) {
-      errors.set(region.id, (e as Error).message);
+    users = new Map<string, string[]>();
+  for (const row of rows) {
+    const s = row.statement;
+    if (!s) {
+      errors.set(row.id, row.error!);
+      continue;
+    }
+    statements.set(row.id, s);
+    if (s.relation === "=") {
+      if (byName.has(s.name)) {
+        errors.set(row.id, `${s.name} is already defined.`);
+        errors.set(byName.get(s.name)!, `${s.name} is defined twice.`);
+      } else byName.set(s.name, row.id);
+    }
+    for (const name of row.dependencies) {
+      const list = users.get(name) || [];
+      list.push(row.id);
+      users.set(name, list);
     }
   }
-  const visiting = new Set<string>();
+  // Error paths and reordered definitions use a full pass to retain deterministic diagnostics.
+  const reuse =
+    before &&
+    !before.solved.errors.size &&
+    !errors.size &&
+    rows.length === before.rows.length &&
+    rows.every((r, i) => r.id === before.rows[i].id);
+  const dirty = new Set<string>(),
+    pending: string[] = [];
+  if (reuse) {
+    for (let i = 0; i < rows.length; i++)
+      if (rows[i] !== before.rows[i]) {
+        dirty.add(rows[i].id);
+        for (const row of [rows[i], before.rows[i]])
+          if (row.statement?.relation === "=") pending.push(row.statement.name);
+      }
+    for (const name of new Set([
+      ...Object.keys(overrides),
+      ...Object.keys(before.overrides),
+    ]))
+      if (!equalQuantity(overrides[name], before.overrides[name])) {
+        pending.push(name);
+        const id = byName.get(name);
+        if (id) dirty.add(id);
+      }
+    const visited = new Set<string>();
+    for (let i = 0; i < pending.length; i++) {
+      const name = pending[i];
+      if (visited.has(name)) continue;
+      visited.add(name);
+      for (const id of new Set([
+        ...(users.get(name) || []),
+        ...(before.users.get(name) || []),
+      ])) {
+        if (dirty.has(id)) continue;
+        dirty.add(id);
+        const s = statements.get(id);
+        if (s?.relation === "=") pending.push(s.name);
+      }
+    }
+  }
+  const values = new Map<string, Quantity>(),
+    constraints = new Map<
+      string,
+      Readonly<{ pass: boolean; bound: Quantity; statement: Statement }>
+    >(),
+    visiting = new Set<string>();
   const resolve = (name: string): Quantity => {
     if (Object.hasOwn(overrides, name)) return overrides[name];
     if (values.has(name)) return values.get(name)!;
@@ -311,9 +427,17 @@ export function calculate(
     if (errors.has(id)) throw Error(errors.get(id));
     if (visiting.has(name))
       throw Error(`Circular dependency involving ${name}.`);
+    const cached = reuse && !dirty.has(id) && before.solved.values.get(name);
+    if (cached) {
+      values.set(name, cached);
+      return cached;
+    }
     visiting.add(name);
     try {
-      const value = evaluate(statements.get(id)!.expression, resolve);
+      work.assignments++;
+      const value = immutable(
+        evaluate(statements.get(id)!.expression, resolve),
+      );
       values.set(name, value);
       return value;
     } finally {
@@ -325,8 +449,15 @@ export function calculate(
     try {
       if (s.relation === "=") resolve(s.name);
       else {
+        const cached =
+          reuse && !dirty.has(id) && before.solved.constraints.get(id);
+        if (cached) {
+          constraints.set(id, cached);
+          continue;
+        }
+        work.constraints++;
         const actual = resolve(s.name),
-          bound = evaluate(s.expression, resolve);
+          bound = immutable(evaluate(s.expression, resolve));
         if (
           !same(actual.dimension, bound.dimension) ||
           !!actual.absolute !== !!bound.absolute
@@ -334,17 +465,48 @@ export function calculate(
           throw Error(
             "The limit and the result need matching units and temperature conventions.",
           );
-        constraints.set(id, {
-          pass: passes(s.relation, actual.value, bound.value),
-          bound,
-          statement: s,
-        });
+        constraints.set(
+          id,
+          immutable({
+            pass: passes(s.relation, actual.value, bound.value),
+            bound,
+            statement: s,
+          }),
+        );
       }
-    } catch (e) {
-      errors.set(id, (e as Error).message);
+    } catch (error) {
+      errors.set(id, (error as Error).message);
     }
   }
-  return { statements, values, errors, constraints };
+  return Object.freeze({
+    rows: Object.freeze([...rows]),
+    overrides: immutable(
+      Object.fromEntries(
+        Object.entries(overrides).map(([name, value]) => [
+          name,
+          { ...value, dimension: [...value.dimension] as Dimension },
+        ]),
+      ),
+    ),
+    users: readMap(
+      [...users].map(([name, ids]) => [name, Object.freeze(ids)] as const),
+    ),
+    solved: Object.freeze({
+      statements: readMap(statements),
+      values: readMap(values),
+      errors: readMap(errors),
+      constraints: readMap(constraints),
+    }),
+  });
+}
+export function calculate(
+  regions: readonly Calculation[],
+  overrides: Readonly<Record<string, Quantity>> = {},
+): Solved {
+  return solvePrepared(
+    regions.map((r) => prepareCalculation(r.id, r.text)),
+    overrides,
+  ).solved;
 }
 export function unitLabel(q: Quantity): string {
   if (q.absolute) return "°C";

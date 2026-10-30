@@ -1,4 +1,5 @@
 import type { Point } from "./document.ts";
+import { REGION_STEP } from "./pageLayout.ts";
 export type CanvasFrame = Point & {
   id: string;
   width: number;
@@ -22,7 +23,9 @@ export function touches(a: CanvasRect, b: CanvasRect) {
     b.y <= a.y + a.height
   );
 }
-export function frameBounds(frames: CanvasFrame[]): CanvasRect | undefined {
+export function frameBounds<T extends CanvasRect>(
+  frames: readonly T[],
+): CanvasRect | undefined {
   if (!frames.length) return;
   const x = Math.min(...frames.map((f) => f.x)),
     y = Math.min(...frames.map((f) => f.y));
@@ -53,7 +56,7 @@ export function organizeFrames(
   let y = bounds.y;
   for (const f of regions) {
     result[f.id] = { x: bounds.x, y };
-    y += Math.max(92, f.height + 24);
+    y += Math.max(REGION_STEP, f.height + 16);
   }
   let plotY = sideBySide ? bounds.y : y + (regions.length ? 16 : 0);
   for (const f of plots) {

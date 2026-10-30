@@ -1,3 +1,4 @@
+import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import {
   RegionSession,
@@ -8,6 +9,7 @@ import {
   makeArtifact,
   prepare,
   acceptData,
+  receiptMatchesJob,
   archive,
   restore,
 } from "../src/regions/artifacts.ts";
@@ -62,6 +64,32 @@ const data = {
 };
 artifact = acceptData(session.state, artifact, job, data);
 assert.equal(artifact.receipt.points.length, 201);
+assert.equal(
+  receiptMatchesJob(
+    {
+      ...artifact.receipt,
+      definitions: artifact.receipt.definitions.map((r) =>
+        Object.fromEntries(Object.entries(r).reverse()),
+      ),
+    },
+    job,
+  ),
+  true,
+);
+assert.equal(
+  receiptMatchesJob(
+    {
+      ...artifact.receipt,
+      definitions: [...artifact.receipt.definitions].reverse(),
+    },
+    job,
+  ),
+  false,
+);
+assert.equal(
+  receiptMatchesJob({ ...artifact.receipt, inputs: undefined }, job),
+  false,
+);
 const before = semanticKey(session.state),
   count = session.receipts.length;
 session.move(artifact.id, { x: 560, y: 500 });
@@ -85,7 +113,7 @@ session.branch();
 session.write(ids[3], "h := 40 W/(m^2 K)");
 assert.notEqual(prepare(session.state, artifact).key, job.key);
 assert.throws(() => acceptData(session.state, artifact, job, data), /changed/i);
-const snapshot = archive(session.state, [artifact]);
+const snapshot = legacyWorkspace(session.state, [artifact]);
 const restored = restore(snapshot);
 assert.equal(restored.artifacts[0].id, artifact.id);
 const linked = {
@@ -103,13 +131,13 @@ const linked = {
   comparing: true,
 };
 assert.equal(
-  restore(archive(session.state, [linked])).artifacts[0].views[0].id,
+  restore(legacyWorkspace(session.state, [linked])).artifacts[0].views[0].id,
   "view-linked-table",
 );
 assert.throws(
   () =>
     restore(
-      archive(session.state, [
+      legacyWorkspace(session.state, [
         { ...linked, views: [{ ...linked.views[0], input: ids[2] }] },
       ]),
     ),
@@ -118,7 +146,7 @@ assert.throws(
 assert.throws(
   () =>
     restore(
-      archive(session.state, [
+      legacyWorkspace(session.state, [
         { ...linked, views: [{ ...linked.views[0], id: artifact.id }] },
       ]),
     ),

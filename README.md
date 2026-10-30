@@ -6,50 +6,89 @@
 <p align="center"><strong>A bicycle for the engineering mind.</strong></p>
 <p align="center">Create · Connect · Explore</p>
 
-Manifold is an open-source computational engineering canvas. Write equations and
-notes, import measurements, connect quantities and explore results in one workspace.
+Manifold is an open-source engineering canvas for equations, measurements, sketches
+and computational results. Think spatially, connect your work and explore alternatives
+without losing the original.
 
-**Early prototype.** The vision describes the intended product; the application
-implements bounded mathematical authoring, data relationships, plots, alternatives
-and nested models. No live AI service is connected. Engineering validity and a
-usability advantage have not been demonstrated.
+![Units-aware thermal calculation and an interactive response plot on the Manifold canvas](docs/images/engineering-canvas.png)
 
-## Product direction
+## Work with the problem, not the interface
 
-- [Vision](docs/vision.md): mission and enduring principles.
-- [Interaction design](docs/interaction-design.md): intended behavior and shared operations.
-- [Roadmap](docs/ecosystem-and-roadmap.md): current scope and priorities.
+- **Write naturally.** Place equations and notes anywhere. Units-aware results appear
+  beside your work; a quiet, content-sized editor keeps the canvas out of the way.
+- **Connect and inspect.** Import CSV measurements, trace mathematical relationships
+  and put plots and tables alongside the definitions that produced them.
+- **Explore safely.** Vary an input, see downstream effects and constraint crossings,
+  then cancel, accept the value or keep an alternative.
+- **Sketch your reasoning.** Use pressure-sensitive ink, highlighter, shapes, labels
+  and attached visual connectors. Sketches never silently become mathematical dependencies.
+- **Keep control.** Undo/Redo, deliberate docking previews, overlap selection and
+  searchable, customizable shortcuts support different ways of working.
+- **Keep your work.** Save locally in your browser and export portable workspace files.
+  Local browser storage is device-specific; export a file for backup or handoff.
 
-## Run the application
+**Early prototype.** These are implemented interactions, not a claim of validated
+engineering practice or demonstrated usability. No live AI service is connected.
 
-Requires Python 3.11+, Node 22.18+ and npm. The Python server uses only the standard
-library; no Python package installation is needed.
+## A closer look
+
+### Explore an input before changing your baseline
+
+Preview the consequences, including whether a constraint still holds. Keep a useful
+alternative or return to the original.
+
+![Live exploration of force with a power constraint, previewed results and a response plot](docs/images/live-exploration.png)
+
+### Put diagrams beside the mathematics
+
+Sketch a load path, annotate assumptions and connect visual elements without changing
+the computational model.
+
+![A spring and applied-force diagram drawn beside units-aware engineering equations](docs/images/drawing-and-diagrams.png)
+
+### Make the keyboard yours
+
+Search the shortcut reference, record personal canvas bindings, or edit and exchange
+their JSON configuration. Editor keys and essential navigation remain protected.
+
+![Personal shortcut customization with recording controls and JSON import and export](docs/images/shortcut-customization.png)
+
+## Run locally
+
+Requires **Python 3.11+**, **Node 22.18+** and npm. Python uses only the standard library.
 
 ```sh
 make setup
 make canvas
 ```
 
-Open [Manifold locally](http://127.0.0.1:58310/). Start typing an equation or note,
-click to place it, or import a CSV. Work saves in this browser on this device.
-**New canvas** opens separate work with its own URL.
+Open [Manifold locally](http://127.0.0.1:58310/). Click the canvas and start writing,
+or import a CSV. **New canvas** opens separate work with its own URL.
 
 Without Make:
 
 ```sh
-npm --prefix apps/canvas ci
+npm ci
 npm --prefix apps/canvas run build
 python3 apps/canvas/server.py
 ```
 
-See the [application guide](apps/canvas/README.md) for development and controls.
+See the [application guide](apps/canvas/README.md) for controls and file handling.
 
-## Development
+## Develop and contribute
 
 ```sh
-make check          # Documentation, server tests, formatting, build and canvas checks
-make check-browser  # Browser workflows; requires Chrome
+make check          # Repository, docs, Python, types, unit tests and builds
+make verify         # Also runs foundation and canvas browser workflows; needs Chrome
 ```
 
-The [contributing guide](CONTRIBUTING.md) describes the code and checks.
+For frontend development, leave the Python server running and use `make canvas-dev`.
+The reusable, UI-independent foundation and its examples live in
+[`packages/foundation`](packages/foundation/README.md); run `make foundation` for its workbench.
+
+- [Contributing](CONTRIBUTING.md)
+- [Architecture and extension patterns](docs/design/canvas-extension-patterns.md)
+- [Repository map](docs/repository.md)
+- [Vision](docs/vision.md) and [interaction design](docs/interaction-design.md)
+
 Manifold is licensed under [Apache-2.0](LICENSE).

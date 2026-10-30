@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Manifold · Foundation workbench</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">MANIFOLD / FOUNDATION</p>
+          <h1>Keep the thought.<br />Explore the possibility.</h1>
+          <p class="intro">
+            Create, connect and compare work that can travel with you.
+          </p>
+          <p>
+            <a href="./composition.html"
+              >Explore independent model composition</a
+            >
+          </p>
+        </div>
+        <div class="document-tools">
+          <span id="saved-state" class="badge">Unsaved</span
+          ><button id="save">Save locally</button
+          ><button id="download">Download work</button
+          ><label class="file-button"
+            >Open work<input
+              id="open"
+              type="file"
+              accept=".manifold,.json" /></label
+          ><button id="reopen" class="quiet">Reopen local save</button>
+        </div>
+      </header>
+      <p id="message" role="status">Preparing your workspace…</p>
+      <div class="workspace">
+        <div class="authoring">
+          <section>
+            <p class="eyebrow">01 / CREATE</p>
+            <h2>Space for unfinished work</h2>
+            <label for="draft">Thought or equation</label
+            ><textarea id="draft" rows="3"></textarea>
+            <div class="row">
+              <button id="keep-draft">Keep thought</button
+              ><button id="undo" class="quiet">Undo</button>
+            </div>
+            <p id="history" class="hint"></p>
+            <label for="new-note">Another note</label
+            ><input
+              id="new-note"
+              placeholder="An assumption, a question, an idea…"
+            /><button id="create-note" class="quiet">Add note</button>
+            <ul id="notes"></ul>
+          </section>
+          <section>
+            <p class="eyebrow">02 / CONNECT</p>
+            <h2>Inputs with a source</h2>
+            <label for="force">Applied force · N</label>
+            <div class="input-action">
+              <input id="force" type="number" value="100" /><button
+                id="apply-force"
+              >
+                Apply force
+              </button>
+            </div>
+            <p id="source-context" class="hint"></p>
+            <p id="observation">Measured force: 130 N</p>
+            <button id="connect" class="quiet">Connect observation</button>
+            <p id="connections"></p>
+            <details>
+              <summary>Replace the area source</summary>
+              <p>
+                Import a one-cell numeric JSON table, for example
+                <code>[[5000]]</code>. This action explicitly rebinds the
+                baseline calculations to the new source revision.
+              </p>
+              <label for="source-file">Reimport area and rebind · mm²</label
+              ><input id="source-file" type="file" accept=".json" />
+            </details>
+          </section>
+        </div>
+        <div class="exploration">
+          <section class="baseline">
+            <p class="eyebrow">BASELINE</p>
+            <h2>What the current work says</h2>
+            <p class="result-value" id="baseline-result">Ready</p>
+            <button id="compute">Compute baseline</button>
+            <p id="inverse-result" class="hint"></p>
+            <button id="compute-inverse" class="quiet">
+              Compute required force
+            </button>
+            <p class="hint">
+              Current means the inputs and method match. Physical validity has
+              not been assessed.
+            </p>
+          </section>
+          <section class="preview">
+            <p class="eyebrow">03 / EXPLORE</p>
+            <h2>Try a different force</h2>
+            <label for="preview-force">Preview force · N</label>
+            <div class="input-action">
+              <input id="preview-force" type="number" value="200" /><button
+                id="preview"
+              >
+                Preview
+              </button>
+            </div>
+            <div id="preview-panel" hidden>
+              <p class="result-value" id="preview-result"></p>
+              <div class="row">
+                <button id="compute-preview">Compute preview</button
+                ><button id="cancel" class="quiet">Cancel preview</button>
+              </div>
+              <label for="alternative-label">Name this alternative</label
+              ><input id="alternative-label" value="Higher load" /><button
+                id="keep"
+              >
+                Keep alternative
+              </button>
+              <p class="hint">
+                Keep preserves its inputs and sources together with its
+                comparison view. The baseline stays independent.
+              </p>
+            </div>
+          </section>
+          <section>
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">RETAINED COMPARISONS</p>
+                <h2>Possibilities you kept</h2>
+              </div>
+              <span id="alternative-count" class="badge">0</span>
+            </div>
+            <div id="alternatives">
+              <p class="hint">Preview a change, then keep it here.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+      <section class="inspect">
+        <details>
+          <summary>Inspect evidence and recovery</summary>
+          <p id="diagnostics"></p>
+          <ol id="evidence"></ol>
+          <h3>Compact working history</h3>
+          <p class="hint">
+            Current work, comparisons, Undo, active jobs and cited results are
+            protected. Review cleanup before applying it. Older local save
+            packages can be reclaimed separately after you save this version.
+          </p>
+          <label for="retention">Recorded attempts to retain</label
+          ><select id="retention">
+            <option value="latest-per-input">
+              Latest attempt for every input set, plus cited results
+            </option>
+            <option value="all">All recorded attempts</option>
+            <option value="reachable">
+              Working results and cited evidence
+            </option>
+          </select>
+          <button id="review-cleanup" class="quiet">Review cleanup</button>
+          <p id="cleanup-review" class="hint" aria-live="polite"></p>
+          <button id="apply-cleanup" class="quiet" disabled>
+            Apply reviewed cleanup
+          </button>
+
+          <h3 id="storage-title">Reclaim saved storage</h3>
+          <p class="hint">
+            Keep the latest saved version and remove obsolete saved data. Save
+            compacted work first to reclaim its older payloads. Current unsaved
+            work stays open.
+          </p>
+          <button id="review-storage" class="quiet">
+            Review saved storage
+          </button>
+          <p id="storage-review" class="hint" aria-live="polite"></p>
+          <button id="reclaim-storage" class="quiet" disabled>
+            Reclaim obsolete saved data
+          </button>
+          <div class="row">
+            <button id="move-view" class="quiet">Move note view</button
+            ><button id="toggle-source" class="quiet">
+              Make source unavailable
+            </button>
+          </div>
+          <label for="execution">Next execution</label
+          ><select id="execution">
+            <option value="normal">Complete normally</option>
+            <option value="hold">Hold until released</option>
+            <option value="fail">Executor failure</option></select
+          ><button id="release" class="quiet">Release held jobs</button
+          ><label for="fault">Interrupt next save</label
+          ><select id="fault">
+            <option value="none">No interruption</option>
+            <option value="after-assets">After assets</option>
+            <option value="after-package">After manifest</option>
+            <option value="before-publish">
+              Abort head transaction
+            </option></select
+          ><label
+            ><input id="hold-save" type="checkbox" /> Hold next save before
+            publication</label
+          ><button id="release-save" class="quiet">Release held save</button>
+        </details>
+      </section>
+      <footer>
+        Foundation workbench · Local work and portable files · No computation
+        runs from opening a document.
+      </footer>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

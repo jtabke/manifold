@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manifold deployment and ownership</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:transparent;color:var(--foreground);font-family:var(--font-sans);font-size:14px;line-height:1.45}main{width:100%}p{margin:0 0 14px}.muted{color:var(--muted-foreground)}.small{font-size:12px}.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}button{font:inherit;color:var(--foreground);background:transparent;border:1px solid var(--border);border-radius:var(--radius);padding:8px 12px}button[aria-selected=true]{background:var(--primary);color:var(--primary-foreground)}button:focus-visible{outline:2px solid var(--ring);outline-offset:3px}.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--muted-foreground);margin-bottom:14px}.swatch{display:inline-block;width:26px;vertical-align:middle;margin-right:6px;border-top:1.4px solid var(--muted-foreground)}.swatch.read{border-top-style:dashed}.diagram{position:relative;width:100%;isolation:isolate;padding-left:44px;padding-right:24px}.diagram svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:64px;align-items:stretch}.row+.row{margin-top:62px}.node{min-width:0;border:1px solid var(--border);border-radius:var(--radius);padding:16px;background:var(--card);color:var(--card-foreground)}.node.wide{grid-column:1/-1}.node.optional{border-style:dashed}.node strong{display:block;font-weight:500;margin-bottom:7px}.node .detail{display:block;font-size:12px}.node .kind{display:block;color:var(--muted-foreground);margin-bottom:5px;font-size:11px}.edge{fill:none;stroke:var(--muted-foreground);stroke-width:1.25}.edge.read,.edge.optional{stroke-dasharray:4 4}.label{fill:var(--foreground);font-family:var(--font-sans);font-size:11px}.label-bg{fill:var(--background)}.after{margin-top:18px;font-size:12px}.after p{margin-bottom:9px}dl{margin:16px 0 0;display:grid;grid-template-columns:90px minmax(0,1fr);gap:8px 14px;font-size:12px}dt{font-weight:500}dd{margin:0}[hidden]{display:none!important}
+@media(max-width:440px){.row{gap:44px}.row+.row{margin-top:68px}.node strong{font-size:13px}.node .kind{font-size:11px}.diagram{padding-left:42px;padding-right:22px}button{padding:10px 12px}dl{grid-template-columns:1fr;gap:2px}dd{margin-bottom:7px}}
+</style>
+</head>
+<body><main>
+<p class="small muted">Proposed architecture · implementation and primitive schemas still require F1 evidence</p>
+<div class="tabs" role="tablist" aria-label="Architecture view">
+<button type="button" role="tab" id="tab-deployment" aria-controls="panel-deployment" aria-selected="false">Deployment: where it runs</button>
+<button type="button" role="tab" id="tab-ownership" aria-controls="panel-ownership" aria-selected="true">Ownership: who can change it</button>
+</div>
+<section role="tabpanel" id="panel-deployment" aria-labelledby="tab-deployment" hidden>
+<p class="small" id="deployment-summary"></p><div class="diagram" id="diagram-deployment"></div><div class="after" id="deployment-notes"></div>
+</section>
+<section role="tabpanel" id="panel-ownership" aria-labelledby="tab-ownership">
+<p class="small" id="ownership-summary"></p>
+<div class="legend"><span><i class="swatch" aria-hidden="true"></i>Command / effect request</span><span><i class="swatch read" aria-hidden="true"></i>Read / subscribe request</span></div>
+<div class="diagram" id="diagram-ownership"></div><div class="after" id="ownership-notes"></div>
+</section>
+<dl aria-label="Separate reader capability outcomes">
+<dt>Inspect</dt><dd>Show supported content, metadata and saved representations; identify unavailable or unverified dependencies.</dd>
+<dt>Edit</dt><dd>Allow supported changes; preserve unknown optional payloads or keep affected content read-only.</dd>
+<dt>Recompute</dt><dd>Require verified inputs and a supported method/runtime. A missing solver need not block editing a note.</dd>
+</dl>
+</main>
+<script type="application/json" id="architecture-graphs">
+{
+  "deployment": {
+    "summary": "Deployment boundaries. The browser is the first host; the document runtime has no React, browser-storage or HTTP dependency.",
+    "nodes": [
+      {
+        "id": "file",
+        "row": 0,
+        "kind": "Durable exchange snapshot",
+        "title": "Native document",
+        "details": [
+          "Manifest + retained records",
+          "Saved views + source assets",
+          "No live session handles"
+        ]
+      },
+      {
+        "id": "host",
+        "row": 0,
+        "kind": "Application delivery",
+        "title": "App host",
+        "details": [
+          "HTML, JavaScript and CSS",
+          "Local Python host today",
+          "Another static host can deliver it"
+        ]
+      },
+      {
+        "id": "browser",
+        "row": 1,
+        "wide": true,
+        "kind": "Initial deployment host",
+        "title": "Browser application",
+        "details": [
+          "Canvas UI + platform-neutral document runtime",
+          "Opens files locally; renders and edits supported work",
+          "Shared core contracts also run in headless tests"
+        ]
+      },
+      {
+        "id": "local",
+        "row": 2,
+        "kind": "Device-local recovery",
+        "title": "Local persistence",
+        "details": [
+          "Accepted recovery roots + assets",
+          "Replaceable physical storage",
+          "Independent native-file encoding"
+        ]
+      },
+      {
+        "id": "executor",
+        "row": 2,
+        "kind": "Optional method execution",
+        "title": "Execution host",
+        "optional": true,
+        "details": [
+          "Bounded Python sampler today",
+          "Native/remote methods require adapters",
+          "Returns data and execution evidence"
+        ]
+      },
+      {
+        "id": "recipient",
+        "row": 3,
+        "wide": true,
+        "kind": "A separate computer",
+        "title": "Fresh compatible reader",
+        "details": [
+          "Opens the transferred document with no original browser state",
+          "Reports inspection, editing and recomputation capabilities separately"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "file",
+        "to": "browser",
+        "fromSide": "bottom",
+        "toSide": "top",
+        "toRatio": 0.25,
+        "label": "Open / Save",
+        "two": true
+      },
+      {
+        "from": "host",
+        "to": "browser",
+        "fromSide": "bottom",
+        "toSide": "top",
+        "toRatio": 0.75,
+        "label": "App assets"
+      },
+      {
+        "from": "browser",
+        "to": "local",
+        "fromSide": "bottom",
+        "fromRatio": 0.25,
+        "toSide": "top",
+        "label": "Recovery data",
+        "two": true
+      },
+      {
+        "from": "browser",
+        "to": "executor",
+        "fromSide": "bottom",
+        "fromRatio": 0.75,
+        "toSide": "top",
+        "label": "Typed jobs",
+        "two": true,
+        "mode": "optional"
+      },
+      {
+        "from": "file",
+        "to": "recipient",
+        "fromSide": "left",
+        "toSide": "left",
+        "label": "Transfer file",
+        "route": "leftOuter",
+        "mode": "optional"
+      }
+    ],
+    "notes": [
+      "Today one Python process serves the app and exposes the sampler API. These are separate roles, not a requirement to create separate services.",
+      "A compatible application must be available to open the document. File portability does not itself install an offline application or provide missing tools."
+    ]
+  },
+  "ownership": {
+    "summary": "Interface requests, independent of deployment. One writer publishes authored state; readers and effect workers have bounded, different permissions.",
+    "nodes": [
+      {
+        "id": "ui",
+        "row": 0,
+        "wide": true,
+        "kind": "Read projections; submit intents",
+        "title": "Canvas UI / caller",
+        "details": [
+          "Direct selectors and subscriptions",
+          "Local attention and ephemeral preview state",
+          "Pointer / keyboard / future API callers"
+        ]
+      },
+      {
+        "id": "owner",
+        "row": 1,
+        "kind": "Only root publisher",
+        "title": "Operation owner",
+        "details": [
+          "Base check + authored Undo",
+          "Validate, publish, queue effects"
+        ]
+      },
+      {
+        "id": "domain",
+        "row": 1,
+        "kind": "Pure rules; no root or I/O",
+        "title": "Domain functions",
+        "details": [
+          "State + intent → candidate",
+          "Identity / reference / type rules"
+        ]
+      },
+      {
+        "id": "state",
+        "row": 2,
+        "kind": "Owns current root",
+        "title": "State store",
+        "details": [
+          "Authored selections + saved views",
+          "Immutable reads / change events"
+        ]
+      },
+      {
+        "id": "effects",
+        "row": 2,
+        "kind": "No authored writes",
+        "title": "Effect runner",
+        "details": [
+          "Pinned save / job tickets",
+          "Bounded queues + completions"
+        ]
+      },
+      {
+        "id": "codec",
+        "row": 3,
+        "kind": "Versioned data boundary",
+        "title": "Document codec",
+        "details": [
+          "Decode / migrate / encode",
+          "Checks + capability report"
+        ]
+      },
+      {
+        "id": "evaluation",
+        "row": 3,
+        "kind": "Derived runtime",
+        "title": "Evaluation",
+        "details": [
+          "Jobs / indexes / caches",
+          "Check current keys + results"
+        ]
+      },
+      {
+        "id": "assets",
+        "row": 4,
+        "kind": "Immutable resource I/O",
+        "title": "Resource access",
+        "details": [
+          "Pinned provider / range reads",
+          "Loading / missing / integrity"
+        ]
+      },
+      {
+        "id": "evidence",
+        "row": 4,
+        "kind": "Append-only evidence",
+        "title": "Receipt store",
+        "details": [
+          "Manifests + result assets",
+          "Arrival adds no authored Undo"
+        ]
+      },
+      {
+        "id": "persistence",
+        "row": 5,
+        "wide": true,
+        "kind": "Runs an explicit Save ticket",
+        "title": "Persistence adapter",
+        "details": [
+          "Persist required records/bytes before the durable root",
+          "Acknowledge the exact saved version or report failure",
+          "Never replace the accepted in-memory root"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "ui",
+        "to": "owner",
+        "fromSide": "bottom",
+        "fromRatio": 0.25,
+        "toSide": "top",
+        "label": "Commands"
+      },
+      {
+        "from": "ui",
+        "to": "state",
+        "fromSide": "left",
+        "toSide": "left",
+        "route": "leftOuter",
+        "label": "Select / subscribe",
+        "mode": "read"
+      },
+      {
+        "from": "owner",
+        "to": "domain",
+        "fromSide": "right",
+        "toSide": "left",
+        "label": "Check"
+      },
+      {
+        "from": "owner",
+        "to": "state",
+        "fromSide": "bottom",
+        "toSide": "top",
+        "label": "Publish"
+      },
+      {
+        "from": "owner",
+        "to": "effects",
+        "fromSide": "bottom",
+        "fromRatio": 0.8,
+        "toSide": "top",
+        "route": "elbow",
+        "label": "Effect tickets"
+      },
+      {
+        "from": "codec",
+        "to": "owner",
+        "fromSide": "left",
+        "toSide": "left",
+        "route": "leftInner",
+        "label": "Decoded Open"
+      },
+      {
+        "from": "codec",
+        "to": "state",
+        "fromSide": "top",
+        "toSide": "bottom",
+        "label": "Pin for Save",
+        "mode": "read"
+      },
+      {
+        "from": "codec",
+        "to": "assets",
+        "fromSide": "bottom",
+        "toSide": "top",
+        "label": "Read assets",
+        "mode": "read"
+      },
+      {
+        "from": "effects",
+        "to": "evaluation",
+        "fromSide": "bottom",
+        "toSide": "top",
+        "label": "Run job"
+      },
+      {
+        "from": "evaluation",
+        "to": "assets",
+        "fromSide": "left",
+        "toSide": "right",
+        "route": "sideElbow",
+        "label": "Source",
+        "mode": "read"
+      },
+      {
+        "from": "evaluation",
+        "to": "evidence",
+        "fromSide": "bottom",
+        "toSide": "top",
+        "label": "Append"
+      },
+      {
+        "from": "effects",
+        "to": "persistence",
+        "fromSide": "right",
+        "toSide": "right",
+        "route": "rightOuter",
+        "label": "Save ticket"
+      },
+      {
+        "from": "persistence",
+        "to": "assets",
+        "fromSide": "top",
+        "fromRatio": 0.25,
+        "toSide": "bottom",
+        "label": "Read assets",
+        "mode": "read"
+      }
+    ],
+    "notes": [
+      "The store owns the root; only the operation owner replaces it. Domain rules remain pure.",
+      "Reads bypass dispatch. One resource interface keeps large bytes outside snapshots and UI updates.",
+      "Arrows show requests; returns are implicit. Completions identify their pinned request. Receipt views use keyed queries."
+    ]
+  }
+}
+</script>
+<script>
+const graphs=JSON.parse(document.getElementById('architecture-graphs').textContent);
+const ns='http://www.w3.org/2000/svg';
+const views={};
+function el(tag,attributes={}){const result=document.createElementNS(ns,tag);for(const [key,value] of Object.entries(attributes))result.setAttribute(key,value);return result;}
+function build(key,graph){
+ const root=document.getElementById('diagram-'+key);root.setAttribute('role','img');root.setAttribute('aria-label',graph.summary);
+ const svg=el('svg',{'aria-hidden':'true'}),defs=el('defs'),marker=el('marker',{id:'arrow-'+key,markerWidth:8,markerHeight:8,refX:7,refY:4,orient:'auto-start-reverse'});
+ marker.append(el('path',{d:'M0,0 L8,4 L0,8',fill:'var(--muted-foreground)'}));defs.append(marker);svg.append(defs);const lines=el('g');svg.append(lines);root.append(svg);
+ const nodes={};
+ for(const row of [...new Set(graph.nodes.map(n=>n.row))].sort((a,b)=>a-b)){
+  const container=document.createElement('div');container.className='row';
+  for(const node of graph.nodes.filter(n=>n.row===row)){
+   const box=document.createElement('div');box.className='node'+(node.wide?' wide':'')+(node.optional?' optional':'');box.dataset.node=node.id;
+   const kind=document.createElement('span');kind.className='kind';kind.textContent=node.kind;
+   const title=document.createElement('strong');title.textContent=node.title;box.append(kind,title);
+   for(const detail of node.details){const span=document.createElement('span');span.className='detail';span.textContent=detail;box.append(span);}
+   nodes[node.id]=box;container.append(box);
+  }root.append(container);
+ }
+ document.getElementById(key+'-summary').textContent=graph.summary;
+ for(const note of graph.notes){const p=document.createElement('p');p.textContent=note;document.getElementById(key+'-notes').append(p);}
+ views[key]={root,svg,lines,nodes,graph};
+}
+function port(view,id,side,ratio=0.5){const a=view.nodes[id].getBoundingClientRect(),b=view.root.getBoundingClientRect();const x=a.x-b.x,y=a.y-b.y;return side==='top'?[x+a.width*ratio,y]:side==='bottom'?[x+a.width*ratio,y+a.height]:side==='left'?[x,y+a.height*ratio]:[x+a.width,y+a.height*ratio];}
+function draw(key){
+ const v=views[key];if(!v.root.clientWidth)return;
+ v.svg.setAttribute('viewBox',`0 0 ${v.root.clientWidth} ${v.root.clientHeight}`);v.lines.replaceChildren();
+ for(const e of v.graph.edges){
+  const a=port(v,e.from,e.fromSide,e.fromRatio),b=port(v,e.to,e.toSide,e.toRatio);
+  let points=[a,b],x=(a[0]+b[0])/2,y=(a[1]+b[1])/2,rotation=0;
+  if(e.route==='elbow'){const mid=a[1]+(b[1]-a[1])*0.4;points=[a,[a[0],mid],[b[0],mid],b];x=(a[0]+b[0])/2;y=mid;}
+  if(e.route==='sideElbow'){const mid=(a[0]+b[0])/2;points=[a,[mid,a[1]],[mid,b[1]],b];x=mid;y=(a[1]+b[1])/2;}
+  if(e.route==='leftOuter'||e.route==='leftInner'){x=e.route==='leftInner'?28:8;y=(a[1]+b[1])/2;points=[a,[x,a[1]],[x,b[1]],b];rotation=-90;}
+  if(e.route==='rightOuter'){x=v.root.clientWidth-8;y=(a[1]+b[1])/2;points=[a,[x,a[1]],[x,b[1]],b];rotation=90;}
+  const path=el('path',{d:points.map((p,i)=>(i?'L':'M')+p.join(',')).join(' '),class:'edge '+(e.mode||''),'marker-end':`url(#arrow-${key})`});if(e.two)path.setAttribute('marker-start',`url(#arrow-${key})`);v.lines.append(path);
+  const text=el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle',class:'label'});text.textContent=e.label;if(rotation)text.setAttribute('transform',`rotate(${rotation} ${x} ${y})`);v.lines.append(text);
+  const r=text.getBBox(),back=el('rect',{x:r.x-4,y:r.y-3,width:r.width+8,height:r.height+6,class:'label-bg'});if(rotation)back.setAttribute('transform',`rotate(${rotation} ${x} ${y})`);v.lines.insertBefore(back,text);
+ }
+}
+function select(key){for(const id of Object.keys(graphs)){document.getElementById('panel-'+id).hidden=id!==key;document.getElementById('tab-'+id).setAttribute('aria-selected',String(id===key));}draw(key);}
+for(const [key,graph] of Object.entries(graphs)){build(key,graph);document.getElementById('tab-'+key).addEventListener('click',()=>select(key));new ResizeObserver(()=>draw(key)).observe(views[key].root);}
+const tabKeys=Object.keys(graphs);for(const key of tabKeys){document.getElementById('tab-'+key).addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const index=event.key==='Home'?0:event.key==='End'?tabKeys.length-1:(tabKeys.indexOf(key)+(event.key==='ArrowRight'?1:-1)+tabKeys.length)%tabKeys.length;select(tabKeys[index]);document.getElementById('tab-'+tabKeys[index]).focus();});}
+// Exercise both views at preview time; restore the chosen initial view afterwards.
+for(const key of tabKeys){select(key);const v=views[key],bounds=v.root.getBoundingClientRect();for(const node of Object.values(v.nodes)){const r=node.getBoundingClientRect();if(r.left<bounds.left-1||r.right>bounds.right+1)throw Error('Diagram node overflow: '+key);}if(v.lines.querySelectorAll('path').length!==v.graph.edges.length)throw Error('Missing flow: '+key);}
+select('ownership');
+console.log('Both diagrams render from shared graph data; tabs, node bounds and edge counts checked.');
+</script>
+</body></html>

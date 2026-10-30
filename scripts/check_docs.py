@@ -1,5 +1,6 @@
 """Check local links and heading anchors in the proposed Git checkout."""
 
+import argparse
 import re
 import subprocess
 from pathlib import Path
@@ -9,8 +10,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> int:
-    # Check the proposed checkout, without pulling local research into the baseline.
-    tracked = set(subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0"))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--worktree", action="store_true",
+        help="Include nonignored untracked files while reviewing unstaged designs",
+    )
+    args = parser.parse_args()
+    # Keep the default index-based review; never stage files just to check local drafts.
+    command = ["git", "ls-files", "-z"]
+    if args.worktree:
+        command.extend(["--cached", "--others", "--exclude-standard"])
+    tracked = set(subprocess.check_output(command, cwd=ROOT).decode().split("\0"))
     files = [ROOT / name for name in tracked if name.endswith(".md")]
     errors = []
     for path in sorted(files):

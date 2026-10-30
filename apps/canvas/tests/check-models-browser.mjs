@@ -1,3 +1,5 @@
+import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
+import { readWorkspace } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
@@ -62,13 +64,9 @@ await page.addInitScript(
       );
     }
   },
-  archive(s.state, [artifact]),
+  legacyWorkspace(s.state, [artifact]),
 );
-const read = () =>
-  page.evaluate(
-    () =>
-      JSON.parse(localStorage.getItem("manifold.artifact-experiment.v1")).page,
-  );
+const read = async () => (await readWorkspace(page)).page;
 const camera = () =>
   page.locator(".er-canvas").evaluate((n) => ({
     x: n.scrollLeft - Number(n.dataset.canvasOriginX || 0),
@@ -195,7 +193,10 @@ try {
   await page.getByLabel("Write an engineering region").press("Escape");
   await page.locator(`[data-region-id="${temp}"] math`).dblclick();
   await page.getByLabel("Write an engineering region").press("Enter");
-  const nextId = (await read()).regions.find((r) => r.text === "")?.id;
+  expect((await read()).regions.some((r) => r.text === "")).toBe(false);
+  const nextId = await page
+    .getByLabel("Write an engineering region")
+    .evaluate((el) => el.closest("[data-region-id]").dataset.regionId);
   await page
     .getByLabel("Write an engineering region")
     .fill("Internal cooling note.");
@@ -322,6 +323,7 @@ try {
   await system
     .getByRole("button", { name: "Enter model Cooling system", exact: true })
     .click();
+  await expect(page.getByRole("main")).toHaveAttribute("aria-busy", "false");
   await thermal
     .getByLabel("Detail for Thermal balance")
     .selectOption("interface");
@@ -331,6 +333,7 @@ try {
   await thermal
     .getByRole("button", { name: "Enter model Thermal balance", exact: true })
     .click();
+  await expect(page.getByRole("main")).toHaveAttribute("aria-busy", "false");
   await expect(
     page.locator(`[data-region-id="${temp}"] math`),
   ).toBeInViewport();
@@ -375,7 +378,7 @@ try {
     viewport: { width: 1600, height: 1000 },
   });
   evidence.on("pageerror", (e) => errors.push(e.message));
-  const evidenceArchive = archive(paired.state, []);
+  const evidenceArchive = legacyWorkspace(paired.state, []);
   await evidence.addInitScript(
     (text) => localStorage.setItem("manifold.artifact-experiment.v1", text),
     evidenceArchive,
@@ -410,13 +413,7 @@ try {
     evidence.locator(`[data-data-relation-id="${calculated}"]`),
   ).toBeVisible();
   await expect(evidence.getByLabel("Data source paired.csv")).toBeHidden();
-  expect(
-    await evidence.evaluate(
-      () =>
-        JSON.parse(localStorage.getItem("manifold.artifact-experiment.v1"))
-          .page,
-    ),
-  ).toEqual(paired.state);
+  expect((await readWorkspace(evidence)).page).toEqual(paired.state);
   await evidence.close();
   checks.push(
     "Dataset provenance crosses a model boundary to the original source record and Back returns to the result without changing evidence or computation",

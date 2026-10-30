@@ -1,0 +1,416 @@
+{
+  "format": "manifold-region-artifacts",
+  "version": 4,
+  "foundation": {
+    "format": "manifold-foundation",
+    "version": 2,
+    "document": {
+      "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+      "id": "root:3a0cd89a-810d-477a-ad68-3a6a6c16fdba",
+      "sequence": 8,
+      "evidenceSequence": 0,
+      "identities": {
+        "items": [
+          "artifact:artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d",
+          "canvas",
+          "context:original",
+          "region:region-1",
+          "region:region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+          "region:region-3",
+          "region:region-5",
+          "region:region-508a1465-38d2-49a0-84a6-24fab9b62298"
+        ],
+        "revisions": [
+          "revision:08d669e2-463c-441b-9f43-24c4e1f0f0dc",
+          "revision:0ac13039-603d-4fc0-aa6b-e0bc43807c75",
+          "revision:1c931613-9661-4268-b5ea-dad59314cecc",
+          "revision:201d6008-3b53-47fb-849f-746cd42c497b",
+          "revision:2163456c-ef13-4794-aa95-c897862455e8",
+          "revision:34fda998-eafc-41c2-b28d-b41ab60308ac",
+          "revision:36275941-e60e-4cd8-adfb-f971726727e1",
+          "revision:3a7eb54b-c03a-4efd-9ac7-e6f52faf6690",
+          "revision:491db513-c502-4d63-b1e2-429d7b590c62",
+          "revision:771c5bd9-993a-4b1c-a384-220c691ae2dd",
+          "revision:82c47627-0856-493e-bbc6-d4fbd36ea6dd",
+          "revision:a47eb3db-e7c3-4cd6-a5ab-a292871860c9",
+          "revision:a5fc0d15-6921-4744-a938-a7dad5bb3134",
+          "revision:b48718d1-5b6b-4aed-ba6a-271d0867d87d",
+          "revision:c8bceb12-d63c-4256-8e07-6432a6c1d822"
+        ],
+        "views": [
+          "view:0112514b-cab6-48dc-ad1f-40ddbf13b7b8",
+          "view:0b44eb66-2802-4072-8e52-f8c1d7dbb5b3",
+          "view:6cccee27-3e9d-4c7c-8bf6-4d63d66d0641",
+          "view:c45680dc-778d-4f5d-8698-bb57b3fe05bc",
+          "view:cb83dda3-d495-44bf-94dd-dddffd6d5cd4",
+          "view:d6fcc706-472c-4ad5-b06f-39ba96107fa8"
+        ],
+        "alternatives": [],
+        "receipts": []
+      },
+      "items": {
+        "artifact:artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d": {
+          "id": "artifact:artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d",
+          "label": "artifact:artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d",
+          "revision": "revision:b48718d1-5b6b-4aed-ba6a-271d0867d87d"
+        },
+        "canvas": {
+          "id": "canvas",
+          "label": "Canvas",
+          "revision": "revision:201d6008-3b53-47fb-849f-746cd42c497b"
+        },
+        "context:original": {
+          "id": "context:original",
+          "label": "context:original",
+          "revision": "revision:c8bceb12-d63c-4256-8e07-6432a6c1d822"
+        },
+        "region:region-1": {
+          "id": "region:region-1",
+          "label": "region:region-1",
+          "revision": "revision:82c47627-0856-493e-bbc6-d4fbd36ea6dd"
+        },
+        "region:region-2c3b10bb-5532-4194-a0b4-b7223f65b1de": {
+          "id": "region:region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+          "label": "region:region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+          "revision": "revision:a47eb3db-e7c3-4cd6-a5ab-a292871860c9"
+        },
+        "region:region-3": {
+          "id": "region:region-3",
+          "label": "region:region-3",
+          "revision": "revision:491db513-c502-4d63-b1e2-429d7b590c62"
+        },
+        "region:region-5": {
+          "id": "region:region-5",
+          "label": "region:region-5",
+          "revision": "revision:0ac13039-603d-4fc0-aa6b-e0bc43807c75"
+        },
+        "region:region-508a1465-38d2-49a0-84a6-24fab9b62298": {
+          "id": "region:region-508a1465-38d2-49a0-84a6-24fab9b62298",
+          "label": "region:region-508a1465-38d2-49a0-84a6-24fab9b62298",
+          "revision": "revision:3a7eb54b-c03a-4efd-9ac7-e6f52faf6690"
+        }
+      },
+      "revisions": {
+        "revision:0ac13039-603d-4fc0-aa6b-e0bc43807c75": {
+          "id": "revision:0ac13039-603d-4fc0-aa6b-e0bc43807c75",
+          "item": "region:region-5",
+          "schema": "canvas-record@1",
+          "required": true,
+          "body": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "kind": "region",
+            "value": {
+              "id": "region-5",
+              "text": "F := gain*x"
+            }
+          }
+        },
+        "revision:201d6008-3b53-47fb-849f-746cd42c497b": {
+          "id": "revision:201d6008-3b53-47fb-849f-746cd42c497b",
+          "item": "canvas",
+          "schema": "canvas-workspace@1",
+          "required": true,
+          "body": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "active": "original",
+            "origin": {
+              "x": 110,
+              "y": 110
+            },
+            "artifacts": ["artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d"],
+            "regions": [
+              "region-1",
+              "region-3",
+              "region-5",
+              "region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+              "region-508a1465-38d2-49a0-84a6-24fab9b62298"
+            ],
+            "contexts": ["original"],
+            "plots": []
+          }
+        },
+        "revision:3a7eb54b-c03a-4efd-9ac7-e6f52faf6690": {
+          "id": "revision:3a7eb54b-c03a-4efd-9ac7-e6f52faf6690",
+          "item": "region:region-508a1465-38d2-49a0-84a6-24fab9b62298",
+          "schema": "canvas-record@1",
+          "required": true,
+          "body": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "kind": "region",
+            "value": {
+              "id": "region-508a1465-38d2-49a0-84a6-24fab9b62298",
+              "text": "gain := 10 (kg*m/s^2)/mm",
+              "source": {
+                "dataset": "region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+                "row": 0,
+                "column": 0,
+                "raw": "10",
+                "unit": "N/mm"
+              }
+            }
+          }
+        },
+        "revision:491db513-c502-4d63-b1e2-429d7b590c62": {
+          "id": "revision:491db513-c502-4d63-b1e2-429d7b590c62",
+          "item": "region:region-3",
+          "schema": "canvas-record@1",
+          "required": true,
+          "body": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "kind": "region",
+            "value": {
+              "id": "region-3",
+              "text": "x := 1 mm"
+            }
+          }
+        },
+        "revision:82c47627-0856-493e-bbc6-d4fbd36ea6dd": {
+          "id": "revision:82c47627-0856-493e-bbc6-d4fbd36ea6dd",
+          "item": "region:region-1",
+          "schema": "canvas-record@1",
+          "required": true,
+          "body": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "kind": "region",
+            "value": {
+              "id": "region-1",
+              "text": "k := 10 N/mm"
+            }
+          }
+        },
+        "revision:a47eb3db-e7c3-4cd6-a5ab-a292871860c9": {
+          "id": "revision:a47eb3db-e7c3-4cd6-a5ab-a292871860c9",
+          "item": "region:region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+          "schema": "canvas-record@1",
+          "required": true,
+          "body": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "kind": "region",
+            "value": {
+              "id": "region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+              "text": "Data · source.csv",
+              "data": {
+                "name": "source.csv",
+                "csv": "gain,comment\n10,measured"
+              }
+            }
+          }
+        },
+        "revision:b48718d1-5b6b-4aed-ba6a-271d0867d87d": {
+          "id": "revision:b48718d1-5b6b-4aed-ba6a-271d0867d87d",
+          "item": "artifact:artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d",
+          "schema": "canvas-artifact@1",
+          "required": true,
+          "body": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "value": {
+              "id": "artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d",
+              "output": "region-5",
+              "input": "region-3",
+              "low": 0.0005,
+              "high": 0.003,
+              "source": "model-derived-python",
+              "request": "Plot F versus x from 0.5 to 3 mm"
+            }
+          }
+        },
+        "revision:c8bceb12-d63c-4256-8e07-6432a6c1d822": {
+          "id": "revision:c8bceb12-d63c-4256-8e07-6432a6c1d822",
+          "item": "context:original",
+          "schema": "canvas-record@1",
+          "required": true,
+          "body": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "kind": "context",
+            "value": {
+              "id": "original",
+              "label": "Original",
+              "base": {},
+              "overrides": {}
+            }
+          }
+        }
+      },
+      "views": {
+        "view:0112514b-cab6-48dc-ad1f-40ddbf13b7b8": {
+          "id": "view:0112514b-cab6-48dc-ad1f-40ddbf13b7b8",
+          "renderer": "canvas-region@1",
+          "reference": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "item": "region:region-1",
+            "selection": {
+              "kind": "follow"
+            },
+            "selector": {
+              "explicit": false
+            }
+          },
+          "x": 110,
+          "y": 110,
+          "alternative": null
+        },
+        "view:0b44eb66-2802-4072-8e52-f8c1d7dbb5b3": {
+          "id": "view:0b44eb66-2802-4072-8e52-f8c1d7dbb5b3",
+          "renderer": "canvas-artifact-view@1",
+          "reference": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "item": "artifact:artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d",
+            "selection": {
+              "kind": "follow"
+            },
+            "selector": {
+              "id": "artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d",
+              "renderer": "plot",
+              "width": 600,
+              "height": 410,
+              "order": 0
+            }
+          },
+          "x": 665,
+          "y": 110,
+          "alternative": null
+        },
+        "view:6cccee27-3e9d-4c7c-8bf6-4d63d66d0641": {
+          "id": "view:6cccee27-3e9d-4c7c-8bf6-4d63d66d0641",
+          "renderer": "canvas-region@1",
+          "reference": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "item": "region:region-3",
+            "selection": {
+              "kind": "follow"
+            },
+            "selector": {
+              "explicit": false
+            }
+          },
+          "x": 110,
+          "y": 202,
+          "alternative": null
+        },
+        "view:c45680dc-778d-4f5d-8698-bb57b3fe05bc": {
+          "id": "view:c45680dc-778d-4f5d-8698-bb57b3fe05bc",
+          "renderer": "canvas-region@1",
+          "reference": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "item": "region:region-508a1465-38d2-49a0-84a6-24fab9b62298",
+            "selection": {
+              "kind": "follow"
+            },
+            "selector": {
+              "explicit": true
+            }
+          },
+          "x": 100,
+          "y": 600,
+          "alternative": null
+        },
+        "view:cb83dda3-d495-44bf-94dd-dddffd6d5cd4": {
+          "id": "view:cb83dda3-d495-44bf-94dd-dddffd6d5cd4",
+          "renderer": "canvas-region@1",
+          "reference": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "item": "region:region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+            "selection": {
+              "kind": "follow"
+            },
+            "selector": {
+              "explicit": true
+            }
+          },
+          "x": 100,
+          "y": 800,
+          "alternative": null
+        },
+        "view:d6fcc706-472c-4ad5-b06f-39ba96107fa8": {
+          "id": "view:d6fcc706-472c-4ad5-b06f-39ba96107fa8",
+          "renderer": "canvas-region@1",
+          "reference": {
+            "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+            "item": "region:region-5",
+            "selection": {
+              "kind": "follow"
+            },
+            "selector": {
+              "explicit": false
+            }
+          },
+          "x": 110,
+          "y": 294,
+          "alternative": null
+        }
+      },
+      "alternatives": {}
+    },
+    "contexts": {},
+    "snapshots": {},
+    "receipts": [],
+    "assets": {}
+  },
+  "results": [
+    {
+      "artifact": "artifact-61484b67-5528-4bf2-a8a1-0b5832d55b6d",
+      "receipt": {
+        "points": [
+          [0.0005, 5],
+          [0.003, 30]
+        ],
+        "code_sha256": "734e6370d3bda1aff2567ad970e74157c1e321db21eab2ab5416f82049a24781",
+        "runtime": {
+          "adapter": "bounded-python-sampler/1",
+          "python": "v4-fixture"
+        },
+        "key": "[2,\"original\",[{\"id\":\"region-3\",\"text\":\"x := 1 mm\"},{\"id\":\"region-5\",\"text\":\"F := gain*x\"},{\"id\":\"region-508a1465-38d2-49a0-84a6-24fab9b62298\",\"text\":\"gain := 10 (kg*m/s^2)/mm\"}],{\"region-3\":{},\"region-5\":{\"gain\":\"region-508a1465-38d2-49a0-84a6-24fab9b62298\",\"x\":\"region-3\"},\"region-508a1465-38d2-49a0-84a6-24fab9b62298\":{}},[{\"column\":0,\"raw\":\"10\",\"reference\":{\"document\":\"canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449\",\"item\":\"region:region-2c3b10bb-5532-4194-a0b4-b7223f65b1de\",\"selection\":{\"kind\":\"pin\",\"revision\":\"revision:a47eb3db-e7c3-4cd6-a5ab-a292871860c9\"},\"selector\":null},\"region\":\"region-508a1465-38d2-49a0-84a6-24fab9b62298\",\"row\":0,\"unit\":\"N/mm\"}],\"region-3\",\"region-5\",0.0005,0.003,\"# Model-derived Python. Scalars use canonical SI units.\\n# x: x (m); y: F (N)\\nx = linspace(0.0005, 0.003, 201)\\ny = [(v0 * a) for a in x]\\n\",{\"v0\":10000}]",
+        "code": "# Model-derived Python. Scalars use canonical SI units.\n# x: x (m); y: F (N)\nx = linspace(0.0005, 0.003, 201)\ny = [(v0 * a) for a in x]\n",
+        "inputs": {
+          "v0": 10000
+        },
+        "context": "original",
+        "definitions": [
+          {
+            "id": "region-3",
+            "text": "x := 1 mm"
+          },
+          {
+            "id": "region-5",
+            "text": "F := gain*x"
+          },
+          {
+            "id": "region-508a1465-38d2-49a0-84a6-24fab9b62298",
+            "text": "gain := 10 (kg*m/s^2)/mm"
+          }
+        ],
+        "bindings": {
+          "v0": "region-508a1465-38d2-49a0-84a6-24fab9b62298"
+        },
+        "snapshot": 2,
+        "dependencies": {
+          "region-3": {},
+          "region-5": {
+            "gain": "region-508a1465-38d2-49a0-84a6-24fab9b62298",
+            "x": "region-3"
+          },
+          "region-508a1465-38d2-49a0-84a6-24fab9b62298": {}
+        },
+        "sources": [
+          {
+            "region": "region-508a1465-38d2-49a0-84a6-24fab9b62298",
+            "reference": {
+              "document": "canvas:a817595b-b3fb-48f2-9b6c-7759f33b3449",
+              "item": "region:region-2c3b10bb-5532-4194-a0b4-b7223f65b1de",
+              "selection": {
+                "kind": "pin",
+                "revision": "revision:a47eb3db-e7c3-4cd6-a5ab-a292871860c9"
+              },
+              "selector": null
+            },
+            "row": 0,
+            "column": 0,
+            "raw": "10",
+            "unit": "N/mm"
+          }
+        ],
+        "time": "2026-10-26T12:48:16.742Z"
+      }
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import {
   RegionSession,
@@ -77,7 +78,7 @@ assert.ok(s.connect(planConnection(s.state, strict, temperature)).ok);
 assert.equal(project(s.state).solved.constraints.get(strict).pass, false);
 assert.equal(project(s.state).bindings[strict].T, temperature);
 const roundTrip = restore(
-  archive(s.state, [{ ...plotting, requirement: strict }]),
+  legacyWorkspace(s.state, [{ ...plotting, requirement: strict }]),
 );
 assert.equal(roundTrip.page.links[strict].T, temperature);
 assert.equal(roundTrip.artifacts[0].requirement, strict);
@@ -122,7 +123,7 @@ for (const context of s.state.contexts) {
   assert.equal(projection.bindings[twice].A_cool, area);
   assert.equal(projection.solved.values.get("area_copy").value, 0.2);
   // Rebuilding from portable definitions must agree with the working session.
-  const clean = new RegionSession(restore(archive(s.state, [])).page);
+  const clean = new RegionSession(restore(legacyWorkspace(s.state, [])).page);
   assert.equal(
     semanticKey(clean.state, context.id),
     semanticKey(s.state, context.id),
@@ -138,7 +139,7 @@ for (const links of [
   { [twice]: { "bad alias": area } },
   JSON.parse(`{"${twice}":{"__proto__":"${area}"}}`),
 ]) {
-  const invalid = JSON.parse(archive(s.state, []));
+  const invalid = JSON.parse(legacyWorkspace(s.state, []));
   invalid.page.links = links;
   assert.throws(
     () => restore(JSON.stringify(invalid)),

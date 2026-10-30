@@ -73,3 +73,22 @@ export function caretInSpan(span: SourceSpan, fraction: number): SourceSpan {
     Math.round((span.end - span.start) * Math.max(0, Math.min(1, fraction)));
   return { start: offset, end: offset };
 }
+
+/** Numeric source ranges for direct editing and literal exploration. */
+export function sourceSpans(text: string): { start: number; end: number }[] {
+  const offset = /^\s*[A-Za-z_][A-Za-z_0-9]*\s*(?::=|<=|>=|<|>|=|≤|≥)/.test(
+    text,
+  )
+    ? text.search(/(?::=|<=|>=|<|>|=|≤|≥)/)
+    : -1;
+  return [
+    ...text.matchAll(
+      /(?<![A-Za-z_0-9.])(?:\d*\.\d+|\d+(?:\.\d*)?)(?:[eE][+-]?\d+)?/g,
+    ),
+  ]
+    .filter((match) => match.index > offset)
+    .map((match) => ({
+      start: match.index,
+      end: match.index + match[0].length,
+    }));
+}

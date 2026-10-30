@@ -1,5 +1,5 @@
 /** View-local proposals: existing arithmetic, no writes or evaluation receipts. */
-import { unitLabel } from "../notebook/math.ts";
+import { unitLabel, type Quantity } from "../notebook/math.ts";
 import {
   project,
   semanticKey,
@@ -14,6 +14,23 @@ export type Exploration = {
   text: string;
   value: number;
 };
+export type VariationRange = { low: number; high: number; step: number };
+export function variationRange(q: Quantity): VariationRange {
+  const shown = q.absolute ? q.value - 273.15 : q.value;
+  const step = Math.abs(shown) / 100 || 0.01;
+  const span = Math.abs(shown) * 0.65 || 1;
+  return { low: q.value - span, high: q.value + span, step };
+}
+/** Bounds constrain exploration only; they are not physical requirements. */
+export function boundedValue(value: number, range: VariationRange): number {
+  if (
+    ![value, range.low, range.high, range.step].every(Number.isFinite) ||
+    range.low >= range.high ||
+    range.step <= 0
+  )
+    throw Error("Use a finite minimum below the maximum and a positive step.");
+  return Math.max(range.low, Math.min(range.high, value));
+}
 export function proposeValue(
   page: Page,
   input: string,
@@ -32,16 +49,24 @@ export function proposeValue(
     throw Error("Choose a resolved assigned quantity to explore.");
   const shown = q.absolute ? value - 273.15 : value;
   const text =
-    `${s.name} := ${Number(shown.toPrecision(7))} ${unitLabel(q)}`.trim();
+    value === q.value
+      ? p.texts[input]
+      : `${s.name} := ${Number(shown.toPrecision(7))} ${unitLabel(q)}`.trim();
   return { input, context: page.active, key: semanticKey(page), text, value };
 }
+/** Layout changes preserve proposals; scenario or semantic changes make them stale. */
+export function isCurrentExploration(
+  page: Page,
+  proposal?: Exploration,
+): proposal is Exploration {
+  return (
+    !!proposal &&
+    proposal.context === page.active &&
+    proposal.key === semanticKey(page)
+  );
+}
 export function previewPage(page: Page, proposal?: Exploration): Page {
-  if (
-    !proposal ||
-    proposal.context !== page.active ||
-    proposal.key !== semanticKey(page)
-  )
-    return page;
+  if (!isCurrentExploration(page, proposal)) return page;
   return {
     ...page,
     contexts: page.contexts.map((c) =>

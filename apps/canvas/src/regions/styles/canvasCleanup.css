@@ -1,0 +1,66 @@
+.canvas-cleanup {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 22px;
+  border: 1px solid var(--canvas-line, #d7d5ce);
+  border-radius: 10px;
+  background: var(--canvas-surface, #fdfcf9);
+  color: var(--canvas-text, #272b27);
+  font:
+    14px/1.5 "DM Sans Variable",
+    sans-serif;
+}
+.canvas-cleanup::backdrop {
+  background: rgb(20 25 20 / 28%);
+}
+.canvas-cleanup header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.canvas-cleanup h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.canvas-cleanup fieldset {
+  margin: 18px 0;
+  padding: 14px;
+  border: 1px solid var(--canvas-line, #d7d5ce);
+  border-radius: 6px;
+}
+.canvas-cleanup legend {
+  font-weight: 600;
+}
+.canvas-cleanup p {
+  margin: 10px 0;
+}
+.canvas-cleanup button {
+  margin: 4px 8px 4px 0;
+  padding: 7px 12px;
+  border: 1px solid var(--canvas-line, #c8cdc3);
+  border-radius: 5px;
+  background: var(--canvas-surface-soft, #f2f3ed);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.canvas-cleanup button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.canvas-cleanup button:focus-visible {
+  outline: 2px solid var(--canvas-accent, #657d67);
+  outline-offset: 2px;
+}
+.canvas-cleanup small,
+.canvas-cleanup-note {
+  display: block;
+  font-size: 12px;
+  color: var(--canvas-muted, #626b62);
+}
+.canvas-cleanup [role="alert"] {
+  color: var(--canvas-danger, #8a4a28);
+}

@@ -1,3 +1,4 @@
+import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { RegionSession, project } from "../src/regions/document.ts";
 import { evaluateDataset } from "../src/regions/datasetModel.ts";
@@ -77,7 +78,7 @@ console.log(
 // Reproduction from a clean document, context changes, archived identities and failure recovery.
 const { archive, restore } = await import("../src/regions/artifacts.ts");
 const { measurementOverlay } = await import("../src/regions/datasetModel.ts");
-const saved = archive(s.state, []),
+const saved = legacyWorkspace(s.state, []),
   loaded = new RegionSession(restore(saved).page);
 assert.deepEqual(
   evaluateDataset(loaded.state, loaded.state.dataRelations[0]).records,

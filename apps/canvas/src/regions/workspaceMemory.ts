@@ -1,3 +1,4 @@
+import { canonical, type Json } from "@manifold/foundation";
 import { workspaceStorage } from "./workspaceStorage.ts";
 import type { Page } from "./document.ts";
 import type { Camera } from "./canvasScene.ts";
@@ -8,7 +9,7 @@ export type ModelLocation = {
   view?: "system" | "canvas";
 };
 export type WorkspaceMemory = ModelLocation & {
-  version: 1;
+  version: 1 | 2;
   document: string;
   selected?: string;
   selection: string[];
@@ -35,28 +36,32 @@ function hashDocument(text: string): string {
     hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
   return (hash >>> 0).toString(36);
 }
+function content(page: Page) {
+  return [
+    page.regions.map(
+      ({
+        label,
+        displayUnit,
+        interfaceHidden,
+        requirement,
+        provisional,
+        ...region
+      }) => region,
+    ),
+    page.models?.map(({ presentation, ...model }) => model),
+    page.dataRelations,
+  ];
+}
 export function documentKey(page: Page): string {
   return hashDocument(
-    JSON.stringify([
-      page.regions.map(
-        ({
-          label,
-          displayUnit,
-          interfaceHidden,
-          requirement,
-          provisional,
-          ...region
-        }) => region,
-      ),
-      page.models?.map(({ presentation, ...model }) => model),
-      page.dataRelations,
-    ]),
+    canonical(JSON.parse(JSON.stringify(content(page))) as Json),
   );
 }
 export function restoreMemory(
   raw: string | null,
   page: Page,
   representations: string[] = [],
+  document?: string,
 ): WorkspaceMemory | undefined {
   try {
     if (!raw || raw.length > 64000) return;
@@ -69,12 +74,16 @@ export function restoreMemory(
     const scope = (id: unknown) =>
       id === undefined || page.models?.some((m) => m.id === id);
     if (
-      value.version !== 1 ||
-      (value.document !== documentKey(page) &&
-        value.document !==
-          hashDocument(
-            JSON.stringify([page.regions, page.models, page.dataRelations]),
-          )) ||
+      (value.version === 2
+        ? !document || value.document !== document
+        : value.version !== 1 ||
+          ![
+            documentKey(page),
+            hashDocument(JSON.stringify(content(page))),
+            hashDocument(
+              JSON.stringify([page.regions, page.models, page.dataRelations]),
+            ),
+          ].includes(value.document)) ||
       !camera(value.camera) ||
       !scope(value.scope)
     )
@@ -87,8 +96,8 @@ export function restoreMemory(
       ...representations,
     ]);
     return {
-      version: 1,
-      document: documentKey(page),
+      version: document ? 2 : 1,
+      document: document ?? documentKey(page),
       camera: value.camera,
       scope: value.scope,
       selected:

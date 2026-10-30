@@ -1,3 +1,4 @@
+import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import {
   RegionSession,
@@ -55,7 +56,10 @@ const before = semanticKey(session.state);
 session.write(first, "1+2 =");
 assert.notEqual(semanticKey(session.state), before);
 assert.equal(value(first), 3);
-assert.deepEqual(restore(archive(session.state, [])).page, session.state);
+assert.deepEqual(
+  restore(legacyWorkspace(session.state, [])).page,
+  session.state,
+);
 console.log(
   "Bare expressions evaluate without user names; identity, live dependencies, units, incomplete work, errors, source spans, Undo and archives pass.",
 );

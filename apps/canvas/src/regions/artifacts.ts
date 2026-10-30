@@ -1,3 +1,38 @@
+export { archive } from "./app/workspaceCodec.ts";
+import { checkWorkspaceFileSize } from "./app/workspaceCodec.ts";
+import {
+  CanvasStorageBudget,
+  CANVAS_NATIVE_LIMITS,
+} from "./app/canvasStorageBudget.ts";
+import { SharedMap } from "@manifold/foundation";
+import { validArtifactReceipt } from "./artifactRecords.ts";
+import {
+  legacyCanvasLoaded,
+  canvasSerial,
+  canvasPage,
+  canvasArtifacts,
+  canvasObservedArtifacts,
+  readCanvasDocument,
+  canvasSchemas,
+  canvasMethods,
+  type CanvasRecovery,
+  validateCanvasDocument,
+} from "./app/canvasDocument.ts";
+import {
+  canonical,
+  object,
+  fields,
+  decode,
+  webHash,
+  byteLength,
+  type Reference,
+  type Json,
+} from "@manifold/foundation";
+import type { Document as FoundationDocument } from "@manifold/foundation";
+import { migrateSamplingResults } from "./samplingMigration.ts";
+import { prepareSceneLoaded } from "./sceneRecords.ts";
+import type { ArtifactResult } from "./artifactRecords.ts";
+import { validateKeptCalculation } from "./worksheetHistory.ts";
 import { workspaceStorage } from "./workspaceStorage.ts";
 /** One experiment protocol. Native Python lowering, never an AI-service impersonation. */
 import {
@@ -17,6 +52,12 @@ import {
   type Plot,
 } from "./document.ts";
 
+import {
+  validateSourceEvidence,
+  sourceSelection,
+  type SourceSelection,
+  type SourceEvidence,
+} from "./resultSnapshot.ts";
 import { readCsv } from "./dataSources.ts";
 import { validateModels } from "./models.ts";
 import { validateExternalReference } from "./externalReference.ts";
@@ -27,6 +68,10 @@ export type Job = {
   context: string;
   definitions: { id: string; text: string }[];
   bindings: Record<string, string>;
+  snapshot: 2;
+  dependencies: Record<string, Record<string, string>>;
+  sources: SourceEvidence[];
+  legacy: { key: string; definitions: ReturnType<typeof effective> };
 };
 export type Data = {
   points: [number, number][];
@@ -78,6 +123,9 @@ export type Artifact = {
     definitions: { id: string; text: string }[];
     time: string;
     bindings: Record<string, string>;
+    snapshot?: 2;
+    dependencies?: Record<string, Record<string, string>>;
+    sources?: SourceEvidence[];
   };
 };
 export const STORAGE = workspaceStorage("manifold.artifact-experiment.v1");
@@ -156,7 +204,11 @@ export function makeArtifact(
     height: 410,
   };
 }
-export function prepare(page: Page, a: Artifact): Job {
+export function prepare(
+  page: Page,
+  a: Artifact,
+  document?: FoundationDocument | SourceSelection,
+): Job {
   const { p, xq, yq } = names(page, a),
     inputs: Record<string, number> = {},
     bindings: Record<string, string> = {},
@@ -196,7 +248,7 @@ export function prepare(page: Page, a: Artifact): Job {
   const code =
     a.code ??
     `# Model-derived Python. Scalars use canonical SI units.\n# x: ${p.statements.get(a.input)!.name} (${unitLabel(xq)}); y: ${p.statements.get(a.output)!.name} (${unitLabel(yq)})\nx = linspace(${a.low}, ${a.high}, 201)\ny = [${formula}${yq.absolute ? " - 273.15" : ""} for a in x]\n`;
-  const key = JSON.stringify([
+  const legacyKey = JSON.stringify([
     page.active,
     semanticKey(page),
     a.input,
@@ -206,23 +258,154 @@ export function prepare(page: Page, a: Artifact): Job {
     code,
     inputs,
   ]);
+  const required = new Set([a.input, a.output, ...ancestors(p, a.output)]),
+    effectiveDefinitions = effective(page),
+    definitions = effectiveDefinitions
+      .filter((r) => required.has(r.id))
+      .map(({ id, text }) => ({ id, text })),
+    dependencies = Object.fromEntries(
+      definitions.map((r) => [r.id, p.bindings[r.id] || {}]),
+    ),
+    sources: SourceEvidence[] = [];
+  for (const region of effectiveDefinitions.filter(
+    (r) => required.has(r.id) && r.source,
+  )) {
+    const source = region.source!,
+      item = "region:" + source.dataset;
+    if (!document)
+      throw Error(
+        "The source document is required to pin measurement evidence.",
+      );
+    const revision = sourceSelection(document).current(item);
+    if (!revision)
+      throw Error("The measurement source revision is unavailable.");
+    const data = page.regions.find((r) => r.id === source.dataset)?.data;
+    if (
+      !data ||
+      !object(revision.body) ||
+      !object(revision.body.value) ||
+      !object(revision.body.value.data) ||
+      revision.body.value.data.csv !== data.csv ||
+      revision.body.value.data.name !== data.name
+    )
+      throw Error(
+        "The measurement source does not match the captured document.",
+      );
+    const reference: Reference = {
+      document: document.document,
+      item,
+      selection: { kind: "pin", revision: revision.id },
+      selector: null,
+    };
+    sources.push({
+      region: region.id,
+      reference,
+      row: source.row,
+      column: source.column,
+      raw: source.raw,
+      unit: source.unit,
+    });
+  }
+  if (document) validateSourceEvidence(document, sources);
+  const key = samplingKey(
+    { input: a.input, output: a.output, low: a.low, high: a.high },
+    {
+      context: page.active,
+      definitions,
+      dependencies,
+      sources,
+      code,
+      inputs,
+    },
+  );
   return {
     key,
     code,
     inputs,
     context: page.active,
-    definitions: effective(page),
+    definitions,
     bindings,
+    snapshot: 2,
+    dependencies,
+    sources,
+    legacy: { key: legacyKey, definitions: effectiveDefinitions },
   };
+}
+export function samplingKey(
+  request: Pick<Artifact, "input" | "output" | "low" | "high">,
+  captured: Pick<
+    Job,
+    "context" | "definitions" | "dependencies" | "sources" | "code" | "inputs"
+  >,
+) {
+  return canonical([
+    2,
+    captured.context,
+    captured.definitions,
+    captured.dependencies,
+    captured.sources as unknown as Json,
+    request.input,
+    request.output,
+    request.low,
+    request.high,
+    captured.code,
+    captured.inputs,
+  ]);
+}
+/** Object key order is not portable identity; array/definition order remains meaningful. */
+export function receiptMatchesJob(
+  r: NonNullable<Artifact["receipt"]>,
+  job: Omit<Job, "legacy"> & Partial<Pick<Job, "legacy">>,
+): boolean {
+  try {
+    return (
+      (r.snapshot === 2
+        ? r.key === job.key &&
+          canonical(r.dependencies as Json) === canonical(job.dependencies) &&
+          canonical(r.sources as unknown as Json) ===
+            canonical(job.sources as unknown as Json) &&
+          canonical(r.definitions as Json) ===
+            canonical(job.definitions as Json)
+        : !!job.legacy &&
+          r.snapshot === undefined &&
+          r.key === job.legacy.key &&
+          canonical(r.definitions as Json) ===
+            canonical(job.legacy.definitions as unknown as Json)) &&
+      r.context === job.context &&
+      r.code === job.code &&
+      canonical(r.inputs) === canonical(job.inputs) &&
+      canonical(r.bindings) === canonical(job.bindings)
+    );
+  } catch {
+    return false;
+  }
 }
 export function acceptData(
   page: Page,
   a: Artifact,
   job: Job,
   raw: unknown,
+  document?: FoundationDocument,
 ): Artifact {
-  if (prepare(page, a).key !== job.key)
+  if (prepare(page, a, document).key !== job.key)
     throw Error("The model changed while Python was running.");
+  return acceptCapturedData(a, job, raw);
+}
+/** Pure independent validation of a selected request; callers own currency/admission. */
+export function acceptCapturedData(
+  a: Artifact,
+  job: Omit<Job, "legacy">,
+  raw: unknown,
+): Artifact {
+  const page: Page = {
+    regions: job.definitions,
+    contexts: [{ id: job.context, label: "Captured", base: {}, overrides: {} }],
+    active: job.context,
+    links: job.dependencies,
+    plots: [],
+    layout: {},
+    origin: { x: 0, y: 0 },
+  };
   const data = raw as Data;
   if (
     !data ||
@@ -235,6 +418,12 @@ export function acceptData(
   )
     throw Error("Unsupported Python result.");
   const { p, x, y } = names(page, a);
+  // Validate only the already-resolved dependency closure. Unrelated notes and
+  // quantities must not be reparsed for every sampled point.
+  const required = new Set([a.input, a.output, ...ancestors(p, a.output)]);
+  const definitions = job.definitions
+    .filter((r) => required.has(r.id))
+    .map((r) => ({ ...r, x: 0, y: 0 }));
   let previous = -Infinity;
   for (const point of data.points) {
     if (
@@ -248,10 +437,9 @@ export function acceptData(
       throw Error("Invalid sampled range.");
     previous = point[0];
     const q = p.solved.values.get(x.name)!;
-    const evaluated = calculate(
-      job.definitions.map((r) => ({ ...r, x: 0, y: 0 })),
-      { [x.name]: { ...q, value: point[0] } },
-    ).values.get(y.name);
+    const evaluated = calculate(definitions, {
+      [x.name]: { ...q, value: point[0] },
+    }).values.get(y.name);
     if (
       !evaluated ||
       Math.abs(scalar(evaluated) - point[1]) >
@@ -271,24 +459,222 @@ export function acceptData(
   return {
     ...a,
     receipt: structuredClone({
-      ...data,
-      ...job,
+      points: data.points,
+      code_sha256: data.code_sha256,
+      runtime: data.runtime,
+      key: job.key,
+      code: job.code,
+      inputs: job.inputs,
+      context: job.context,
+      definitions: job.definitions,
+      bindings: job.bindings,
+      snapshot: job.snapshot,
+      dependencies: job.dependencies,
+      sources: job.sources,
       time: new Date().toISOString(),
     }),
   };
 }
-export function archive(page: Page, artifacts: Artifact[]): string {
-  return JSON.stringify(
-    { format: "manifold-region-artifacts", version: 1, page, artifacts },
-    null,
-    2,
-  );
+function artifactResults(
+  document: FoundationDocument,
+  value: unknown,
+): Artifact[] {
+  if (
+    !Array.isArray(value) ||
+    value.length > 16 ||
+    value.some(
+      (r: unknown) =>
+        !object(r) ||
+        Object.keys(r).some((k) => !["artifact", "receipt"].includes(k)),
+    )
+  )
+    throw Error("Unsupported artifact results");
+  const records = canvasArtifacts(document),
+    known = new Set(records.map((a) => a.id)),
+    results = new Map<string, NonNullable<Artifact["receipt"]>>();
+  for (const r of value) {
+    if (!known.has(r.artifact) || results.has(r.artifact) || !r.receipt)
+      throw Error("Invalid artifact result target");
+    if (validArtifactReceipt(r.receipt) && r.receipt.snapshot === 2)
+      validateSourceEvidence(document, r.receipt.sources!);
+    results.set(r.artifact, r.receipt);
+  }
+  return records.map((a) => ({
+    ...a,
+    ...(results.has(a.id) ? { receipt: results.get(a.id) } : {}),
+  }));
 }
+/** The file trust boundary verifies resources and migrates old results before creating a live owner. */
+async function readWorkspace(
+  text: string,
+  admit: boolean,
+  legacyScene?: string,
+): Promise<{
+  page: Page;
+  artifacts: Artifact[];
+  document: FoundationDocument;
+  recovery: CanvasRecovery;
+  sceneError?: string;
+}> {
+  checkWorkspaceFileSize(byteLength(text));
+  const value: unknown = JSON.parse(text);
+  let foundation: import("@manifold/foundation").Loaded,
+    results: ArtifactResult[] = [];
+  if (object(value) && (value.version === 6 || value.version === 7)) {
+    fields(
+      value,
+      value.version === 7
+        ? ["format", "version", "foundation"]
+        : ["format", "version", "foundation", "results"],
+    );
+    if (value.format !== "manifold-region-artifacts")
+      throw Error("Unsupported workspace archive.");
+    foundation = await decode(
+      JSON.stringify(value.foundation),
+      canvasSchemas,
+      canvasMethods,
+      webHash,
+      CANVAS_NATIVE_LIMITS,
+    );
+    validateCanvasDocument(foundation.document, value.version === 6);
+    if (value.version === 6) {
+      const validated = validateWorkspaceData(
+        canvasPage(foundation.document),
+        artifactResults(foundation.document, value.results),
+      );
+      results = validated.artifacts.flatMap((artifact) =>
+        artifact.receipt
+          ? [{ artifact: artifact.id, receipt: artifact.receipt }]
+          : [],
+      );
+    }
+  } else {
+    const legacy = restore(text);
+    results = legacy.artifacts.flatMap((artifact) =>
+      artifact.receipt
+        ? [{ artifact: artifact.id, receipt: artifact.receipt }]
+        : [],
+    );
+    foundation = legacyCanvasLoaded(
+      legacy.page,
+      legacy.document,
+      legacy.artifacts.map(({ receipt: _, ...artifact }) => artifact),
+    );
+  }
+  foundation = await migrateSamplingResults(foundation, results);
+  const preparedScene = prepareSceneLoaded(
+    foundation,
+    canvasSchemas,
+    legacyScene,
+  );
+  foundation = preparedScene.loaded;
+  validateCanvasDocument(foundation.document);
+  canvasSerial(foundation.document);
+  if (admit)
+    new CanvasStorageBudget().check(
+      {
+        ...foundation,
+        receipts: SharedMap.from(
+          foundation.receipts.map((receipt) => [receipt.id, receipt]),
+        ),
+      },
+      canvasSchemas,
+    );
+  return {
+    page: canvasPage(foundation.document),
+    artifacts: canvasObservedArtifacts(foundation),
+    document: foundation.document,
+    recovery: { foundation },
+    ...(preparedScene.sceneError
+      ? { sceneError: preparedScene.sceneError }
+      : {}),
+  };
+}
+export const decodeWorkspace = (text: string, legacyScene?: string) =>
+  readWorkspace(text, true, legacyScene);
+/** Full data verification without creating a live application or bypassing its admission policy. */
+export const inspectWorkspace = (text: string, legacyScene?: string) =>
+  readWorkspace(text, false, legacyScene);
 // Local recovery is data-only. Unknown schema versions are never executed.
-export function restore(text: string): { page: Page; artifacts: Artifact[] } {
-  if (text.length > 8_000_000)
-    throw Error("Archive exceeds this prototype's size limit.");
-  const value = JSON.parse(text);
+export function restore(text: string): {
+  page: Page;
+  artifacts: Artifact[];
+  document?: FoundationDocument;
+} {
+  checkWorkspaceFileSize(byteLength(text));
+  let value = JSON.parse(text);
+  let document: FoundationDocument | undefined;
+  if (
+    value?.format === "manifold-region-artifacts" &&
+    (value.version === 2 ||
+      value.version === 3 ||
+      value.version === 4 ||
+      value.version === 5)
+  ) {
+    if (
+      !value.foundation ||
+      Object.keys(value).some(
+        (key) =>
+          !(
+            value.version === 2
+              ? ["format", "version", "foundation", "artifacts"]
+              : ["format", "version", "foundation", "results"]
+          ).includes(key),
+      )
+    )
+      throw Error("Unsupported workspace archive.");
+    document = readCanvasDocument(value.foundation);
+    if (value.version === 3 || value.version === 4 || value.version === 5) {
+      value.artifacts = artifactResults(document, value.results);
+    }
+    value = {
+      format: value.format,
+      version: 1,
+      page: canvasPage(document),
+      artifacts: value.artifacts,
+    };
+  }
+  if (value?.format !== "manifold-region-artifacts" || value.version !== 1)
+    throw Error("Unsupported workspace archive.");
+  return {
+    ...validateWorkspaceData(value.page, value.artifacts),
+    ...(document ? { document } : {}),
+  };
+}
+const validatedSources = new WeakMap<
+  object,
+  { headers: { length: number }; rows: { length: number } }
+>();
+const validatedCells = new WeakMap<object, object>();
+function validateStoredCsv(data: Parameters<typeof readCsv>[0]) {
+  const cached = Object.isFrozen(data) ? validatedSources.get(data) : undefined;
+  if (cached) return cached;
+  const parsed = readCsv(data),
+    shape = {
+      headers: { length: parsed.headers.length },
+      rows: { length: parsed.rows.length },
+    };
+  if (Object.isFrozen(data)) validatedSources.set(data, shape);
+  return shape;
+}
+/** Full application validation during import/recovery, independent of file byte limits. */
+export function validateWorkspaceData(
+  page: unknown,
+  artifacts: unknown,
+  copy = true,
+): { page: Page; artifacts: Artifact[] } {
+  const incoming = {
+    format: "manifold-region-artifacts",
+    version: 1,
+    page,
+    artifacts,
+  };
+  const value = (copy ? structuredClone(incoming) : incoming) as {
+    format: string;
+    version: number;
+    page: Page;
+    artifacts: Artifact[];
+  };
   const object = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === "object" && !Array.isArray(v);
   const point = (v: unknown): v is Point =>
@@ -302,9 +688,8 @@ export function restore(text: string): { page: Page; artifacts: Artifact[] } {
     /^[a-z][a-z0-9-]{0,99}$/.test(v) &&
     v !== "constructor" &&
     (!v.match(/^(?:region|plot|alternative|data-relation)-(\d+)$/) ||
-      Number(
-        v.match(/^(?:region|plot|alternative|data-relation)-(\d+)$/)![1],
-      ) <= 100_000_000);
+      Number(v.match(/^(?:region|plot|alternative|data-relation)-(\d+)$/)![1]) <
+        100_000_000);
   const strings = (v: unknown): v is Record<string, string> =>
     object(v) &&
     Object.entries(v).every(
@@ -322,6 +707,12 @@ export function restore(text: string): { page: Page; artifacts: Artifact[] } {
   )
     fail();
   const p = value.page;
+  if (p.calculations !== undefined) {
+    if (!Array.isArray(p.calculations)) fail();
+    p.calculations.forEach(validateKeptCalculation);
+    if (new Set(p.calculations.map((c) => c.id)).size !== p.calculations.length)
+      fail();
+  }
   if (
     !Array.isArray(p.regions) ||
     p.regions.length > 256 ||
@@ -371,7 +762,7 @@ export function restore(text: string): { page: Page; artifacts: Artifact[] } {
     if (r.external !== undefined) validateExternalReference(r.external);
     if (r.data !== undefined) {
       try {
-        readCsv(r.data);
+        validateStoredCsv(r.data);
       } catch {
         fail();
       }
@@ -397,14 +788,14 @@ export function restore(text: string): { page: Page; artifacts: Artifact[] } {
   }
   for (const r of p.regions) {
     if (r.source) {
-      const data = p.regions.find(
-        (v: { id: string }) => v.id === r.source.dataset,
-      )?.data;
-      if (
-        data &&
-        readCsv(data).rows[r.source.row]?.[r.source.column] !== r.source.raw
-      )
-        fail();
+      const source = r.source,
+        data = p.regions.find((v) => v.id === source.dataset)?.data;
+      if (data && (!Object.isFrozen(r) || validatedCells.get(r) !== data)) {
+        if (readCsv(data).rows[source.row]?.[source.column] !== source.raw)
+          fail();
+        if (Object.isFrozen(r) && Object.isFrozen(data))
+          validatedCells.set(r, data);
+      }
     }
   }
   if (p.dataRelations !== undefined) {
@@ -430,7 +821,7 @@ export function restore(text: string): { page: Page; artifacts: Artifact[] } {
         (v: { id: string }) => v.id === r.dataset,
       )?.data;
       if (!source) fail();
-      const table = readCsv(source);
+      const table = validateStoredCsv(source!);
       if (
         !r.bindings.every(
           (b: unknown) =>
@@ -444,7 +835,8 @@ export function restore(text: string): { page: Page; artifacts: Artifact[] } {
             typeof b.unit === "string" &&
             b.unit.length <= 80 &&
             !/[\n:=<>]/.test(b.unit) &&
-            (b.quantity === undefined || ids.has(b.quantity)),
+            (b.quantity === undefined ||
+              (typeof b.quantity === "string" && ids.has(b.quantity))),
         )
       )
         fail();
@@ -563,8 +955,12 @@ export function restore(text: string): { page: Page; artifacts: Artifact[] } {
           a.views.length)
     )
       fail();
-    // Stored results remain evidence; they are replaced by a fresh checked execution on open.
-    delete a.receipt;
+    // Output is optional data. Malformed old receipts do not discard authored work;
+    // the runtime checks source identity, job inputs and every numeric point before use.
+    if (a.receipt !== undefined && !validArtifactReceipt(a.receipt)) {
+      if (!copy) fail();
+      delete a.receipt;
+    }
   }
   if (
     new Set(value.artifacts.map((a: Artifact) => a.id)).size !==
@@ -577,8 +973,5 @@ export function restore(text: string): { page: Page; artifacts: Artifact[] } {
   ]);
   if (new Set(viewIds).size !== viewIds.length) fail();
   validateModels(p as Page, viewIds);
-  return structuredClone({
-    page: p as Page,
-    artifacts: value.artifacts as Artifact[],
-  });
+  return { page: p as Page, artifacts: value.artifacts as Artifact[] };
 }

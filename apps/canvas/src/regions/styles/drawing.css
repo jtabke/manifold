@@ -1,0 +1,111 @@
+.er-app:has(> .drawing-toolbar-host:not([hidden])) {
+  grid-template-rows: minmax(58px, auto) auto minmax(0, 1fr);
+}
+.er-canvas {
+  touch-action: none;
+}
+.er-paper:has(.drawing-surface.is-drawing) > .er-empty {
+  display: none;
+}
+.drawing-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 18px;
+  border-bottom: 1px solid var(--canvas-border);
+  background: var(--canvas-surface);
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 32;
+}
+.drawing-toolbar button {
+  min-width: 32px;
+  height: 32px;
+  cursor: pointer;
+}
+.drawing-toolbar button[aria-pressed="true"] {
+  background: var(--canvas-accent-tint);
+  color: var(--canvas-accent);
+  border-color: var(--canvas-border);
+}
+.drawing-toolbar input[type="color"] {
+  width: 27px;
+  height: 27px;
+  padding: 1px;
+  border: 1px solid #d8d3df;
+  background: transparent;
+  cursor: pointer;
+}
+.drawing-width {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--canvas-muted);
+}
+.drawing-width input {
+  width: 65px;
+  accent-color: #73569c;
+}
+.drawing-hint {
+  color: var(--canvas-muted);
+  font-size: 11px;
+  margin-left: 10px;
+}
+.drawing-surface {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2;
+}
+.drawing-surface.is-drawing {
+  z-index: 30;
+  cursor: crosshair;
+}
+.drawing-background {
+  pointer-events: all;
+}
+.drawing-mark {
+  pointer-events: all;
+  cursor: pointer;
+}
+.drawing-resize {
+  cursor: nwse-resize;
+}
+.drawing-label-editor {
+  position: absolute;
+  z-index: 35;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 7px;
+  background: var(--canvas-surface);
+  border: 1px solid #b09ac9;
+  border-radius: 7px;
+  box-shadow: 0 4px 20px #33224415;
+}
+.drawing-label-editor textarea {
+  width: 260px;
+  min-height: 70px;
+  font-size: 20px;
+  font-family: inherit;
+  line-height: 1.4;
+  resize: vertical;
+}
+.drawing-label-editor button {
+  border-color: var(--canvas-border);
+  background: var(--canvas-surface-soft);
+}
+@media (max-width: 900px) {
+  .drawing-hint {
+    display: none;
+  }
+  .drawing-toolbar {
+    padding: 5px 8px;
+  }
+}

@@ -1,14 +1,57 @@
-/** A bounded authoring experiment over the existing arithmetic; not a new core model. */
+import {
+  project,
+  effective,
+  semanticKey,
+  mathematical,
+  type Projection,
+} from "./worksheetProjection.ts";
+export {
+  project,
+  effective,
+  semanticKey,
+  curve,
+  type Projection,
+} from "./worksheetProjection.ts";
+import { sameJson } from "./immutableJson.ts";
+import { PageEdit } from "./pageEdits.ts";
+import { readScene, sceneCommands } from "./sceneRecords.ts";
+import type { CanvasScene } from "./canvasScene.ts";
+/** Compatibility authoring commands over the existing arithmetic; accepted Page/history live in the foundation owner. */
 import {
   calculate,
   parse,
-  expressionBody,
   references,
   same,
   type Quantity,
-  type Solved,
-  type Statement,
 } from "../notebook/math.ts";
+import { CanvasDocument, type CanvasRecovery } from "./app/canvasDocument.ts";
+import {
+  createTaskScheduler,
+  type Command,
+  type Reference,
+  type Revision,
+  type View,
+  type Scope,
+} from "@manifold/foundation";
+import { type Artifact } from "./artifacts.ts";
+import {
+  createArtifactComputations,
+  type ArtifactExecutor,
+} from "./artifactComputations.ts";
+import {
+  RecentCalculations,
+  captureWorksheet,
+  type WorksheetReceipt,
+  type KeptCalculation,
+} from "./worksheetHistory.ts";
+import {
+  positions,
+  regionAdvance,
+  freeRegionPosition,
+  REGION_STEP,
+} from "./pageLayout.ts";
+export { positions } from "./pageLayout.ts";
+import type { Document as FoundationDocument } from "@manifold/foundation";
 import { readCsv, csvQuantity, type CsvData } from "./dataSources.ts";
 import { evaluateDataset, type DatasetComputation } from "./datasetModel.ts";
 import {
@@ -67,6 +110,7 @@ export type Page = {
   links?: Record<string, Record<string, string>>;
   dataRelations?: DatasetComputation[];
   models?: NestedModel[];
+  calculations?: KeptCalculation[];
 };
 export type ConnectionEdit = {
   source: string;
@@ -78,189 +122,64 @@ export type ConnectionEdit = {
   key: string;
   label: string;
 };
-export type Projection = {
-  solved: Solved;
-  statements: Map<string, Statement>;
-  errors: Map<string, string>;
-  kinds: Record<
-    string,
-    "note" | "quantity" | "equation" | "constraint" | "draft"
-  >;
-  bindings: Record<string, Record<string, string>>;
-  sources: Record<string, string[]>;
-  texts: Record<string, string>;
-};
-export type Receipt = {
-  id: string;
-  context: string;
-  key: string;
-  definitions: Region[];
-  values: Record<string, Quantity>;
-  errors: Record<string, string>;
-  conditions: Record<string, { pass: boolean; bound: Quantity }>;
-  time: string;
-};
+export type Receipt = WorksheetReceipt;
+
 const clone = <T>(value: T): T => structuredClone(value);
 function freeze<T>(value: T): T {
-  if (value && typeof value === "object") {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.values(value).forEach(freeze);
     Object.freeze(value);
   }
   return value;
 }
-const mathematical = (text: string) =>
-  /^\s*[A-Za-z_][A-Za-z_0-9]*\s*(?::=|<=|>=|<|>|=|≤|≥)/.test(text) ||
-  expressionBody(text) !== undefined;
 // An unused writing cursor is presentation, not authored content. Retain any
 // region that still has a definition in another context or a native plot binding.
 function withoutEmpty(page: Page, retained: readonly string[] = []): Page {
-  const next = clone(page);
   const empty = new Set(
-    next.regions
+    page.regions
       .filter(
         (r) =>
           !retained.includes(r.id) &&
-          !Object.values(next.links || {}).some((bindings) =>
+          !Object.values(page.links || {}).some((bindings) =>
             Object.values(bindings).includes(r.id),
           ) &&
           !r.text.trim() &&
-          next.contexts.every(
+          page.contexts.every(
             (c) =>
               !(c.base[r.id] || "").trim() && !(c.overrides[r.id] || "").trim(),
           ) &&
-          !next.plots.some((p) => p.input === r.id || p.output === r.id),
+          !page.plots.some((p) => p.input === r.id || p.output === r.id),
       )
       .map((r) => r.id),
   );
   if (!empty.size) return page;
+  const edit = new PageEdit(page),
+    next = edit.page;
   next.regions = next.regions.filter((r) => !empty.has(r.id));
   for (const m of next.models || []) {
-    m.members = m.members.filter((id) => !empty.has(id));
-    m.inputs = m.inputs.filter((id) => !empty.has(id));
-    m.outputs = m.outputs.filter((id) => !empty.has(id));
+    if (![...m.members, ...m.inputs, ...m.outputs].some((id) => empty.has(id)))
+      continue;
+    const model = edit.model(m.id)!;
+    model.members = m.members.filter((id) => !empty.has(id));
+    model.inputs = m.inputs.filter((id) => !empty.has(id));
+    model.outputs = m.outputs.filter((id) => !empty.has(id));
   }
   for (const id of empty) {
-    delete next.layout[id];
-    if (next.links) delete next.links[id];
+    if (Object.hasOwn(next.layout, id)) delete edit.layout[id];
+    if (next.links?.[id]) {
+      edit.links(id);
+      delete next.links[id];
+    }
     for (const c of next.contexts) {
-      delete c.base[id];
-      delete c.overrides[id];
+      if (!Object.hasOwn(c.base, id) && !Object.hasOwn(c.overrides, id))
+        continue;
+      const context = edit.context(c.id)!;
+      delete context.base[id];
+      delete context.overrides[id];
     }
   }
   if (!next.regions.length) next.origin = { x: 110, y: 110 };
   return next;
-}
-const incompleteNumber = (text: string) =>
-  /(?:^|[^A-Za-z_0-9.])(?:\d+\.(?!\d)|\d+(?:\.\d+)?[eE][+-]?(?![\dA-Za-z_]))(?=\s*(?:$|[)*/+^\-]|[A-Za-z]))/.test(
-    text,
-  );
-export function effective(page: Page, context = page.active): Region[] {
-  const c = page.contexts.find((c) => c.id === context)!;
-  return page.regions.map((r) => ({
-    ...r,
-    text: c.overrides[r.id] ?? c.base[r.id] ?? r.text,
-  }));
-}
-export function project(page: Page, context = page.active): Projection {
-  const regions = effective(page, context),
-    statements = new Map<string, Statement>(),
-    kinds: Projection["kinds"] = {},
-    sources: Projection["sources"] = {};
-  const drafts = new Map<string, string>();
-  for (const r of regions) {
-    if (r.external || r.data || !mathematical(r.text)) {
-      kinds[r.id] = "note";
-      continue;
-    }
-    try {
-      if (incompleteNumber(r.text))
-        throw Error(
-          "Use a complete number before calculating; the draft is retained.",
-        );
-      const s = parse(r.text.trim(), r.id);
-      statements.set(r.id, s);
-      kinds[r.id] =
-        s.relation !== "="
-          ? "constraint"
-          : s.anonymous || references(s.expression).length
-            ? "equation"
-            : "quantity";
-      if (s.relation === "=") (sources[s.name] ||= []).push(r.id);
-    } catch (e) {
-      kinds[r.id] = "draft";
-      drafts.set(r.id, (e as Error).message);
-      const definition = r.text.match(
-        /^\s*([A-Za-z_][A-Za-z_0-9]*)\s*(?::=|=(?!=))/,
-      );
-      if (definition) (sources[definition[1]] ||= []).push(r.id);
-    }
-  }
-  const linkErrors = new Map<string, string>();
-  for (const [id, s] of statements) {
-    const used = [
-      ...references(s.expression),
-      ...(s.relation !== "=" ? [s.name] : []),
-    ];
-    for (const name of used) {
-      const target = page.links?.[id]?.[name];
-      if (
-        target &&
-        (sources[name]?.length !== 1 ||
-          sources[name][0] !== target ||
-          statements.get(target)?.name !== name)
-      )
-        linkErrors.set(
-          id,
-          `Linked ${name} is unavailable or ambiguous. Restore its definition or reconnect it.`,
-        );
-    }
-  }
-  // Failed definitions still reserve their symbol, so dependents never use a hidden old value.
-  const calculations = regions
-    .filter(
-      (r) =>
-        kinds[r.id] !== "note" &&
-        (!drafts.has(r.id) ||
-          /^\s*[A-Za-z_][A-Za-z_0-9]*\s*(?::=|=(?!=))/.test(r.text)),
-    )
-    .map((r) => ({
-      ...r,
-      x: 0,
-      y: 0,
-      text: linkErrors.has(r.id)
-        ? r.text.replace(
-            /(?::=|<=|>=|<|>|=|≤|≥).*/,
-            `${statements.get(r.id)!.relation} (1/0)`,
-          )
-        : drafts.has(r.id)
-          ? r.text.replace(/(?::=|<=|>=|<|>|=|≤|≥).*/, "= __unfinished_value")
-          : r.text.trim(),
-    }));
-  const solved = calculate(calculations),
-    errors = new Map([...solved.errors, ...drafts, ...linkErrors]);
-  const bindings: Projection["bindings"] = {};
-  for (const [id, s] of statements)
-    bindings[id] = Object.fromEntries(
-      [
-        ...new Set([
-          ...references(s.expression),
-          ...(s.relation !== "=" ? [s.name] : []),
-        ]),
-      ]
-        .filter(
-          (name) => page.links?.[id]?.[name] || sources[name]?.length === 1,
-        )
-        .map((name) => [name, page.links?.[id]?.[name] || sources[name][0]]),
-    );
-  return {
-    solved,
-    errors,
-    statements,
-    kinds,
-    sources,
-    bindings,
-    texts: Object.fromEntries(regions.map((r) => [r.id, r.text])),
-  };
 }
 /** A reviewed binding may resolve one input while other authored inputs remain missing. */
 export function remainsUnresolved(
@@ -277,55 +196,6 @@ export function remainsUnresolved(
     missing(after.errors.get(target))
   );
 }
-export function semanticKey(page: Page, context = page.active): string {
-  return JSON.stringify(
-    effective(page, context)
-      .filter((r) => !r.external && !r.data && mathematical(r.text))
-      .map((r) => {
-        try {
-          const s = parse(r.text.trim(), r.id);
-          return [
-            r.id,
-            s.name,
-            s.relation,
-            s.expression,
-            incompleteNumber(r.text),
-            Object.entries(page.links?.[r.id] || {})
-              .filter(([name]) =>
-                [
-                  ...references(s.expression),
-                  ...(s.relation !== "=" ? [s.name] : []),
-                ].includes(name),
-              )
-              .sort(([a], [b]) => a.localeCompare(b)),
-          ];
-        } catch {
-          return [r.id, r.text];
-        }
-      })
-      .sort(([a], [b]) => String(a).localeCompare(String(b))),
-  );
-}
-export function positions(page: Page): Record<string, Point> {
-  let y = page.origin.y;
-  const out: Record<string, Point> = {};
-  for (const r of page.regions) {
-    if (page.layout[r.id]) out[r.id] = page.layout[r.id];
-    else {
-      out[r.id] = { x: page.origin.x, y };
-    }
-    // Moving one region leaves the other authored lines in their flow slots.
-    y += Math.max(92, 65 + (r.text.split("\n").length - 1) * 25);
-  }
-  for (const plot of page.plots)
-    out[plot.id] = plot.at || {
-      x: (out[plot.output]?.x || page.origin.x) + 555,
-      y: out[plot.output]?.y || page.origin.y,
-    };
-  for (const relation of page.dataRelations || [])
-    out[relation.id] = page.layout[relation.id] || { x: 650, y: 420 };
-  return out;
-}
 export function ancestors(p: Projection, id: string): string[] {
   const result = new Set<string>(),
     visit = (current: string) => {
@@ -338,93 +208,326 @@ export function ancestors(p: Projection, id: string): string[] {
   visit(id);
   return [...result];
 }
-export function curve(
-  page: Page,
-  plot: Plot,
-  context: string,
-): {
-  points: { x: number; y?: number; limit?: number; pass?: boolean }[];
-  unit: Quantity | undefined;
-} {
-  const p = project(page, context),
-    input = p.statements.get(plot.input),
-    output = p.statements.get(plot.output);
-  const quantity = input && p.solved.values.get(input.name);
-  if (
-    !input ||
-    !output ||
-    !quantity ||
-    p.errors.has(plot.input) ||
-    p.errors.has(plot.output) ||
-    p.sources[input.name]?.length !== 1
-  )
-    return {
-      points: [] as { x: number; y?: number; limit?: number; pass?: boolean }[],
-      unit: undefined as Quantity | undefined,
-    };
-  const condition = [...p.statements].find(
-    ([, s]) => s.name === output.name && s.relation !== "=",
-  );
-  const calculations = effective(page, context)
-    .filter((r) => p.kinds[r.id] !== "note")
-    .map((r) => ({ ...r, x: 0, y: 0 }));
-  let unit: Quantity | undefined;
-  const points = Array.from({ length: 81 }, (_, i) => {
-    const x = plot.low + ((plot.high - plot.low) * i) / 80;
-    const result = calculate(calculations, {
-      [input.name]: { ...quantity, value: x },
-    });
-    const q = result.values.get(output.name);
-    if (!q || result.errors.has(plot.output)) return { x };
-    unit = q;
-    const c = condition && result.constraints.get(condition[0]);
-    return {
-      x,
-      y: q.absolute ? q.value - 273.15 : q.value,
-      ...(c
-        ? {
-            limit: c.bound.absolute ? c.bound.value - 273.15 : c.bound.value,
-            pass: c.pass,
-          }
+export class RegionSession {
+  private readonly documentOwner: CanvasDocument;
+  private cursors: {
+    region: Region;
+    index: number;
+    at?: Point;
+    scope?: string;
+  }[] = [];
+  private cursorOrigin?: Point;
+  private cursorPage?: Page;
+  get state(): Page {
+    const base = this.documentOwner.page;
+    if (!this.cursors.length) return base;
+    if (this.cursorPage) return this.cursorPage;
+    const next: Page = {
+      ...base,
+      regions: [...base.regions],
+      layout: { ...base.layout },
+      ...(this.cursorOrigin && !base.regions.length
+        ? { origin: this.cursorOrigin }
         : {}),
     };
-  });
-  return { points, unit };
-}
-export class RegionSession {
-  state: Page = freeze({
-    regions: [],
-    contexts: [{ id: "original", label: "Original", base: {}, overrides: {} }],
-    active: "original",
-    layout: {},
-    plots: [],
-    origin: { x: 110, y: 110 },
-  });
-  receipts: Receipt[] = [];
-  private past: { page: Page; undo?: () => void }[] = [];
-  private listeners = new Set<() => void>();
-  private serial = 0;
-  private retainedRegions: () => string[];
-  constructor(initial?: Page, retainedRegions: () => string[] = () => []) {
-    this.retainedRegions = retainedRegions;
-    if (initial) {
-      this.state = freeze(clone(withoutEmpty(initial, this.retainedRegions())));
-      this.serial = Math.max(
+    for (const cursor of this.cursors) {
+      next.regions.splice(
+        Math.min(cursor.index, next.regions.length),
         0,
-        ...[
-          ...initial.regions.map((r) => r.id),
-          ...initial.plots.map((p) => p.id),
-          ...initial.contexts.map((c) => c.id),
-          ...(initial.dataRelations || []).map((r) => r.id),
-        ].map((id) =>
-          Number(
-            id.match(
-              /^(?:region|plot|alternative|data-relation)-(\d+)$/,
-            )?.[1] || 0,
-          ),
-        ),
+        cursor.region,
       );
+      if (cursor.at) next.layout[cursor.region.id] = cursor.at;
+      if (cursor.scope) {
+        next.models = next.models?.map((model) =>
+          model.id === cursor.scope
+            ? { ...model, members: [...model.members, cursor.region.id] }
+            : model,
+        );
+      }
     }
+    return (this.cursorPage = freeze(next));
+  }
+  get document() {
+    return this.documentOwner.document;
+  }
+  private readonly taskScheduler: ReturnType<typeof createTaskScheduler>;
+  private readonly ownsScheduler: boolean;
+  readonly samplingAvailable: boolean;
+  get executionDiagnostics() {
+    return this.taskScheduler.diagnostics();
+  }
+  private closed = false;
+  private attachments = 0;
+  /** The application host leases the whole session, including every computation adapter. */
+  attach() {
+    if (this.closed) throw Error("Workspace owner is closed");
+    this.attachments++;
+    const detach = this.computations.attach();
+    let attached = true;
+    return () => {
+      if (!attached) return;
+      attached = false;
+      detach();
+      this.attachments--;
+      queueMicrotask(() => {
+        if (!this.attachments) this.dispose();
+      });
+    };
+  }
+  dispose() {
+    if (this.closed) return;
+    this.documentOwner.dispose();
+    this.closed = true;
+    this.computationOwner?.dispose();
+    if (this.ownsScheduler) this.taskScheduler.dispose();
+    this.listeners.clear();
+  }
+  get foundation() {
+    return this.documentOwner.reader;
+  }
+  get scene(): CanvasScene {
+    return readScene(this.document);
+  }
+  setScene(update: CanvasScene | ((scene: CanvasScene) => CanvasScene)) {
+    const expected = this.document,
+      before = this.scene,
+      scene = typeof update === "function" ? update(before) : update;
+    return this.applyCommands(sceneCommands(expected, scene), expected);
+  }
+  applyCommands(commands: readonly Command[], expected = this.document) {
+    const changed = this.documentOwner.applyCommands(commands, expected);
+    if (changed) {
+      this.future = [];
+      this.past.push({});
+      this.past = this.past.slice(-this.documentOwner.historySize);
+      this.cursorPage = undefined;
+      this.emit();
+    }
+    return changed;
+  }
+  compute(target: Reference, scope: Scope = "baseline") {
+    const job = this.documentOwner.compute(target, scope);
+    this.emit();
+    void job.completion.then(() => this.emit());
+    return job;
+  }
+  preview(
+    target: Reference,
+    overrides: readonly { item: string; revision: Revision }[],
+  ) {
+    const result = this.documentOwner.preview(target, overrides);
+    this.emit();
+    return result;
+  }
+  cancelPreview() {
+    this.documentOwner.cancelPreview();
+    this.emit();
+  }
+  keepPreview(label: string, view: Omit<View, "alternative">) {
+    const result = this.documentOwner.keepPreview(label, view);
+    this.future = [];
+    this.past.push({});
+    this.past = this.past.slice(-this.documentOwner.historySize);
+    this.emit();
+    return result;
+  }
+  native(capture?: ReturnType<CanvasDocument["capture"]>) {
+    return this.documentOwner.native(capture);
+  }
+  get artifacts() {
+    return this.documentOwner.artifacts;
+  }
+  get evidenceSequence() {
+    return this.documentOwner.evidenceSequence;
+  }
+  get isSaved() {
+    return this.documentOwner.isSaved;
+  }
+  capture() {
+    return this.documentOwner.capture();
+  }
+  private retentionReviews = new WeakMap<object, number>();
+  reviewRetention() {
+    const review = this.documentOwner.reviewRetention(this.recent.references);
+    this.retentionReviews.set(review, this.recent.version);
+    return review;
+  }
+  compact(review: ReturnType<CanvasDocument["reviewRetention"]>) {
+    if (this.retentionReviews.get(review) !== this.recent.version)
+      throw Error(
+        "Cleanup review is stale because recent calculations changed; review again",
+      );
+    this.documentOwner.compact(review);
+    this.retentionReviews.delete(review);
+    this.cursorPage = undefined;
+    this.emit();
+  }
+  checkCapture(capture: ReturnType<CanvasDocument["capture"]>) {
+    this.documentOwner.checkCapture(capture);
+  }
+  acknowledge(capture: ReturnType<CanvasDocument["capture"]>) {
+    const before = this.isSaved,
+      accepted = this.documentOwner.acknowledge(capture);
+    if (before !== this.isSaved) this.emit();
+    return accepted;
+  }
+  setArtifacts = (update: Artifact[] | ((items: Artifact[]) => Artifact[])) => {
+    const artifacts =
+      typeof update === "function" ? update(this.artifacts) : update;
+    this.apply(this.state, false, undefined, artifacts);
+  };
+  private computationOwner?: ReturnType<typeof createArtifactComputations>;
+  private loadedArtifacts: string[] = [];
+  get computations(): ReturnType<typeof createArtifactComputations> {
+    if (this.closed) throw Error("Workspace owner is closed");
+    return (this.computationOwner ??= createArtifactComputations(this, {
+      paused: this.loadedArtifacts,
+    }));
+  }
+  /** Staging runs only synchronous domain commands; subscribers see one final publication. */
+  atomic<T>(
+    operation: (staged: RegionSession) => T,
+    undoAttention?: () => void,
+  ): T {
+    const expected = this.document,
+      beforeMeaning = semanticKey(this.state);
+    const staged = new RegionSession(
+      this.state,
+      () => this.retainedRegions(),
+      this.document,
+      this.artifacts,
+      true,
+    );
+    staged.cursors = this.cursors;
+    staged.cursorOrigin = this.cursorOrigin;
+    staged.cursorPage = undefined;
+    const value = operation(staged);
+    if (value && typeof (value as { then?: unknown }).then === "function")
+      throw Error("Workspace operations must be synchronous");
+    const changed = this.documentOwner.applyCommands(
+      staged.documentOwner.stagedCommands(),
+      expected,
+      !!undoAttention,
+    );
+    if (changed) {
+      this.future = [];
+      this.past.push({ undo: undoAttention });
+      this.past = this.past.slice(-this.documentOwner.historySize);
+    }
+    this.cursors = staged.cursors;
+    this.cursorOrigin = staged.cursorOrigin;
+    this.cursorPage = undefined;
+    if (semanticKey(staged.state) !== beforeMeaning) this.evaluate();
+    else this.emit();
+    return value;
+  }
+  private recent = new RecentCalculations();
+  get receipts() {
+    return this.recent.receipts;
+  }
+  get recentHistory() {
+    return this.recent.diagnostics;
+  }
+  currentCalculation() {
+    return captureWorksheet(
+      this.documentOwner.page,
+      this.document,
+      project(this.documentOwner.page),
+    );
+  }
+  clearRecentCalculations() {
+    this.recent.clear();
+    this.emit();
+  }
+  keepCalculation(id: string, label?: string) {
+    const receipt = this.receipts.find((r) => r.id === id);
+    if (!receipt)
+      throw Error(
+        "This recent calculation is no longer available. Keep current work or choose another snapshot.",
+      );
+    return this.keepReceipt(receipt, label);
+  }
+  keepCurrentCalculation(label?: string) {
+    const receipt = this.currentCalculation();
+    if (!receipt.definitions.length)
+      throw Error("Write mathematics before keeping a calculation.");
+    return this.keepReceipt(receipt, label);
+  }
+  private keepReceipt(receipt: WorksheetReceipt, label?: string) {
+    if (!receipt.definitions.length)
+      throw Error("Write mathematics before keeping a calculation.");
+    const name = label ?? `${receipt.contextLabel} calculation`;
+    const existing = this.state.calculations?.find(
+      (c) =>
+        c.snapshot.id === receipt.id ||
+        (c.snapshot.key === receipt.key && c.label === name),
+    );
+    if (existing) return existing.id;
+    const calculation = {
+      id: `kept-calculation-${crypto.randomUUID()}`,
+      label: name,
+      snapshot: receipt,
+    };
+    this.apply({
+      ...this.state,
+      calculations: [...(this.state.calculations ?? []), calculation],
+    });
+    return calculation.id;
+  }
+  removeCalculation(id: string) {
+    if (this.state.calculations?.some((c) => c.id === id))
+      this.apply({
+        ...this.state,
+        calculations: this.state.calculations.filter((c) => c.id !== id),
+      });
+  }
+  /** Optional browser arrangement restoration; accepted definitions and views restore through the owner. */
+  private past: { undo?: () => void }[] = [];
+  private future: { undo?: () => void }[] = [];
+  private listeners = new Set<() => void>();
+  private staging = false;
+  private retainedRegions: () => string[];
+  constructor(
+    initial?: Page,
+    retainedRegions: () => string[] = () => [],
+    document?: FoundationDocument,
+    artifacts: readonly Artifact[] = [],
+    staging = false,
+    recovery?: CanvasRecovery,
+    execution: {
+      artifactExecutor?: ArtifactExecutor | null;
+      scheduler?: ReturnType<typeof createTaskScheduler>;
+    } = {},
+  ) {
+    this.taskScheduler = execution.scheduler ?? createTaskScheduler();
+    this.ownsScheduler = !execution.scheduler;
+    this.samplingAvailable = execution.artifactExecutor !== null;
+    this.retainedRegions = retainedRegions;
+    this.loadedArtifacts = artifacts.map((a) => a.id);
+    const page = initial
+      ? document
+        ? initial
+        : withoutEmpty(initial, this.retainedRegions())
+      : {
+          regions: [],
+          contexts: [
+            { id: "original", label: "Original", base: {}, overrides: {} },
+          ],
+          active: "original",
+          layout: {},
+          plots: [],
+          origin: { x: 110, y: 110 },
+        };
+    this.documentOwner = new CanvasDocument(
+      page,
+      document,
+      artifacts,
+      staging,
+      recovery,
+      this.taskScheduler,
+      execution.artifactExecutor,
+    );
+    this.staging = staging;
   }
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -433,16 +536,53 @@ export class RegionSession {
     };
   };
   private emit() {
+    if (this.staging) return;
     this.listeners.forEach((listener) => listener());
   }
-  private apply(next: Page, evaluate = false, undo?: () => void) {
-    this.past.push({ page: this.state, undo });
-    this.state = freeze(next);
+  private apply(
+    next: Page,
+    evaluate = false,
+    undo?: () => void,
+    artifacts: Artifact[] = this.artifacts,
+  ) {
+    const accepted = withoutEmpty(next, [
+        ...this.retainedRegions(),
+        ...artifacts.flatMap((a) => [a.input, a.output]),
+      ]),
+      ids = new Set(accepted.regions.map((r) => r.id));
+    const cursors = next.regions.flatMap((region, index) =>
+      ids.has(region.id)
+        ? []
+        : [
+            {
+              region: freeze(clone(region)),
+              index,
+              ...(next.layout[region.id]
+                ? { at: freeze(clone(next.layout[region.id])) }
+                : {}),
+              ...(modelParent(next, region.id)
+                ? { scope: modelParent(next, region.id) }
+                : {}),
+            },
+          ],
+    );
+    const changed = this.documentOwner.apply(accepted, !!undo, artifacts);
+    if (changed) {
+      this.future = [];
+      this.past.push({ undo });
+      this.past = this.past.slice(-this.documentOwner.historySize);
+    }
+    this.cursors = cursors;
+    this.cursorOrigin = next.origin;
+    this.cursorPage = undefined;
     if (evaluate) this.evaluate();
     else this.emit();
   }
   get canUndo() {
-    return this.past.length > 0;
+    return this.documentOwner.canUndo;
+  }
+  get canRedo() {
+    return this.documentOwner.canRedo;
   }
   create(at?: Point, scope?: string): string {
     if (scope && !at) {
@@ -452,15 +592,19 @@ export class RegionSession {
         .filter((r) => members.includes(r.id))
         .at(-1);
       at = last
-        ? { x: current[last.id].x, y: current[last.id].y + 92 }
+        ? {
+            x: current[last.id].x,
+            y: current[last.id].y + regionAdvance(last.text),
+          }
         : { x: 110, y: 130 };
     }
-    const next = clone(this.state),
-      id = `region-${++this.serial}`;
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      id = `region-${crypto.randomUUID()}`;
     if (!next.regions.length && at) next.origin = at;
-    else if (at) next.layout[id] = at;
-    next.regions.push({ id, text: "" });
-    if (scope) next.models?.find((m) => m.id === scope)?.members.push(id);
+    else if (at) edit.layout[id] = at;
+    next.regions = [...next.regions, { id, text: "" }];
+    if (scope) edit.model(scope)?.members.push(id);
     this.apply(next);
     return id;
   }
@@ -469,11 +613,12 @@ export class RegionSession {
     readCsv(data);
     if (this.state.regions.length >= 256)
       throw Error("This page supports up to 256 regions.");
-    const next = clone(this.state),
-      id = `region-${++this.serial}`;
-    next.regions.push({ id, text: `Data · ${name}`, data });
-    next.layout[id] = at;
-    if (scope) next.models?.find((m) => m.id === scope)?.members.push(id);
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      id = `region-${crypto.randomUUID()}`;
+    next.regions = [...next.regions, { id, text: `Data · ${name}`, data }];
+    edit.layout[id] = at;
+    if (scope) edit.model(scope)?.members.push(id);
     this.apply(next);
     return id;
   }
@@ -491,10 +636,11 @@ export class RegionSession {
     };
     if (!name.trim() || name.length > 160)
       throw Error("Name the source in 160 characters or fewer.");
-    const next = clone(this.state);
+    const edit = new PageEdit(this.state),
+      next = edit.page;
     if (existing) {
-      const region = next.regions.find((r) => r.id === existing && r.external);
-      if (!region) throw Error("This reference no longer exists.");
+      const region = edit.region(existing);
+      if (!region?.external) throw Error("This reference no longer exists.");
       region.label = name;
       region.external = clone(external);
       this.apply(next);
@@ -502,15 +648,18 @@ export class RegionSession {
     }
     if (next.regions.length >= 256)
       throw Error("This page supports up to 256 regions.");
-    const id = `region-${++this.serial}`;
-    next.regions.push({
-      id,
-      text: `Source · ${name}`,
-      label: name,
-      external: clone(external),
-    });
-    next.layout[id] = at;
-    if (scope) next.models?.find((m) => m.id === scope)?.members.push(id);
+    const id = `region-${crypto.randomUUID()}`;
+    next.regions = [
+      ...next.regions,
+      {
+        id,
+        text: `Source · ${name}`,
+        label: name,
+        external: clone(external),
+      },
+    ];
+    edit.layout[id] = at;
+    if (scope) edit.model(scope)?.members.push(id);
     this.apply(next);
     return id;
   }
@@ -529,17 +678,20 @@ export class RegionSession {
     if (this.state.regions.length >= 256)
       throw Error("This page supports up to 256 regions.");
     const value = csvQuantity(data, row, column, name, unit),
-      next = clone(this.state),
-      id = `region-${++this.serial}`;
-    next.regions.push({
-      id,
-      text: value.text,
-      source: { dataset, row, column, raw: value.raw, unit: value.unit },
-    });
-    next.layout[id] = at;
-    next.models
-      ?.find((m) => m.id === modelParent(next, dataset))
-      ?.members.push(id);
+      edit = new PageEdit(this.state),
+      next = edit.page,
+      id = `region-${crypto.randomUUID()}`;
+    next.regions = [
+      ...next.regions,
+      {
+        id,
+        text: value.text,
+        source: { dataset, row, column, raw: value.raw, unit: value.unit },
+      },
+    ];
+    edit.layout[id] = at;
+    const parent = modelParent(next, dataset);
+    if (parent) edit.model(parent)?.members.push(id);
     this.apply(next, true);
     return id;
   }
@@ -547,41 +699,39 @@ export class RegionSession {
     evaluateDataset(this.state, binding);
     if ((this.state.dataRelations?.length || 0) >= 16)
       throw Error("This experiment supports up to 16 dataset relationships.");
-    const next = clone(this.state),
-      id = `data-relation-${++this.serial}`;
-    (next.dataRelations ||= []).push({ ...clone(binding), id });
-    next.layout[id] = at || { x: 650, y: 420 };
-    next.models
-      ?.find((m) => m.id === modelParent(next, binding.output))
-      ?.members.push(id);
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      id = `data-relation-${crypto.randomUUID()}`;
+    next.dataRelations = [
+      ...(next.dataRelations || []),
+      { ...clone(binding), id },
+    ];
+    edit.layout[id] = at || { x: 650, y: 420 };
+    const parent = modelParent(next, binding.output);
+    if (parent) edit.model(parent)?.members.push(id);
     this.apply(next);
     return id;
   }
-  removeDataset(id: string) {
-    const next = clone(this.state);
+  removeDatasetRelation(id: string) {
+    const edit = new PageEdit(this.state),
+      next = edit.page;
     next.dataRelations = next.dataRelations?.filter((r) => r.id !== id);
-    delete next.layout[id];
+    delete edit.layout[id];
     for (const model of next.models || []) {
-      model.members = model.members.filter((m) => m !== id);
-      model.inputs = model.inputs.filter((m) => m !== id);
-      model.outputs = model.outputs.filter((m) => m !== id);
+      if (![...model.members, ...model.inputs, ...model.outputs].includes(id))
+        continue;
+      const changed = edit.model(model.id)!;
+      changed.members = model.members.filter((m) => m !== id);
+      changed.inputs = model.inputs.filter((m) => m !== id);
+      changed.outputs = model.outputs.filter((m) => m !== id);
     }
     this.apply(next);
   }
   discardEmpty() {
-    const retained = this.retainedRegions();
-    const next = withoutEmpty(this.state, retained);
-    if (JSON.stringify(next) === JSON.stringify(this.state)) return;
-    this.state = freeze(next);
-    // Undo restores authored work, never abandoned cursors. Preserve snapshots
-    // containing text so erasing a real note or equation remains reversible.
-    this.past = this.past
-      .map((p) => ({ ...p, page: freeze(withoutEmpty(p.page, retained)) }))
-      .filter(
-        (p, i, all) =>
-          !!p.undo ||
-          JSON.stringify(p.page) !== JSON.stringify(all[i + 1]?.page || next),
-      );
+    if (!this.cursors.length) return;
+    this.cursors = [];
+    this.cursorOrigin = undefined;
+    this.cursorPage = undefined;
     this.emit();
   }
   write(
@@ -592,10 +742,17 @@ export class RegionSession {
   ): { ok: boolean; error?: string; next?: string } {
     if (text.length > 5000)
       return { ok: false, error: "Keep this region under 5,000 characters." };
-    const next = clone(this.state),
-      region = next.regions.find((r) => r.id === id);
+    if (
+      text.trim() &&
+      !this.documentOwner.page.regions.some((r) => r.id === id) &&
+      this.documentOwner.page.regions.length >= 256
+    )
+      return { ok: false, error: "This workspace supports up to 256 regions." };
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      region = edit.region(id);
     if (!region) return { ok: false, error: "This region no longer exists." };
-    const context = next.contexts.find((c) => c.id === next.active)!;
+    const context = edit.context(next.active)!;
     const unchanged = effective(next).find((r) => r.id === id)?.text === text;
     if (
       !unchanged &&
@@ -632,7 +789,7 @@ export class RegionSession {
         let q: Quantity | undefined;
         if (linkedAfter) {
           context.overrides[id] = text;
-          (next.links ||= {})[id] = { ...next.links?.[id], ...bindings };
+          Object.assign(edit.links(id), bindings);
           const trial = project(next);
           if (trial.errors.has(id)) throw Error(trial.errors.get(id));
           q = trial.solved.values.get(after.name);
@@ -662,8 +819,7 @@ export class RegionSession {
         delete context.overrides[id];
       }
     }
-    if (bindings)
-      (next.links ||= {})[id] = { ...next.links?.[id], ...clone(bindings) };
+    if (bindings) Object.assign(edit.links(id), clone(bindings));
     try {
       const after = parse(text, id);
       const before = project(this.state).statements.get(id);
@@ -694,19 +850,25 @@ export class RegionSession {
               .map(([name]) => name),
           );
           for (const alias of aliases) {
-            if (r.id !== id) r.text = replace(r.text, alias);
-            const links = ((next.links ||= {})[r.id] ||= {});
+            if (r.id !== id) {
+              const changed = edit.region(r.id)!;
+              changed.text = replace(changed.text, alias);
+            }
+            const links = edit.links(r.id);
             delete links[alias];
             links[after.name] = id;
             for (const c of next.contexts)
-              for (const entries of [c.base, c.overrides])
-                if (entries[r.id])
+              for (const key of ["base", "overrides"] as const)
+                if (c[key][r.id]) {
+                  const entries = edit.context(c.id)![key];
                   entries[r.id] = replace(entries[r.id], alias);
+                }
           }
         }
         for (const c of next.contexts)
-          for (const entries of [c.base, c.overrides])
-            if (entries[id]) entries[id] = replace(entries[id], before.name);
+          for (const key of ["base", "overrides"] as const)
+            if (c[key][id])
+              edit.context(c.id)![key][id] = replace(c[key][id], before.name);
       }
     } catch {
       /* Unfinished source keeps its bindings until it can be parsed again. */
@@ -720,41 +882,43 @@ export class RegionSession {
       )
         nextId = next.regions[index + 1].id;
       else {
-        nextId = `region-${++this.serial}`;
+        nextId = `region-${crypto.randomUUID()}`;
         next.regions.splice(index + 1, 0, { id: nextId, text: "" });
       }
-      if (next.layout[id])
-        next.layout[nextId] = {
-          x: next.layout[id].x,
-          y:
-            next.layout[id].y +
-            Math.max(92, 65 + (text.split("\n").length - 1) * 25),
-        };
       if (next.layout[id]) {
-        const below = next.layout[nextId],
+        const at = next.layout[id],
           scope = modelParent(next, id),
           current = positions(this.state);
-        const column = this.state.regions.filter(
-          (r) =>
-            r.id !== id &&
-            modelParent(this.state, r.id) === scope &&
-            Math.abs(current[r.id].x - below.x) < 80 &&
-            current[r.id].y >= below.y,
+        const occupied = this.state.regions
+          .filter(
+            (r) =>
+              r.id !== id &&
+              r.id !== nextId &&
+              modelParent(this.state, r.id) === scope,
+          )
+          .map((r) => ({
+            ...current[r.id],
+            width: 500,
+            height: regionAdvance(r.text) - 16,
+          }));
+        edit.layout[nextId] = freeRegionPosition(
+          { x: at.x, y: at.y + regionAdvance(text) },
+          REGION_STEP,
+          occupied,
         );
-        if (column.some((r) => current[r.id].y < below.y + 92))
-          for (const r of column)
-            next.layout[r.id] = { ...current[r.id], y: current[r.id].y + 92 };
       }
-      if (nextId && !next.models?.some((m) => m.members.includes(nextId!)))
-        next.models
-          ?.find((m) => m.id === modelParent(next, id))
-          ?.members.push(nextId);
+      if (nextId && !next.models?.some((m) => m.members.includes(nextId!))) {
+        const parent = modelParent(next, id);
+        if (parent) edit.model(parent)?.members.push(nextId);
+      }
     }
-    const changed = JSON.stringify(next) !== JSON.stringify(this.state);
-    if (changed)
+    try {
       this.apply(next, semanticKey(next) !== semanticKey(this.state));
-    if (!text.trim()) this.discardEmpty();
-    return { ok: true, next: nextId };
+      if (!text.trim()) this.discardEmpty();
+      return { ok: true, next: nextId };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
+    }
   }
   connect(
     edit: ConnectionEdit,
@@ -782,10 +946,10 @@ export class RegionSession {
         throw Error(
           "This source already depends on the target; the link would create a cycle.",
         );
-      const next = clone(this.state),
-        c = next.contexts.find((v) => v.id === next.active)!;
-      if (c.id === "original")
-        next.regions.find((r) => r.id === edit.target)!.text = edit.text;
+      const candidate = new PageEdit(this.state),
+        next = candidate.page,
+        c = candidate.context(next.active)!;
+      if (c.id === "original") candidate.region(edit.target)!.text = edit.text;
       else c.overrides[edit.target] = edit.text;
       const parsed = parse(edit.text);
       if (
@@ -793,10 +957,7 @@ export class RegionSession {
         (parsed.relation === "=" && parsed.name !== target.name)
       )
         throw Error("The proposed reference no longer matches its objects.");
-      (next.links ||= {})[edit.target] = {
-        ...next.links?.[edit.target],
-        [edit.alias]: edit.source,
-      };
+      candidate.links(edit.target)[edit.alias] = edit.source;
       const after = project(next),
         q = before.solved.values.get(target.name),
         replacement = after.solved.values.get(parsed.name);
@@ -826,29 +987,17 @@ export class RegionSession {
     }
   }
   evaluate() {
-    const p = project(this.state),
-      key = semanticKey(this.state);
-    this.receipts = [
-      ...this.receipts,
-      freeze({
-        id: `calculation-${++this.serial}`,
-        context: this.state.active,
-        key,
-        definitions: effective(this.state),
-        values: Object.fromEntries(p.solved.values),
-        errors: Object.fromEntries(p.errors),
-        conditions: Object.fromEntries(
-          [...p.solved.constraints].map(([id, c]) => [
-            id,
-            { pass: c.pass, bound: c.bound },
-          ]),
-        ),
-        time: new Date().toISOString(),
-      }),
-    ];
+    if (this.staging) return;
+    const p = project(this.documentOwner.page);
+    this.recent.record(
+      captureWorksheet(this.documentOwner.page, this.document, p),
+      this.document,
+    );
     this.emit();
   }
   addPlot(output: string, input: string): string {
+    if (this.state.plots.length >= 16)
+      throw Error("This workspace supports up to 16 plots.");
     const p = project(this.state),
       s = p.statements.get(input),
       value = s && p.solved.values.get(s.name);
@@ -858,57 +1007,116 @@ export class RegionSession {
       throw Error(
         "This sweep varies an assigned quantity, not a computed output.",
       );
-    const next = clone(this.state),
-      id = `plot-${++this.serial}`;
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      id = `plot-${crypto.randomUUID()}`;
     const center = value.value,
       delta = Math.abs(center) * 0.65 || 1;
     const sourceY = positions(next)[output].y;
     const occupied = next.plots.filter(
       (plot) => Math.abs(positions(next)[plot.id].y - sourceY) < 320,
     ).length;
-    next.plots.push({
-      id,
-      output,
-      input,
-      low: center - delta,
-      high: center + delta,
-      width: 500,
-      height: 325,
-      ...(occupied
-        ? { at: { x: next.origin.x + 555, y: sourceY + occupied * 345 } }
-        : {}),
-    });
-    next.models
-      ?.find((m) => m.id === modelParent(next, output))
-      ?.members.push(id);
+    next.plots = [
+      ...next.plots,
+      {
+        id,
+        output,
+        input,
+        low: center - delta,
+        high: center + delta,
+        width: 500,
+        height: 325,
+        ...(occupied
+          ? { at: { x: next.origin.x + 555, y: sourceY + occupied * 345 } }
+          : {}),
+      },
+    ];
+    const parent = modelParent(next, output);
+    if (parent) edit.model(parent)?.members.push(id);
     this.apply(next);
     return id;
   }
   branch(): string {
-    const next = clone(this.state),
+    if (this.state.contexts.length >= 16)
+      throw Error("This workspace supports up to 16 scenarios.");
+    const next = new PageEdit(this.state).page,
       p = project(next),
       base: Record<string, string> = {};
     for (const r of effective(next))
       if (p.kinds[r.id] === "quantity" && !p.errors.has(r.id))
         base[r.id] = r.text;
-    const id = `alternative-${++this.serial}`;
-    next.contexts.push({
-      id,
-      label: `Alternative ${next.contexts.length}`,
-      base,
-      overrides: {},
-    });
+    const id = `alternative-${crypto.randomUUID()}`;
+    next.contexts = [
+      ...next.contexts,
+      {
+        id,
+        label: `Alternative ${next.contexts.length}`,
+        base,
+        overrides: {},
+      },
+    ];
     next.active = id;
     this.apply(next, true);
     return id;
   }
   switchContext(id: string) {
     if (!this.state.contexts.some((c) => c.id === id)) return;
-    const next = clone(this.state);
-    next.active = id;
-    this.apply(next);
+    this.apply({ ...this.state, active: id });
+  }
+  /** Stage a proposed scalar change in a new context, then publish once. */
+  branchValue(input: string, text: string): string {
+    const staged = new RegionSession(
+      this.state,
+      () => this.retainedRegions(),
+      this.document,
+      this.artifacts,
+      true,
+    );
+    const before = project(this.state);
+    if (before.kinds[input] !== "quantity" || before.errors.has(input))
+      throw Error("Choose a resolved assigned quantity to explore.");
+    const context = staged.branch();
+    const result = staged.write(input, text);
+    if (!result.ok) throw Error(result.error);
+    const after = project(staged.state);
+    if (
+      [...after.errors].some(
+        ([id]) => id === input || ancestors(after, id).includes(input),
+      )
+    )
+      throw Error(
+        "Resolve the affected calculation before keeping an alternative.",
+      );
+    this.apply(staged.state, true);
+    return context;
+  }
+  keepAlternative(
+    input: string,
+    text: string,
+    expected: { context: string; key: string },
+  ): string {
+    if (
+      expected.context !== this.state.active ||
+      expected.key !== semanticKey(this.state)
+    )
+      throw Error("The model changed. Review this alternative again.");
+    const before = project(this.state),
+      baseline = this.state.active;
+    return this.atomic((staged) => {
+      const context = staged.branchValue(input, text);
+      staged.setArtifacts((items) =>
+        items.map((a) =>
+          a.input === input || ancestors(before, a.output).includes(input)
+            ? { ...a, compareContext: baseline, comparing: true }
+            : a,
+        ),
+      );
+      return context;
+    });
   }
   branchEdit(input: string, before: Page): string {
+    if (this.state.contexts.length >= 16)
+      throw Error("This workspace supports up to 16 scenarios.");
     const current = project(this.state),
       baseline = project(before);
     const prior = baseline.statements.get(input),
@@ -924,17 +1132,20 @@ export class RegionSession {
       assigned!.name !== prior!.name ||
       !same(q.dimension, previous.dimension) ||
       !!q.absolute !== !!previous.absolute ||
-      JSON.stringify(effective(before).filter((r) => r.id !== input)) !==
-        JSON.stringify(effective(this.state).filter((r) => r.id !== input))
+      !sameJson(
+        effective(before).filter((r) => r.id !== input),
+        effective(this.state).filter((r) => r.id !== input),
+      )
     )
       throw Error(
         "The model changed; compare only the compatible quantity edit just made.",
       );
-    const next = clone(this.state),
+    const edit = new PageEdit(this.state),
+      next = edit.page,
       text = current.texts[input];
-    const source = next.contexts.find((c) => c.id === next.active)!;
+    const source = edit.context(next.active)!;
     if (source.id === "original")
-      next.regions.find((r) => r.id === input)!.text = baseline.texts[input];
+      edit.region(input)!.text = baseline.texts[input];
     else {
       const earlier = before.contexts.find((c) => c.id === before.active)!;
       source.base = clone(earlier.base);
@@ -945,23 +1156,27 @@ export class RegionSession {
     for (const r of effective(next))
       if (p.kinds[r.id] === "quantity" && !p.errors.has(r.id))
         base[r.id] = r.text;
-    const id = `alternative-${++this.serial}`;
-    next.contexts.push({
-      id,
-      label: `Alternative ${next.contexts.length}`,
-      base,
-      overrides: { [input]: text },
-    });
+    const id = `alternative-${crypto.randomUUID()}`;
+    next.contexts = [
+      ...next.contexts,
+      {
+        id,
+        label: `Alternative ${next.contexts.length}`,
+        base,
+        overrides: { [input]: text },
+      },
+    ];
     next.active = id;
     this.apply(next, true);
     return id;
   }
   move(id: string, at: Point) {
     if (!Number.isFinite(at.x) || !Number.isFinite(at.y)) return;
-    const next = clone(this.state),
-      plot = next.plots.find((p) => p.id === id);
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      plot = edit.plot(id);
     if (plot) plot.at = at;
-    else next.layout[id] = at;
+    else edit.layout[id] = at;
     this.apply(next);
   }
   makeModel(model: NestedModel, at: Point, representations: string[] = []) {
@@ -976,36 +1191,39 @@ export class RegionSession {
     );
     if (parents.size !== 1)
       throw Error("Choose content from one working scope.");
-    const next = clone(this.state),
+    const edit = new PageEdit(this.state),
+      next = edit.page,
       parent = [...parents][0];
-    const owner = next.models?.find((m) => m.id === parent);
+    const owner = parent ? edit.model(parent) : undefined;
     if (owner)
       owner.members = [
         ...owner.members.filter((id) => !model.members.includes(id)),
         model.id,
       ];
-    (next.models ||= []).push(clone(model));
+    next.models = [...(next.models || []), clone(model)];
     // Freeze existing coordinates at the scope boundary. Subsequent writing
     // flows within its owner instead of shifting another model's worksheet.
     const current = positions(this.state);
-    for (const r of next.regions) next.layout[r.id] = { ...current[r.id] };
-    for (const p of next.plots) p.at = { ...current[p.id] };
-    next.layout[model.id] = at;
+    for (const r of next.regions) edit.layout[r.id] = { ...current[r.id] };
+    for (const p of next.plots) edit.plot(p.id)!.at = { ...current[p.id] };
+    edit.layout[model.id] = at;
     validateModels(next, representations);
     this.apply(next);
   }
   addModelMember(model: string | undefined, id: string) {
     if (!model || modelParent(this.state, id)) return;
-    const next = clone(this.state),
-      target = next.models?.find((m) => m.id === model);
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      target = edit.model(model);
     if (target) {
       target.members.push(id);
       this.apply(next);
     }
   }
   exposeModel(id: string, inputs: string[], outputs: string[], name?: string) {
-    const next = clone(this.state),
-      model = next.models?.find((m) => m.id === id);
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      model = edit.model(id);
     if (model) {
       if (name?.trim()) model.name = name.trim().slice(0, 80);
       model.inputs = [...inputs];
@@ -1024,8 +1242,9 @@ export class RegionSession {
     }
   }
   styleModel(id: string, patch: ModelAppearancePatch) {
-    const next = clone(this.state),
-      model = next.models?.find((m) => m.id === id);
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      model = edit.model(id);
     if (!model) return;
     model.presentation = { ...model.presentation, ...patch };
     if (
@@ -1043,16 +1262,32 @@ export class RegionSession {
   ) {
     if (Object.values(placements).some((p) => !Number.isFinite(p.x + p.y)))
       return;
-    const next = clone(this.state);
+    const viewCommands: Command[] = [...this.document.views.entries()].flatMap(
+      ([id, view]) => {
+        const at = placements[id];
+        return at && (at.x !== view.x || at.y !== view.y)
+          ? [{ kind: "view" as const, view: { ...view, ...at } }]
+          : [];
+      },
+    );
+    if (viewCommands.length) {
+      this.atomic((staged) => {
+        staged.applyCommands(viewCommands);
+        staged.arrange(placements, checkpoint);
+      }, undo);
+      return;
+    }
+    const edit = new PageEdit(this.state),
+      next = edit.page;
     for (const [id, at] of Object.entries(placements)) {
-      const plot = next.plots.find((p) => p.id === id);
+      const plot = edit.plot(id);
       if (plot) plot.at = at;
       else if (
         next.regions.some((r) => r.id === id) ||
         next.dataRelations?.some((r) => r.id === id) ||
         next.models?.some((m) => m.id === id)
       )
-        next.layout[id] = at;
+        edit.layout[id] = at;
     }
     // A whole calculation arranged in one column remains a writing flow,
     // rather than turning each equation into a fixed obstacle to Enter.
@@ -1066,29 +1301,47 @@ export class RegionSession {
     ) {
       next.origin = placements[column[0].id];
       next.regions = column;
-      for (const r of column) delete next.layout[r.id];
+      for (const r of column) delete edit.layout[r.id];
     }
-    if (checkpoint || JSON.stringify(next) !== JSON.stringify(this.state))
-      this.apply(next, false, undo);
+    this.apply(next, false, undo);
   }
   resize(id: string, width: number, height: number) {
-    const next = clone(this.state),
-      plot = next.plots.find((p) => p.id === id);
+    const edit = new PageEdit(this.state),
+      next = edit.page,
+      plot = edit.plot(id);
     if (!plot || !Number.isFinite(width + height)) return;
     plot.width = Math.max(320, Math.min(1100, width));
     plot.height = Math.max(240, Math.min(750, height));
     this.apply(next);
   }
   stack() {
-    const next = clone(this.state);
-    next.layout = {};
-    this.apply(next);
+    this.apply({ ...this.state, layout: {} });
+  }
+  redo() {
+    if (!this.canRedo) return;
+    this.documentOwner.redo();
+    this.past.push(this.future.pop() ?? {});
+    this.cursors = [];
+    this.cursorOrigin = undefined;
+    this.cursorPage = undefined;
+    this.emit();
   }
   undo() {
+    if (this.documentOwner.reader.preview()) {
+      this.cancelPreview();
+      return;
+    }
     const previous = this.past.pop();
-    if (previous) {
-      this.state = freeze(withoutEmpty(previous.page, this.retainedRegions()));
-      previous.undo?.();
+    this.cursors = [];
+    this.cursorOrigin = undefined;
+    this.cursorPage = undefined;
+    try {
+      if (this.documentOwner.canUndo) {
+        this.documentOwner.undo();
+        this.future.push(previous ?? {});
+        previous?.undo?.();
+      }
+    } finally {
       this.emit();
     }
   }

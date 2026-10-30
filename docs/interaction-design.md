@@ -94,6 +94,52 @@ equation remains division. `@` references an existing object. Cmd/Ctrl K searche
 objects and available commands. Direct manipulation should support mathematical
 terms, values, plot points and connection handles with clear feedback and ordinary Undo.
 
+The compact contextual toolbar is the discoverable starting point. Right-click,
+Actions and Shift+F10 expose a conventional contextual list. Command search provides
+the same operations by name, including less frequent choices.
+
+These are presentations of one shared command resolver. A resolved command carries
+a stable identity, engineering target, availability and explanation, bound parameters,
+consequence preview, execution operation, recovery contract and presentation metadata.
+Changing invocation method does not change the selected definition, plot bindings,
+review semantics or recovery behavior. New integrations must register supported
+capabilities explicitly rather than advertising operations that cannot execute.
+
+Contextual toolbars show up to three likely actions and More. Equations offer
+Edit/Plot/Connect; quantities offer Edit value/Vary/Find uses; results and plot
+selections offer Inspect source/Explore/Compare; datasets offer Inspect/Connect/
+Visualize, with unavailable calculated-data views explained. A selected term is
+identified separately from its containing equation and resolves its identity-bound
+definition. Alt-click selects a mathematical term for actions; ordinary clicking
+continues to edit mathematics directly. Right-click also distinguishes terms,
+results and plot views. No selection gesture silently creates another definition.
+
+Search shows the selected object, current model and scenario. It offers supported
+input-specific response plots, existing response views and commands used during
+the current session, alongside quantities, datasets and models. Unresolved inputs
+produce unavailable commands with explanations. Input choices are bound to source
+identities, not inferred physical equivalence. Code and recovery details remain
+inspectable; view removal is distinguished from document Undo.
+
+An optional experimental marking menu accelerates four primary operations for the
+current object. The cardinal intents stay fixed: Edit above, Explore right, Connect
+below and Inspect left. The resolved operation varies by capability: Explore plots
+an equation response or focuses a quantity's direct variation control. Unsupported
+categories stay unavailable rather than rotating the other directions. Blank space,
+models and selections offer only their supported operations. Secondary choices such
+as comparison remain in the contextual list and search.
+
+Hold Shift+Space, flick toward an action and release Space. Execution does not wait
+for the menu, which appears after 180 ms as guidance. Tapping the shortcut reveals
+it for explicit selection. The smaller ring has an open center, and contextual
+toolbars are hidden while either menu is open. Escape or an outside click cancels.
+Arrow keys and Enter remain available. Text editing retains Shift+Space input and
+the native context menu; Space-drag still pans.
+
+This is an interaction experiment, not a new engineering primitive or a demonstrated
+usability improvement. Compare it with the toolbar and command search before
+promoting it; see the [study protocol](ecosystem-and-roadmap.md#command-interface-experiment).
+
 ## Linking is a first-class experience
 
 Support references, explicit connection handles and contextual requests. Preview
@@ -250,6 +296,25 @@ Distinguish design, assumption, model and requirement changes in history and com
 Use normal Undo for local edits and independent contexts for larger alternatives.
 Results retain the context in which they were evaluated, including after later edits.
 
+Assigned quantities support an explicit Vary session. Its value, exploration range
+and step use the displayed units, including affine temperature conversion. Previewing
+updates dependent equations, following response artifacts and authored requirement
+status and margins while accepted definitions remain unchanged. Range bounds are
+interaction limits, not requirements or claims about model validity. The contextual
+controls distinguish Accept value, Keep as alternative and Cancel. Keeping an
+alternative should preserve the baseline and apply the proposed value together with
+its comparison presentation; one Undo should restore both. The current prototype
+coordinates Page and artifact updates through separate owners and an Undo callback.
+It freezes assigned values, but equations can remain shared across alternatives.
+Full semantic snapshots and a single publication boundary are proposed contracts,
+not shipped guarantees; see the [operation lifecycle](design/operation-lifecycle.md)
+and [frozen-context proposal](design/decisions/0002-context-snapshots-and-result-currency.md).
+The same session is available from a response plot's operating point. It varies one
+assigned input at a time; changing the input starts a new proposal against the accepted
+state. Undefined affected calculations block acceptance and alternative creation.
+Ordinary direct scrubbing retains acceptance on release and ordinary Undo. Preview
+controls remain temporary; reloading or changing the model or scenario discards them.
+
 Show execution status, convergence, applicability, data coverage, requirement
 satisfaction, empirical validation and uncertainty as distinct information. A sampled
 allowed interval is not a certified feasible region. Stale or pending results must
@@ -269,6 +334,19 @@ with successful computation, and a converged calculation can be outside its vali
 domain. Compact views expose what matters to the selected work; they do not default
 to a global failure headline or a success badge for every object. Do not fabricate
 execution lifecycle states that the current evaluator cannot establish.
+
+## Native documents travel with the work
+
+Saving an editable canvas and opening it on another computer is foundational. The
+native document retains authored drafts, references, saved representations, required
+source revisions and available assets. Preserved result evidence is distinct from
+being able to recompute it; missing tools or sources remain explicit. Save retains
+active authored text as a draft without requiring successful computation. Numerical
+previews still require explicit acceptance. See the [portability contract](design/portability.md).
+
+This file handoff is useful before collaboration or presentation services. A native
+save preserves structured work; static images and reports are derived exports with
+their own preservation limits.
 
 ## Communication is a later use of connected work
 

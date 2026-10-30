@@ -1,3 +1,4 @@
+import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
@@ -8,11 +9,7 @@ page.setDefaultTimeout(10000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 const checks = [];
-const model = () =>
-  page.evaluate(
-    () =>
-      JSON.parse(localStorage.getItem("manifold.artifact-experiment.v1")).page,
-  );
+const model = async () => (await readWorkspace(page)).page;
 try {
   await page.goto(`${baseURL}/?think=1&artifacts=1`);
   const editor = page.getByLabel("Write an engineering region", {
@@ -159,8 +156,9 @@ try {
   ).not.toHaveClass(/is-linked/);
   await page.locator('[data-kind="equation"] [data-symbol="force"]').click();
   await expect(page.getByLabel("Dataset selection")).toContainText("Series");
+  await revealRegionActions(page);
   await page
-    .getByRole("button", { name: "Edit equation", exact: true })
+    .locator('.er-object-actions [data-command-id="definition.edit"]')
     .click();
   await expect(editor).toHaveValue("P = force*speed");
   await editor.fill("P = 2*force*speed");

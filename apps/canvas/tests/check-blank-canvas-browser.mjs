@@ -1,3 +1,4 @@
+import { readWorkspace } from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
@@ -7,10 +8,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 const editor = page.getByLabel("Write an engineering region", { exact: true });
-const saved = () =>
-  page.evaluate(() =>
-    JSON.parse(localStorage.getItem("manifold.artifact-experiment.v1")),
-  );
+const saved = () => readWorkspace(page);
 try {
   // No feature flags, templates, model boundary, or prior workspace.
   await page.goto(base);
@@ -83,6 +81,9 @@ try {
 
   // Unsupported dropped files leave engineering work intact.
   const before = (await saved()).page.regions.length;
+  const canvasBox = await page.locator(".er-canvas").boundingBox();
+  const feedbackPoint = { x: canvasBox.x + 210, y: canvasBox.y + 210 };
+  await page.mouse.move(feedbackPoint.x, feedbackPoint.y);
   const invalid = await page.evaluateHandle(() => {
     const dt = new DataTransfer();
     dt.items.add(new File(["not data"], "notes.txt", { type: "text/plain" }));
@@ -94,6 +95,10 @@ try {
   await expect(
     page.getByText("Choose a CSV file.", { exact: true }),
   ).toBeVisible();
+  const notice = await page.locator(".er-message").boundingBox();
+  expect(notice.x).toBeCloseTo(feedbackPoint.x, 0);
+  expect(notice.y).toBeCloseTo(feedbackPoint.y + 8, 0);
+  expect(notice.x + notice.width).toBeLessThanOrEqual(1440);
   expect((await saved()).page.regions).toHaveLength(before);
   // Starting fresh never replaces the original canvas or its name.
   const originalURL = page.url();

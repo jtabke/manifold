@@ -1,0 +1,26 @@
+{
+  "name": "@manifold/foundation",
+  "version": "0.17.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./indexed-db": "./src/indexed-db.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs",
+    "dev": "vite --config vite.config.mjs",
+    "test:browser": "node test/browser.mjs && node test/composition-browser.mjs",
+    "measure:composition": "node test/composition-workload.mjs",
+    "measure:typed": "node test/typed-workload.mjs",
+    "measure:selection": "node test/selection-workload.mjs",
+    "measure": "node test/workload.mjs",
+    "measure:retention": "node test/retention-workload.mjs",
+    "measure:storage": "node test/storage-workload.mjs",
+    "measure:reclamation": "node test/reclamation-workload.mjs"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

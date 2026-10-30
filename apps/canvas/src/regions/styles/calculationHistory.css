@@ -1,0 +1,81 @@
+.calculation-history {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 110px);
+  overflow: auto;
+  box-sizing: border-box;
+}
+.calculation-history button {
+  margin: 4px 6px 4px 0;
+}
+.calculation-history button[aria-pressed="true"] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.calculation-history h3 {
+  font-size: 14px;
+  margin: 14px 0 5px;
+}
+.calculation-record {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--canvas-line, #d8ddd4);
+}
+.calculation-record summary {
+  cursor: pointer;
+}
+.calculation-record summary small {
+  display: block;
+  margin: 3px 0 3px 15px;
+}
+.calculation-record dl {
+  margin: 12px 0;
+}
+.calculation-record dl > div {
+  display: flex;
+  gap: 12px;
+  padding: 3px;
+}
+.calculation-record dt {
+  min-width: 60px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.calculation-record dd {
+  margin: 0;
+}
+.calculation-record code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.calculation-record details {
+  margin: 8px 0;
+}
+.calculation-actions {
+  margin-top: 12px;
+}
+.calculation-actions input {
+  box-sizing: border-box;
+  width: min(100%, 240px);
+  padding: 6px;
+  border: 1px solid var(--canvas-line, #d8ddd4);
+  border-radius: 4px;
+  background: var(--canvas-surface, #fff);
+  color: inherit;
+  font: inherit;
+}
+.calculation-source-table {
+  overflow-x: auto;
+}
+.calculation-source-table th,
+.calculation-source-table td {
+  padding: 5px 9px;
+  border: 1px solid var(--canvas-line, #d8ddd4);
+  overflow-wrap: anywhere;
+  max-width: 200px;
+}
+.calculation-source-table .is-source-cell {
+  font-weight: 700;
+  background: var(--canvas-surface-soft, #e8ece5);
+}
+.calculation-error {
+  color: var(--canvas-danger, #8a4a28);
+}

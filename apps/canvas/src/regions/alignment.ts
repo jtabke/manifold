@@ -10,6 +10,7 @@ export function alignSelection(
   moving: CanvasRect,
   others: CanvasRect[],
   tolerance: number,
+  reach = 120,
 ) {
   let dx = 0,
     dy = 0;
@@ -22,8 +23,8 @@ export function alignSelection(
     for (const other of others) {
       // Nearby content supplies useful alignment, not unrelated objects far away.
       if (
-        moving[cross] > other[cross] + other[crossSize] + 500 ||
-        other[cross] > moving[cross] + moving[crossSize] + 500
+        moving[cross] > other[cross] + other[crossSize] + reach ||
+        other[cross] > moving[cross] + moving[crossSize] + reach
       )
         continue;
       for (const offset of [0, 0.5, 1]) {

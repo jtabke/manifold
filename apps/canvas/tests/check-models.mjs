@@ -1,3 +1,4 @@
+import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import {
   RegionSession,
@@ -84,7 +85,7 @@ assert.ok(
   ) < 1e-6,
 );
 assert.equal(project(s.state).solved.constraints.get(req).pass, true);
-const data = restore(archive(s.state, []));
+const data = restore(legacyWorkspace(s.state, []));
 assert.deepEqual(data.page.models, s.state.models);
 assert.deepEqual(
   [...project(data.page).solved.values],
@@ -98,7 +99,7 @@ doubled.models[0].members.push(t);
 assert.throws(() => validateModels(doubled), /one model/);
 const broken = structuredClone(s.state);
 broken.models[0].inputs.push("region-missing");
-assert.throws(() => restore(archive(broken, [])), /references/);
+assert.throws(() => restore(legacyWorkspace(broken, [])), /references/);
 // Grouping and navigating do not link independently authored assumptions.
 const source = add("supply := 20 W"),
   target = add("load := 10 W");
@@ -157,11 +158,15 @@ flow.makeModel(
   },
   { x: 100, y: 120 },
 );
+const placedBeforeContinuation = positions(flow.state);
 const inserted = flow.write(first, "a := 2 m", true).next;
 flow.write(inserted, "An internal note.");
 assert.equal(modelParent(flow.state, inserted), "model-flow");
 assert.deepEqual(positions(flow.state)[outside], beforeFlow[outside]);
-assert.ok(
-  positions(flow.state)[second].y >= positions(flow.state)[inserted].y + 92,
+assert.deepEqual(
+  positions(flow.state)[second],
+  placedBeforeContinuation[second],
+  "continuation leaves placed model members untouched",
 );
+assert.ok(positions(flow.state)[inserted].y > positions(flow.state)[second].y);
 assert.equal(project(flow.state).solved.values.get("b").value, 4);

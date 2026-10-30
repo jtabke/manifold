@@ -13,6 +13,48 @@ import {
   curve,
   positions,
 } from "../src/regions/document.ts";
+import {
+  REGION_STEP,
+  regionAdvance,
+  freeRegionPosition,
+} from "../src/regions/pageLayout.ts";
+const namedPage = {
+  origin: { x: 0, y: 0 },
+  layout: Object.create(null),
+  plots: [],
+  regions: ["constructor", "toString", "tail"].map((id) => ({
+    id,
+    text: "A line",
+  })),
+};
+assert.equal(
+  positions(namedPage).tail.y,
+  2 * REGION_STEP,
+  "inherited names are not measured heights",
+);
+const inheritedHeight = Object.create(null);
+Object.defineProperty(inheritedHeight, "constructor", {
+  get() {
+    throw Error("Inherited height read");
+  },
+});
+assert.equal(
+  positions(namedPage, Object.create(inheritedHeight)).tail.y,
+  2 * REGION_STEP,
+);
+assert.equal(regionAdvance("A line"), 72);
+assert(regionAdvance("One\nTwo\nThree") > REGION_STEP);
+assert.equal(regionAdvance("Wrapped", 180), 196);
+const fixed = [
+  { x: 100, y: 150, width: 500, height: 80 },
+  { x: 100, y: 260, width: 500, height: 60 },
+];
+const fixedBefore = structuredClone(fixed);
+assert.deepEqual(freeRegionPosition({ x: 100, y: 140 }, REGION_STEP, fixed), {
+  x: 100,
+  y: 336,
+});
+assert.deepEqual(fixed, fixedBefore);
 const s = new RegionSession();
 const arrangedSession = new RegionSession();
 const layoutIds = ["a := 2", "b = a*3", "A note"].map((text) => {
@@ -107,7 +149,10 @@ spatial.write(firstSpatial, "First thought");
 const placed = spatial.create({ x: 125, y: 650 });
 assert.deepEqual(positions(spatial.state)[placed], { x: 125, y: 650 });
 const continued = spatial.write(placed, "Second thought", true).next;
-assert.deepEqual(positions(spatial.state)[continued], { x: 125, y: 742 });
+assert.deepEqual(positions(spatial.state)[continued], {
+  x: 125,
+  y: 650 + REGION_STEP,
+});
 spatial.write(continued, "");
 assert.equal(spatial.state.regions.length, 2);
 assert.deepEqual(positions(spatial.state)[firstSpatial], { x: 100, y: 100 });
