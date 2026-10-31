@@ -154,6 +154,16 @@ const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
   ],
   Drawing: [
     [
+      "Draw + hold",
+      "Regularize a pen stroke",
+      "Pen only: hold still about 650 ms for a line/circle/rectangle preview. Lift accepts; move resumes ink. Undo restores original ink.",
+    ],
+    [
+      "Regularize button · Enter / Space",
+      "Regularize selected ink without holding",
+      "One selected pen stroke. Focus the drawing toolbar button; uncertain fits leave the stroke unchanged.",
+    ],
+    [
       "⌘ / Ctrl + D",
       "Duplicate selected marks",
       "While a drawing tool is active, outside text fields.",

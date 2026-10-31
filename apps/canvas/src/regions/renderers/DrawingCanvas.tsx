@@ -3,6 +3,7 @@ import { isDialogEvent } from "../interaction/modalInput";
 import {
   memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -51,6 +52,12 @@ import {
   type MarkGeometry,
 } from "../drawingGeometry";
 import { useEditBuffer } from "../app/useEditBuffer";
+import { sameJson } from "../immutableJson";
+import {
+  regularizeStroke,
+  REGULARIZE_HOLD_MS,
+  REGULARIZE_MOVE_PX,
+} from "../drawingRegularization";
 import type { EditBuffers } from "../app/workspaceFiles";
 import "../styles/drawing.css";
 type Tool = "write" | "select" | "lasso" | "eraser" | DrawingKind;
@@ -71,6 +78,8 @@ type Gesture = {
   geometry: ReturnType<typeof drawingGeometry>;
   points: InkPoint[];
   mark?: Mark;
+  regularized?: Mark;
+  hold?: { at: Point; zoom: number; timer?: ReturnType<typeof setTimeout> };
   erased: Set<string>;
   transform?: (end: Point) => DrawingEdit[];
 };
@@ -88,6 +97,11 @@ const tools = [
   ["connector", "Visual connector", Workflow],
 ] as const;
 const freehand = (tool: Tool) => isInk(tool) || tool === "lasso";
+function clearHold(g: Gesture) {
+  clearTimeout(g.hold?.timer);
+  g.hold = undefined;
+  g.regularized = undefined;
+}
 function labelMark(
   text: string,
   { color, width }: Pick<Mark, "color" | "width">,
@@ -123,6 +137,7 @@ function useDrawingCanvas(
   buffers: EditBuffers,
   report: (message: string) => void,
   visible: boolean,
+  zoom: number,
 ) {
   const matchShortcut = useShortcutMatcher();
   const [tool, setTool] = useState<Tool>("write");
@@ -133,12 +148,32 @@ function useDrawingCanvas(
     frame = useRef<number | undefined>(undefined);
   const [version, redraw] = useReducer((n) => n + 1, 0);
   const preview = gesture.current;
+  const fitted = preview?.regularized;
+  const shown = useRef<{ gesture: Gesture; mark: Mark } | undefined>(undefined);
+  useLayoutEffect(() => {
+    // A timer result is not an accepted intent until its preview has reached the DOM.
+    shown.current =
+      visible && preview && fitted
+        ? { gesture: preview, mark: fitted }
+        : undefined;
+  });
   const entries = drawings(session.document),
     geometry = drawingGeometry(entries);
   const selected = useMemo(
     () => new Set([...selection].filter((id) => geometry.byId.has(id))),
     [selection, geometry],
   );
+  const selectedStroke =
+    selected.size === 1 ? geometry.byId.get([...selected][0]) : undefined;
+  const regularize = () => {
+    if (gesture.current || selectedStroke?.mark.kind !== "pen") return;
+    const mark = regularizeStroke(selectedStroke.mark, zoom);
+    if (!mark)
+      return report(
+        "No confident line, circle or rectangle fit. The original stroke was kept.",
+      );
+    safe(() => editDrawings(session, [{ entry: selectedStroke, mark }]));
+  };
   const safe = (operation: () => void) => {
     try {
       operation();
@@ -151,9 +186,11 @@ function useDrawingCanvas(
   const clearGesture = () => {
     const g = gesture.current;
     gesture.current = undefined;
+    shown.current = undefined;
     if (frame.current !== undefined) cancelAnimationFrame(frame.current);
     frame.current = undefined;
     if (g) {
+      clearTimeout(g.hold?.timer);
       delete g.capture.dataset.drawingActive;
       if (g.capture.hasPointerCapture(g.pointer))
         g.capture.releasePointerCapture(g.pointer);
@@ -176,7 +213,40 @@ function useDrawingCanvas(
         if (gesture.current) redraw();
       });
   };
+  const hold = (g: Gesture, p: Point, scale: number, ending = false) => {
+    if (g.tool !== "pen") return;
+    if (
+      g.hold?.zoom === scale &&
+      Math.hypot(p.x - g.hold.at.x, p.y - g.hold.at.y) * scale <=
+        REGULARIZE_MOVE_PX
+    )
+      return;
+    clearHold(g);
+    if (ending) return;
+    const pending: NonNullable<Gesture["hold"]> = { at: p, zoom: scale };
+    g.hold = pending;
+    pending.timer = setTimeout(() => {
+      pending.timer = undefined;
+      if (
+        gesture.current !== g ||
+        g.hold !== pending ||
+        g.expected !== session.document ||
+        !g.capture.isConnected ||
+        !g.capture.hasPointerCapture(g.pointer)
+      )
+        return;
+      g.regularized = g.mark && regularizeStroke(g.mark, scale);
+      if (g.regularized) redraw();
+    }, REGULARIZE_HOLD_MS);
+  };
   useEffect(() => clearGesture, []);
+  useEffect(() => {
+    const g = gesture.current;
+    if (g?.hold && g.hold.zoom !== zoom) {
+      clearHold(g);
+      redraw();
+    }
+  }, [zoom]);
   useEffect(() => {
     if (
       !visible ||
@@ -359,6 +429,7 @@ function useDrawingCanvas(
     if (tool === "eraser") sample(g, p, zoom, e.shiftKey);
     e.currentTarget.dataset.drawingActive = "true";
     e.currentTarget.setPointerCapture(e.pointerId);
+    hold(g, p, zoom);
     redraw();
   };
   const sample = (g: Gesture, p: InkPoint, zoom: number, shift: boolean) => {
@@ -407,15 +478,34 @@ function useDrawingCanvas(
     if (!g || g.pointer !== e.pointerId) return;
     e.preventDefault();
     e.stopPropagation();
+    if (g.expected !== session.document) return cancel();
+    hold(g, p, zoom, e.type === "pointerup");
     if (!sample(g, p, zoom, e.shiftKey)) return;
     if (e.type !== "pointerup") return show();
+    const acceptedFit =
+      shown.current?.gesture === g && shown.current.mark === g.regularized
+        ? g.regularized
+        : undefined;
     cancel();
     safe(() => {
-      if (g.mark)
-        setSelection(
-          new Set([createDrawing(session, g.mark, undefined, g.expected)]),
-        );
-      else if (g.tool === "eraser")
+      if (g.mark) {
+        // Retain the authored ink as an ordinary history state: Undo shape → ink, then ink → absent.
+        const id = createDrawing(session, g.mark, undefined, g.expected);
+        setSelection(new Set([id]));
+        if (acceptedFit) {
+          const entry = drawings(session.document).find((e) => e.id === id);
+          if (
+            !entry ||
+            !sameJson(entry.mark, g.mark) ||
+            entry.view.x !== 0 ||
+            entry.view.y !== 0
+          )
+            throw Error(
+              "The stroke changed before regularization; its current drawing was kept.",
+            );
+          editDrawings(session, [{ entry, mark: acceptedFit }]);
+        }
+      } else if (g.tool === "eraser")
         deleteDrawings(session, [...g.erased], g.expected);
       else if (g.tool === "lasso")
         setSelection(
@@ -464,6 +554,17 @@ function useDrawingCanvas(
     duplicate,
     remove,
     editLabel,
+    regularize,
+    canRegularize: !preview && selectedStroke?.mark.kind === "pen",
+    guidance: preview?.regularized
+      ? `${preview.regularized.kind === "ellipse" ? "Circle" : preview.regularized.kind === "line" ? "Line" : "Rectangle"} preview. Release to accept; move to keep drawing.`
+      : tool === "pen"
+        ? "Draw, then hold still to preview a line, circle or rectangle."
+        : tool === "write"
+          ? "Sketch beside your calculations"
+          : tool === "connector"
+            ? "Drag between shapes · visual only"
+            : "Space-drag to pan · Shift constrains shapes · Esc to write",
   };
 }
 type Controller = ReturnType<typeof useDrawingCanvas>;
@@ -528,12 +629,23 @@ function DrawingToolbar({ drawing: d }: { drawing: Controller }) {
           <Icon size={16} />
         </button>
       ))}
-      <span className="drawing-hint">
-        {d.tool === "write"
-          ? "Sketch beside your calculations"
-          : d.tool === "connector"
-            ? "Drag between shapes · visual only"
-            : "Space-drag to pan · Shift constrains shapes · Esc to write"}
+      <button
+        aria-label="Regularize selection"
+        title="Fit one selected pen stroke to a line, circle or rectangle. Undo restores ink."
+        disabled={!d.canRegularize}
+        onClick={d.regularize}
+      >
+        Regularize
+      </button>
+      <span className="drawing-hint" aria-hidden="true">
+        {d.guidance}
+      </span>
+      <span
+        className="drawing-announcement"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {d.guidance}
       </span>
     </div>
   );
@@ -679,7 +791,7 @@ export function DrawingCanvas({
   zoom: number;
   point: (x: number, y: number) => Point;
 }) {
-  const d = useDrawingCanvas(session, buffers, report, visible);
+  const d = useDrawingCanvas(session, buffers, report, visible, zoom);
   if (!visible) return null;
   const geometry = drawingGeometry(d.entries),
     b = geometry.selectionBounds(d.selection),
@@ -688,7 +800,7 @@ export function DrawingCanvas({
     ...point(e.clientX, e.clientY),
     pressure: e.pointerType === "pen" ? Math.max(0.05, e.pressure) : 0.75,
   });
-  const draft = d.preview?.mark,
+  const draft = d.preview?.regularized ?? d.preview?.mark,
     stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
   return (
     <>
@@ -724,7 +836,10 @@ export function DrawingCanvas({
         )}
         <DrawingMarks entries={d.entries} erased={d.preview?.erased} />
         {draft && (
-          <g pointerEvents="none">
+          <g
+            pointerEvents="none"
+            data-regularized-preview={d.preview?.regularized?.kind}
+          >
             <MarkView
               mark={draft}
               geometry={geometry.geometry({

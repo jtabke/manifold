@@ -8,7 +8,9 @@ const requested = process.argv.slice(2).filter((name) => name !== "--browser");
 const files = [];
 const checks = [
   "check-drawing.mjs",
+  "check-drawing-regularization.mjs",
   "check-drawing-browser.mjs",
+  "check-drawing-regularization-browser.mjs",
   "check-drawing-performance-browser.mjs",
   "check-drawing-publication-profile.mjs",
   "check-areas.mjs",

@@ -110,7 +110,18 @@ representation still exists at that point, and keep secondary view IDs distinct 
 computational owner. A temporary DOM attention marker may expose its controls, but must be cleaned
 up on selection/document/workspace change or unmount. Panning is navigation, not a new selection.
 Never turn this marker into persisted geometry, an Undo record or a second accepted layer owner.
-Sketch strokes continue to use their separate drawing selection machinery.
+Sketch strokes continue to use their separate drawing selection machinery. Pen hold-to-regularize
+uses bounded local fitting in `drawingRegularization.ts`, not an AI executor or a new schema.
+Keep original ink separate from the immutable fitted preview; neither a timer nor selection
+attention may publish. Require owned capture, an unchanged document and a stable screen-space
+hold; cancel timers on movement, completion, capture loss, blur and unmount. Zoom clears a
+fitted preview. Only a visible, DOM-committed preview can be accepted; freeze that acknowledgment
+before clearing the gesture. A queued timer result alone is not acceptance authority. Release
+accepts exactly the displayed fit, or retains ordinary ink after movement.
+Keep original ink through an ordinary creation followed by a separate ordinary shape revision,
+so Undo first restores ink; if revision fails, keep the valid ink. Do not replace this with feature
+history or hidden persisted originals. The keyboard-accessible Regularize button uses the same
+fitter and normal guarded edit path. Recognition never infers engineering meaning/dependencies.
 
 Notation uses its source spans for pointer selection, not an implicit value scrub or link.
 Keep those intents separate: Vary is deliberate, and connections use the link handle/review.

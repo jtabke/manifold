@@ -177,14 +177,30 @@ diagrams. Shift snaps line angles or constrains shapes to squares/circles. Drag 
 **Visual connector** between rectangles/ellipses: it stays attached as they move or
 resize, without creating a computational relationship.
 
+With **Pen**, draw a rough line, circle or approximately axis-aligned rectangle, then
+keep the pointer down and hold still for about **650 ms**. A confident fit becomes a
+clean preview. Lift to accept it, or move more than three screen pixels to return to
+freehand; another hold can preview again. Short/ambiguous strokes and Highlighter stay
+unchanged. Escape, window blur or lost pointer capture cancel the whole gesture.
+Changing zoom clears the fitted preview without accepting it.
+
+For the non-dwell alternative, select one pen stroke and activate **Regularize** in
+the drawing toolbar using a click or keyboard focus plus Enter/Space. An uncertain fit
+leaves the stroke untouched. This is local geometry fitting, not AI or mechanical-symbol
+interpretation; it creates no dimensions, constraints or computational dependencies.
+
 Use **Select drawings** (Shift-click for multiple) or **Lasso drawings**, then drag to
 move, drag the corner handle to resize, or use Duplicate/Delete. Double-click a label
 to edit it; Enter accepts, Shift+Enter adds a line, and Escape cancels. The eraser
 removes whole marks. Finger-drag pans and two fingers pinch-zoom; Space-drag and
 middle-drag also pan. **Write** or Escape returns to equation/note authoring.
 
-Drawing gestures save on release as one Undo step. Ctrl/Cmd+Z undoes;
-Ctrl/Cmd+Shift+Z or Ctrl+Y redoes. New edits clear Redo. Drawings and attachments travel
+Ordinary drawing gestures save on release as one Undo step. A held regularization saves
+the original ink first, then replaces it through a second normal history operation:
+**Undo restores the exact ink/pressure; another Undo removes the stroke**. Redo restores
+the fitted shape. If replacement cannot be accepted, the original ink remains. Selecting
+and regularizing existing ink is one ordinary edit. Nothing is saved by the hold preview.
+Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z or Ctrl+Y redoes. New edits clear Redo. Drawings and attachments travel
 in workspace files and local recovery; session Undo/Redo does not. The current bounds
 are 2,000 marks, 8,192 points per stroke and 4,096 characters per label, subject to the
 shared workspace capacity. See the drawing brief (internal design note)

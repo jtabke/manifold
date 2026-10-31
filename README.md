@@ -21,7 +21,8 @@ without losing the original.
 - **Explore safely.** Vary an input, see downstream effects and constraint crossings,
   then cancel, accept the value or keep an alternative.
 - **Sketch your reasoning.** Use pressure-sensitive ink, highlighter, shapes, labels
-  and attached visual connectors. Sketches never silently become mathematical dependencies.
+  and attached visual connectors. Draw and hold a pen stroke to preview a clean line,
+  circle or rectangle. Sketches never silently become mathematical dependencies.
 - **Keep control.** Undo/Redo, deliberate docking previews, overlap selection and
   searchable, customizable shortcuts support different ways of working.
 - **Keep your work.** Save locally in your browser and export portable workspace files.
