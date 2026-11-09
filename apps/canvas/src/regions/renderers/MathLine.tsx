@@ -17,7 +17,12 @@ import {
 } from "../../notebook/math";
 import { project } from "../document";
 import type { Quantity } from "../../notebook/math";
-import { ScrubNumber, type Scrub } from "./Interactions";
+import {
+  numberScrubAttributes,
+  useNumberScrub,
+  type NumberInput,
+  type Scrub,
+} from "../interaction/useNumberScrub";
 import { mathSource, caretInSpan, type SourceSpan } from "../editing";
 import { sourceSpans } from "../editing";
 
@@ -35,7 +40,12 @@ function notation(name: string): ReactNode {
       ])
     : m("mi", name === "degC" ? "°C" : name);
 }
-type MathLineProps = Parameters<typeof MathLineContent>[0];
+type MathLineProps = Omit<
+  Parameters<typeof MathLineContent>[0],
+  "cancelInput"
+> & {
+  inputVersion?: unknown;
+};
 // Delegates close over current-handler refs and scalar data, never old Page callbacks.
 function liveMathHandlers(
   latest: RefObject<MathLineProps>,
@@ -71,6 +81,9 @@ function liveMathHandlers(
 /** Cache the rendered mathematics, while event delegates use the latest committed application handlers. */
 export function MathLine(props: MathLineProps) {
   const latest = useRef(props);
+  const cancelInput = useRef<(() => void) | undefined>(undefined);
+  // Invalidate input without invalidating the cached mathematical representation.
+  useLayoutEffect(() => cancelInput.current?.(), [props.inputVersion]);
   useLayoutEffect(() => {
     latest.current = props;
   });
@@ -124,7 +137,7 @@ export function MathLine(props: MathLineProps) {
         props.scrubSource ? controls : undefined,
       ),
     };
-    return <MathLineContent {...bound} />;
+    return <MathLineContent {...bound} cancelInput={cancelInput} />;
   }, [props.statement, visual]);
 }
 /** Caret location in authored source, even when pointer capture targets the math root. */
@@ -173,6 +186,7 @@ function MathLineContent({
   highlights,
   directEdit = false,
   inspectSymbols = false,
+  cancelInput,
   linkSources,
   onSymbol,
 }: {
@@ -188,12 +202,41 @@ function MathLineContent({
   highlightExpression?: boolean;
   directEdit?: boolean;
   inspectSymbols?: boolean;
+  cancelInput: RefObject<(() => void) | undefined>;
   linkSources?: Readonly<Record<string, readonly string[]>>;
   onSymbol?: (name: string) => void | boolean;
 }) {
   const renders = useRef(0);
   renders.current++;
   const nativeEdit = directEdit && !inspectSymbols;
+  const ports = new Map<string, NumberInput>();
+  const { events: numbers, cancel } = useNumberScrub({
+    read: (target) =>
+      ports.get(
+        target
+          .closest("[data-number-input]")
+          ?.getAttribute("data-number-input") || "",
+      ),
+  });
+  useLayoutEffect(() => {
+    cancelInput.current = cancel;
+    return () => {
+      cancelInput.current = undefined;
+    };
+  });
+  const numberControl = (
+    id: string,
+    name: string,
+    children: ReactNode,
+    port: NumberInput,
+    title?: string,
+  ) => {
+    ports.set(id, port);
+    return m("mn", children, {
+      ...numberScrubAttributes(name, port.scrub, title),
+      "data-number-input": id,
+    });
+  };
   const [selection, setSelection] = useState<SourceSpan>();
   const drag = useRef<
     | {
@@ -267,15 +310,16 @@ function MathLineContent({
           [
             m(
               "mrow",
-              <ScrubNumber
-                math
-                name={`Explore ${name}`}
-                scrub={nativeEdit ? undefined : scrubSource?.(id)}
-                title="Drag to vary · click for definition"
-                edit={() => choose(name)}
-              >
-                {display(q)}
-              </ScrubNumber>,
+              numberControl(
+                `source:${id}`,
+                `Explore ${name}`,
+                display(q),
+                {
+                  scrub: nativeEdit ? undefined : scrubSource?.(id),
+                  edit: () => choose(name),
+                },
+                "Drag to vary · click for definition",
+              ),
               { key: "v", "data-source-id": id },
             ),
             m("mo", "⏟", { key: "b", stretchy: "true" }),
@@ -330,16 +374,11 @@ function MathLineContent({
       const span = spans[number++];
       return m(
         "mrow",
-        <ScrubNumber
-          math
-          name={`Edit value ${e.value}`}
-          scrub={nativeEdit ? undefined : number === 1 ? scrub : undefined}
-          edit={(element, point) =>
-            directEdit ? editAt(mapped.span, element, point?.x) : edit(span)
-          }
-        >
-          {e.value}
-        </ScrubNumber>,
+        numberControl(`literal:${number}`, `Edit value ${e.value}`, e.value, {
+          scrub: nativeEdit ? undefined : number === 1 ? scrub : undefined,
+          edit: (element, point) =>
+            directEdit ? editAt(mapped.span, element, point?.x) : edit(span),
+        }),
         sourceProps(mapped.span),
       );
     }
@@ -396,8 +435,13 @@ function MathLineContent({
     {
       display: "inline",
       "data-math-renders": renders.current,
+      tabIndex: -1,
+      onKeyDown: numbers.onKeyDown,
+      onKeyUp: numbers.onKeyUp,
+      onBlur: numbers.onBlur,
       className: nativeEdit ? "er-editable-math" : undefined,
       onPointerDown: (event: React.PointerEvent<Element>) => {
+        if (numbers.onPointerDown(event)) return;
         if (
           !nativeEdit ||
           event.button !== 0 ||
@@ -426,6 +470,7 @@ function MathLineContent({
         event.currentTarget.setPointerCapture(event.pointerId);
       },
       onPointerMove: (event: React.PointerEvent<Element>) => {
+        if (numbers.onPointerMove(event)) return;
         const g = drag.current;
         if (!g || g.pointer !== event.pointerId || g.text !== text) return;
         if (
@@ -446,6 +491,7 @@ function MathLineContent({
         });
       },
       onPointerUp: (event: React.PointerEvent<Element>) => {
+        if (numbers.onPointerUp(event)) return;
         const g = drag.current;
         if (!g || g.pointer !== event.pointerId) return;
         drag.current = undefined;
@@ -466,19 +512,23 @@ function MathLineContent({
         });
       },
       onPointerCancel: (event: React.PointerEvent) => {
+        numbers.onPointerCancel(event);
         if (drag.current?.pointer === event.pointerId) cancelSelection();
       },
       onLostPointerCapture: (event: React.PointerEvent) => {
+        numbers.onLostPointerCapture(event);
         if (drag.current?.pointer === event.pointerId) cancelSelection();
       },
       onClick: (event: React.MouseEvent) => {
-        if (!directEdit) return;
-        event.stopPropagation();
+        if (directEdit) event.stopPropagation();
         if (drag.current) return;
         if (suppressClick.current) {
           suppressClick.current = false;
           return;
         }
+        if (numbers.onClick(event)) return;
+        if (!directEdit) return;
+        event.stopPropagation();
         const point = sourceAtPoint(
           event.currentTarget,
           event.clientX,

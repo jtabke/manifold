@@ -123,6 +123,13 @@ so Undo first restores ink; if revision fails, keep the valid ink. Do not replac
 history or hidden persisted originals. The keyboard-accessible Regularize button uses the same
 fitter and normal guarded edit path. Recognition never infers engineering meaning/dependencies.
 
+Equation-link and dataset-column drags in `Regions.tsx` share one exclusive input boundary:
+retain the initiating pointer ID, ignore other pointers' move/up/cancel events and refuse
+competing starts until completion/cancellation. Owner cancellation, Escape and window blur
+clear transient geometry without publishing work. Completion opens the domain review, not
+an accepted connection. The [connection gesture contract](../../apps/canvas/tests/check-connection-gestures-browser.mjs)
+checks both kinds; other input paths have separate coverage and must not be assumed safe by analogy.
+
 Notation uses its source spans for pointer selection, not an implicit value scrub or link.
 Keep those intents separate: Vary is deliberate, and connections use the link handle/review.
 Cancel a source gesture when its text or editing mode changes. Native details disclosures
@@ -158,6 +165,35 @@ movement preserves a proposal; a changed semantic selection or scenario makes it
 clears transient state without writing a restoration. Range edits and recovery clearing are named
 actions, not exposed React setters. The local and real-browser exploration checks cover unchanged
 saved work during preview, accepted/kept changes, Undo, invalid downstream results and stale recovery.
+
+The artifact operating-point slider delegates its transient idle/pointer/keyboard lifecycle to
+`interaction/useValueGesture.ts`. Only the owning pointer or paired key release may finish.
+Capture loss, Escape/Undo/Redo, element/window blur, hidden page, accepted-document change and
+unmount cancel active input without accepting a value. Clear ownership before releasing capture,
+and let normal pointer-up release capture natively. Idle blur must not discard an already-finished
+explicit proposal. The [numeric-input Chrome contract](../../apps/canvas/tests/check-exploration-input-browser.mjs)
+checks these boundaries for artifact input and number scrubs.
+
+`useNumberScrub` adapts that lifecycle to number controls. `MathLineContent` owns it on the stable
+`<math>` row, with local identity-to-port lookup for disposable `<mn>` leaves. Capture and keyboard
+focus belong to the row: canonical unit formatting or a sign change may replace the entire inner
+number subtree without cancelling or restarting the interaction. Read current port callbacks, retain
+the initial drag value, and use the accepted document as `inputVersion`; preview text is not a
+cancellation version. Version changes call the content's cancellation port from `MathLine`; never
+add the accepted document to the notation memo dependencies. Layout/unrelated edits must still
+reuse unchanged mathematical subtrees, as checked by the incremental worksheet Chrome contract.
+Keep logical focused-control identity after key release so separate arrow
+presses and Enter still reach the number while the row is focused. Tab keeps its native default
+navigation but cancels held input; only the deliberate leaf-to-host focus handoff preserves ownership.
+Standalone `ScrubNumber` is a button using the same adapter, not a stateful
+MathML leaf. Native source selection remains a separate guarded intent on the row.
+
+Cancellation clears ownership before capture release. Finished explicit proposals survive idle blur;
+active gestures cancel on external blur, capture loss, hidden page, Escape, owner unmount or accepted
+worksheet changes. The numeric-input contract checks actual leaf replacement, repeated keys,
+positive/negative unit-syntax transitions, cancellation and one accepted change/Undo. No source
+rewrite, retained AST snapshot, restoration write or second accepted owner is required. Remaining
+independent pointer paths are listed in the [workflow inventory](state-workflows.md#remaining-risks-and-next-decisions).
 
 ## Computation and optional tools
 

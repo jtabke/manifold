@@ -393,6 +393,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   }>();
   const dataGesture = useRef<
     | {
+        pointer: number;
         dataset: string;
         columns: number[];
         start: Point;
@@ -439,7 +440,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setAreaSelection(bound?.id);
   };
   const linkGesture = useRef<
-    { source: string; start: Point; client: Point; moved: boolean } | undefined
+    | {
+        pointer: number;
+        source: string;
+        start: Point;
+        client: Point;
+        moved: boolean;
+      }
+    | undefined
   >(undefined);
   const [linkDrag, setLinkDrag] = useState<{
     source: string;
@@ -2148,6 +2156,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     const move = (event: globalThis.PointerEvent) => {
       const dg = dataGesture.current;
       if (dg) {
+        if (dg.pointer !== event.pointerId) return;
         if (
           !dg.moved &&
           Math.hypot(event.clientX - dg.client.x, event.clientY - dg.client.y) <
@@ -2167,6 +2176,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       const g = linkGesture.current;
       if (
         !g ||
+        g.pointer !== event.pointerId ||
         (!g.moved &&
           Math.hypot(event.clientX - g.client.x, event.clientY - g.client.y) <
             5)
@@ -2188,6 +2198,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     };
     const up = (event: globalThis.PointerEvent) => {
       const dg = dataGesture.current;
+      if (dg && dg.pointer !== event.pointerId) return;
       dataGesture.current = undefined;
       if (dg?.moved) {
         setDataDrag(undefined);
@@ -2205,6 +2216,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         return;
       }
       const g = linkGesture.current;
+      if (g && g.pointer !== event.pointerId) return;
       linkGesture.current = undefined;
       if (!g?.moved) return;
       suppressCanvasClick.current = true;
@@ -2218,7 +2230,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         target,
       });
     };
-    const cancel = () => {
+    const cancel = (event: Event) => {
+      const gesture = dataGesture.current || linkGesture.current;
+      if (
+        gesture &&
+        "pointerId" in event &&
+        event.pointerId !== gesture.pointer
+      )
+        return;
       dataGesture.current = undefined;
       setDataDrag(undefined);
       linkGesture.current = undefined;
@@ -3576,6 +3595,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             }}
             onAuxClickCapture={navigation.click}
             onPointerDownCapture={(e) => {
+              // Connection input is idle or owned by exactly one pointer, across both kinds.
+              if (dataGesture.current || linkGesture.current) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
               actionPointer.current = { x: e.clientX, y: e.clientY };
               const object = canvasObjectId(e.target as Element);
               const press = {
@@ -3643,6 +3668,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   if (!commit()) return;
                 }
                 dataGesture.current = {
+                  pointer: e.pointerId,
                   dataset: dataHandle.dataset.datasetLink!,
                   columns: dataHandle.dataset.columns!.split(",").map(Number),
                   start: canvasPoint(e.clientX, e.clientY),
@@ -3681,6 +3707,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   if (!commit()) return;
                 }
                 linkGesture.current = {
+                  pointer: e.pointerId,
                   source,
                   start: canvasPoint(e.clientX, e.clientY),
                   client: { x: e.clientX, y: e.clientY },
@@ -5567,6 +5594,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             <MathLine
                               statement={s}
                               text={effectiveText}
+                              inputVersion={session.document}
                               directEdit={quiet && !variation}
                               inspectSymbols={(page.dataRelations || []).some(
                                 (r) => r.output === id,

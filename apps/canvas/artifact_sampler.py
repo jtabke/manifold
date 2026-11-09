@@ -18,6 +18,10 @@ from pathlib import Path
 VERSION = "bounded-python-sampler/1"
 
 
+class SamplingUnavailable(RuntimeError):
+    """The bounded worker could not start; the same request may be retried."""
+
+
 def number(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("Use finite scalar numbers")
@@ -157,6 +161,8 @@ def sample(body: object) -> dict:
         )
     except subprocess.TimeoutExpired as exc:
         raise ValueError("Python sampling timed out") from exc
+    except OSError as exc:
+        raise SamplingUnavailable("Python sampling is unavailable. Retry when ready.") from exc
     if result.returncode or len(result.stdout) > 100_000:
         raise ValueError("Python sampling failed")
     data = json.loads(result.stdout)

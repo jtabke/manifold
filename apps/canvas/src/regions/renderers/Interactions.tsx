@@ -1,4 +1,9 @@
-import { isDialogEvent } from "../interaction/modalInput";
+import {
+  numberScrubAttributes,
+  useNumberScrub,
+  type Scrub,
+} from "../interaction/useNumberScrub";
+export type { Scrub } from "../interaction/useNumberScrub";
 import React, {
   useEffect,
   useLayoutEffect,
@@ -17,27 +22,14 @@ import {
   type Point,
   type Projection,
 } from "../document";
-import {
-  boundedValue,
-  responseFor,
-  type Exploration,
-  type VariationRange,
-} from "../exploration";
+import { responseFor, type Exploration } from "../exploration";
 const shown = (q?: Quantity) => (q ? display(q) : "Unresolved");
 const short = (n: number) => Number(n.toPrecision(4)).toString();
-export type Scrub = {
-  quantity: Quantity;
-  range?: VariationRange;
-  explore: (value: number, anchor?: Element) => void;
-  finish: () => void;
-  revert: () => void;
-};
 export function ScrubNumber({
   children,
   scrub,
   edit,
   name,
-  math = false,
   title,
 }: {
   children: ReactNode;
@@ -45,109 +37,16 @@ export function ScrubNumber({
   edit?: (anchor?: Element, point?: { x: number; y: number }) => void;
   title?: string;
   name: string;
-  math?: boolean;
 }) {
-  const pointer = useRef<
-    | { x: number; start: number; moved: boolean; target: Element; id: number }
-    | undefined
-  >(undefined);
-  const suppress = useRef(false);
-  const keyboard = useRef(false);
-  const cancel = () => {
-    const p = pointer.current;
-    if (p?.target.hasPointerCapture(p.id)) p.target.releasePointerCapture(p.id);
-    pointer.current = undefined;
-    keyboard.current = false;
-    scrub?.revert();
-  };
-  useEffect(() => {
-    const escape = (e: KeyboardEvent) => {
-      if (isDialogEvent(e)) return;
-      if (e.key === "Escape" && pointer.current) cancel();
-    };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  });
-  const props = {
-    role: "button",
-    tabIndex: 0,
-    "aria-label": name,
-    className: `er-number ${scrub ? "er-scrubbable" : ""}`,
-    title: title || (scrub ? "Drag to vary · click to edit" : "Click to edit"),
-    onPointerDown: (e: React.PointerEvent<Element>) => {
-      if (!scrub || e.button !== 0) return;
-      e.stopPropagation();
-      suppress.current = false;
-      e.currentTarget.setPointerCapture(e.pointerId);
-      pointer.current = {
-        x: e.clientX,
-        start: scrub.quantity.value,
-        moved: false,
-        target: e.currentTarget,
-        id: e.pointerId,
-      };
+  const { events: input } = useNumberScrub({ read: () => ({ scrub, edit }) });
+  return React.createElement(
+    "button",
+    {
+      ...numberScrubAttributes(name, scrub, title),
+      ...input,
     },
-    onPointerMove: (e: React.PointerEvent<Element>) => {
-      const p = pointer.current;
-      if (!p || !scrub || (!p.moved && Math.abs(e.clientX - p.x) < 4)) return;
-      p.moved = true;
-      suppress.current = true;
-      const base = scrub.quantity.absolute ? p.start - 273.15 : p.start;
-      const step =
-        (scrub.range?.step || Math.abs(base) / 180 || 0.01) *
-        (e.shiftKey ? 0.1 : 1);
-      const value = p.start + (e.clientX - p.x) * step;
-      scrub.explore(
-        scrub.range ? boundedValue(value, scrub.range) : value,
-        e.currentTarget,
-      );
-    },
-    onPointerUp: (e: React.PointerEvent<Element>) => {
-      if (!pointer.current) return;
-      const moved = pointer.current.moved;
-      e.currentTarget.releasePointerCapture(e.pointerId);
-      pointer.current = undefined;
-      if (moved) scrub?.finish();
-    },
-    onPointerCancel: cancel,
-    onClick: (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (suppress.current) {
-        suppress.current = false;
-        return;
-      }
-      edit?.(e.currentTarget, { x: e.clientX, y: e.clientY });
-    },
-    onKeyUp: (e: React.KeyboardEvent) => {
-      if (keyboard.current && ["ArrowLeft", "ArrowRight"].includes(e.key)) {
-        keyboard.current = false;
-        scrub?.finish();
-      }
-    },
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (scrub && ["ArrowLeft", "ArrowRight"].includes(e.key)) {
-        e.stopPropagation();
-        e.preventDefault();
-        const value = scrub.quantity.value,
-          base = scrub.quantity.absolute ? value - 273.15 : value;
-        keyboard.current = true;
-        scrub.explore(
-          value +
-            (e.key === "ArrowRight" ? 1 : -1) *
-              (scrub.range?.step || Math.abs(base) / 100 || 0.01) *
-              (e.shiftKey ? 0.1 : 1),
-          e.currentTarget,
-        );
-      } else if (e.key === "Enter") {
-        e.stopPropagation();
-        e.preventDefault();
-        edit?.(e.currentTarget);
-      } else if (e.key === "Escape") {
-        cancel();
-      }
-    },
-  };
-  return React.createElement(math ? "mn" : "button", props, children);
+    children,
+  );
 }
 
 function MiniResponse({

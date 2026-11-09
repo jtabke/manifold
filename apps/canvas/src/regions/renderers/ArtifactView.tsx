@@ -1,5 +1,5 @@
 import { useShortcutMatcher } from "../app/useShortcutPreferences";
-import { isDialogEvent } from "../interaction/modalInput";
+import { useValueGesture } from "../interaction/useValueGesture";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Code2, GripVertical, MoreHorizontal, X } from "lucide-react";
 import { display, passes } from "../../notebook/math";
@@ -255,7 +255,6 @@ function ArtifactPresentationView({
   const [source, setSource] = useState(false),
     [draft, setDraft] = useState(""),
     [menu, setMenu] = useState(false),
-    [dragging, setDragging] = useState(false),
     [codeError, setCodeError] = useState("");
   const codeBaseline = useRef<string | undefined>(undefined);
   const dirtyCode =
@@ -272,10 +271,17 @@ function ArtifactPresentationView({
     },
   });
   const svg = useRef<SVGSVGElement>(null);
-  const gesture = useRef<
-    | { clientX: number; value: number; moved: boolean; cancelled?: boolean }
-    | undefined
-  >(undefined);
+  const gesture = useValueGesture<{ clientX: number; value: number }>({
+    finish,
+    revert,
+    cancelKey: (event) => {
+      const action = matchShortcut(event);
+      return action === "canvas.undo" || action === "canvas.redo";
+    },
+  });
+  const dragging = gesture.moving;
+  // Accepted work or scenario editability changes invalidate this local input, not just its preview.
+  useEffect(() => gesture.cancel(), [sourceDocument, editable]);
   const brush = useRef<number | undefined>(undefined);
   const layout = useLayoutGesture({
     geometry: accepted,
@@ -351,27 +357,6 @@ function ArtifactPresentationView({
       return undefined;
     }
   }, [comparePage, a, comparison.current]);
-  useEffect(() => {
-    if (!dragging) return;
-    const cancel = (e: KeyboardEvent) => {
-      if (isDialogEvent(e)) return;
-      const action = matchShortcut(e);
-      if (
-        e.key === "Escape" ||
-        action === "canvas.undo" ||
-        action === "canvas.redo"
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (gesture.current) gesture.current.cancelled = true;
-        gesture.current = undefined;
-        setDragging(false);
-        revert();
-      }
-    };
-    window.addEventListener("keydown", cancel, true);
-    return () => window.removeEventListener("keydown", cancel, true);
-  }, [dragging, revert, matchShortcut]);
   const points = result.receipt?.points || [],
     basePoints = comparison.current ? comparison.receipt?.points || [] : [];
   const limit =
@@ -463,12 +448,6 @@ function ArtifactPresentationView({
       }
     },
   });
-  const endGesture = () => {
-    const g = gesture.current;
-    gesture.current = undefined;
-    setDragging(false);
-    if (g?.moved && !g.cancelled) finish();
-  };
   return (
     <section
       ref={frame}
@@ -910,27 +889,25 @@ function ArtifactPresentationView({
                       select("point");
                       return;
                     }
-                    e.stopPropagation();
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    select("point");
-                    gesture.current = {
-                      clientX: e.clientX,
-                      value: liveX,
-                      moved: false,
-                    };
+                    if (
+                      gesture.startPointer(e, {
+                        clientX: e.clientX,
+                        value: liveX,
+                      })
+                    )
+                      select("point");
                   }}
                   onPointerMove={(e) => {
-                    const g = gesture.current;
-                    if (!g || g.cancelled) return;
-                    const dx = e.clientX - g.clientX;
+                    const g = gesture.pointer(e);
+                    if (!g) return;
+                    const dx = e.clientX - g.data.clientX;
                     if (Math.abs(dx) < 3 && !g.moved) return;
-                    g.moved = true;
-                    setDragging(true);
+                    gesture.movePointer(e);
                     const rect = svg.current!.getBoundingClientRect();
                     explore(
                       a.input,
                       proposed(
-                        g.value +
+                        g.data.value +
                           ((dx * a.width) / rect.width / (right - left)) *
                             (a.high - a.low),
                         e.shiftKey,
@@ -938,20 +915,17 @@ function ArtifactPresentationView({
                       e.currentTarget,
                     );
                   }}
-                  onPointerUp={endGesture}
-                  onPointerCancel={() => {
-                    gesture.current = undefined;
-                    setDragging(false);
-                    revert();
-                  }}
+                  onPointerUp={gesture.finishPointer}
+                  onPointerCancel={gesture.cancel}
+                  onLostPointerCapture={gesture.cancel}
+                  onBlur={() => gesture.cancel()}
                   onKeyDown={(e) => {
                     if (e.key.startsWith("Arrow")) {
                       e.preventDefault();
                       e.stopPropagation();
                     }
                     if (e.key === "Escape") {
-                      gesture.current = undefined;
-                      setDragging(false);
+                      gesture.cancel();
                       revert();
                     }
                     if (e.key === "Enter" || e.key === " ") {
@@ -963,6 +937,7 @@ function ArtifactPresentationView({
                       editable &&
                       (e.key === "ArrowLeft" || e.key === "ArrowRight")
                     ) {
+                      if (!gesture.startKey(e.key)) return;
                       select("point");
                       explore(
                         a.input,
@@ -979,7 +954,7 @@ function ArtifactPresentationView({
                   onKeyUp={(e) => {
                     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
                       e.stopPropagation();
-                      finish();
+                      gesture.finishKey(e.key);
                     }
                   }}
                 >

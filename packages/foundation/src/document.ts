@@ -707,10 +707,12 @@ export function prepare(
       assert(views.get(c.id, work), "Missing view");
       views = views.delete(c.id, work);
       viewIds.add(c.id);
-    } else {
+    } else if (c.kind === "removeAlternative") {
       assert(alternatives.get(c.id, work), "Missing alternative");
       alternatives = alternatives.delete(c.id, work);
       altIds.add(c.id);
+    } else {
+      throw Error("Unknown command");
     }
   }
   for (const item of changed) {

@@ -4,6 +4,7 @@ import json
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -53,6 +54,19 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["points"], [[0, 0], [1, 3], [2, 6]])
         self.assertIn("code_sha256", result)
+
+    def test_sampler_launch_failure_is_recoverable(self):
+        body = {
+            "code": "x = linspace(0, 2, 3)\ny = [v0*a for a in x]",
+            "inputs": {"v0": 3},
+        }
+        with patch("artifact_sampler.subprocess.run", side_effect=OSError("private path")):
+            status, result = self.request("POST", "/api/artifact-sample", body)
+        self.assertEqual(status, 503)
+        self.assertEqual(result, {"error": "Python sampling is unavailable. Retry when ready."})
+        status, result = self.request("POST", "/api/artifact-sample", body)
+        self.assertEqual(status, 200)
+        self.assertEqual(result["points"], [[0, 0], [1, 3], [2, 6]])
 
     def test_arbitrary_code_rejected(self):
         status, _ = self.request(

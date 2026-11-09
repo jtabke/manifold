@@ -6,6 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from artifact_sampler import SamplingUnavailable, sample
+
 ROOT = Path(__file__).parent
 
 
@@ -34,9 +36,9 @@ class Handler(BaseHTTPRequestHandler):
                 "http://127.0.0.1:58311",
             ):
                 raise ValueError("Use the local workspace origin")
-            from artifact_sampler import sample
-
             self.send_json(sample(body))
+        except SamplingUnavailable as error:
+            self.send_json({"error": str(error)}, 503)
         except (ValueError, TypeError) as error:
             self.send_json({"error": str(error)}, 400)
 

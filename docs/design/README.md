@@ -28,6 +28,8 @@ existing-canvas adoption are complete within the acceptance audit (internal desi
 Broader engineering ontologies, general solvers, partial-source access and a universal SDK
 remain proposals or future feature gates.
 
+For implemented state transitions, ownership, recovery and known gaps, use the
+[state workflow inventory](state-workflows.md).
 For code ownership, package imports, checks and evidence locations, use the
 [repository map](../repository.md). Keep current contracts here and decision history in ADRs;
 update the owning document when a decision changes rather than appending another status narrative.

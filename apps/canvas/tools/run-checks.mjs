@@ -72,9 +72,11 @@ const checks = [
   "check-canvas-navigation-browser.mjs",
   "check-command-consistency-browser.mjs",
   "check-exploration-browser.mjs",
+  "check-exploration-input-browser.mjs",
   "check-incremental-worksheet-browser.mjs",
   "check-equation-editing.mjs",
   "check-linking-browser.mjs",
+  "check-connection-gestures-browser.mjs",
   "check-dataset-browser.mjs",
   "check-models-browser.mjs",
 ];
