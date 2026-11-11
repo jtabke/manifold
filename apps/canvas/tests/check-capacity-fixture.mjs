@@ -6,14 +6,7 @@ import {
   canvasMethods,
 } from "../src/regions/app/canvasDocument.ts";
 import { canvasExecutor } from "../src/regions/foundationModels.ts";
-import {
-  CanvasStorageBudget,
-  MAX_CANVAS_RECEIPTS,
-  MAX_CANVAS_LOCAL_BYTES,
-  CANVAS_NATIVE_LIMITS,
-} from "../src/regions/app/canvasStorageBudget.ts";
-import { canvasLocalStore } from "../src/regions/app/canvasLocalStore.ts";
-import { decodeWorkspace } from "../src/regions/artifacts.ts";
+import { CanvasStorageBudget } from "../src/regions/app/canvasStorageBudget.ts";
 
 const config = {
   schemas: canvasSchemas,
@@ -108,32 +101,6 @@ for (const count of [1, 4]) {
       data(loaded.receipts),
       "expanded receipts must exactly match genuine repeated computation",
     );
-    const backend = f.memoryBackend(),
-      io = f.incrementalStorage(
-        backend,
-        canvasSchemas,
-        canvasMethods,
-        f.webHash,
-      );
-    await io.save({
-      request: "genuine-reference",
-      document: capture.document.document,
-      expectedGeneration: 0,
-      stamp: capture.stamp,
-      capture,
-    });
-    const genuineTop = await f
-        .recordReader(await backend.snapshot(), f.webHash)
-        .node((await backend.head()).package),
-      generatedTop = await f
-        .recordReader(old.snapshot, f.webHash)
-        .node(old.snapshot.state.head.package);
-    for (const kind of ["receipts", "allocated:receipts"])
-      assert.equal(
-        generatedTop.roots[kind],
-        genuineTop.roots[kind],
-        "expanded receipt/ledger subgraphs must have genuine-computation digests",
-      );
     const decoded = await f.decode(
       native(loaded),
       canvasSchemas,
@@ -200,56 +167,6 @@ for (const count of [1, 4]) {
   }
 }
 
-// Keep the actual policy boundary, not a scaled-down substitute.
-const old = await legacyCapacitySnapshot(),
-  loaded = await reopen(old);
-assert.equal(old.count, MAX_CANVAS_RECEIPTS + 1);
-checkReceipts(loaded, old.count);
-const budget = new CanvasStorageBudget(),
-  state = {
-    ...loaded,
-    receipts: f.SharedMap.from(loaded.receipts.map((r) => [r.id, r])),
-  };
-assert.ok(
-  budget.estimate(loaded.document, state, canvasSchemas) <
-    MAX_CANVAS_LOCAL_BYTES,
-  "the fixture crosses the receipt boundary while staying below the byte budget",
-);
-assert.throws(() => budget.check(state, canvasSchemas), /recovery budget/);
-budget.check(
-  {
-    ...state,
-    receipts: state.receipts.delete(receiptId(old.count)),
-  },
-  canvasSchemas,
-);
-const head = await old.backend.head(),
-  records = [...old.snapshot.records()],
-  store = canvasLocalStore(old.backend);
-try {
-  await assert.rejects(store.load(), /recovery budget/);
-  const rescued = await store.exportSaved(),
-    recovered = await f.decode(
-      JSON.stringify(JSON.parse(rescued).foundation),
-      canvasSchemas,
-      canvasMethods,
-      f.webHash,
-      CANVAS_NATIVE_LIMITS,
-    );
-  assert.deepEqual(data(recovered.receipts), data(loaded.receipts));
-  assert.deepEqual(
-    f.toPlain(recovered.document).identities.receipts,
-    f.toPlain(loaded.document).identities.receipts,
-  );
-  assert.equal(recovered.document.evidenceSequence, old.count);
-  await assert.rejects(() => decodeWorkspace(rescued), /recovery budget/);
-  assert.deepEqual(await old.backend.head(), head);
-  const after = await old.backend.snapshot();
-  assert.deepEqual(after.state, old.snapshot.state);
-  assert.deepEqual([...after.records()], records);
-} finally {
-  store.close();
-}
 console.log(
-  "Capacity fixture: genuine-computation equivalence, production decoding, exact MAX+1 identities/outcomes, retired-ID ledger, over-policy rejection and complete unchanged rescue pass.",
+  "Capacity fixture: small genuine-computation equivalence, production decoding, public receipt/ledger contracts and retired-ID protection pass; full MAX+1 rescue remains in check-canvas-capacity.",
 );

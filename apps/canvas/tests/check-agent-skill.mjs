@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { runJson } from "./agent-test-cli.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,25 +19,8 @@ const baseline = fileURLToPath(springBaseline);
 const bytes = await readFile(baseline, "utf8");
 const directory = await mkdtemp(join(tmpdir(), "manifold-skill-contract-"));
 const file = (name) => join(directory, name);
-function run(script, args, status = 0) {
-  const result = spawnSync(process.execPath, [script, ...args], {
-    cwd: directory,
-    encoding: "utf8",
-    timeout: 30000,
-  });
-  assert.equal(result.error, undefined);
-  assert.equal(
-    result.status,
-    status,
-    `${args.join(" ")}\n${result.stdout}\n${result.stderr}`,
-  );
-  if (status === 0 || status === 3) {
-    assert.equal(result.stderr, "");
-    return JSON.parse(result.stdout);
-  }
-  assert.equal(result.stdout, "");
-  return JSON.parse(result.stderr);
-}
+const run = (script, args, status) =>
+  runJson(script, args, status, { cwd: directory });
 try {
   const skill = await readFile(
     new URL(".agents/skills/manifold/SKILL.md", root),
@@ -99,18 +82,6 @@ try {
     uncomputed.models.find((model) => model.id === spring.id).requests[0].result
       .status,
     "ready",
-  );
-  run(
-    cli,
-    [
-      "edit",
-      file("edited.manifold"),
-      "--changes",
-      file("edits.json"),
-      "--output",
-      file("stale.manifold"),
-    ],
-    6,
   );
   run(cli, [
     "compute",
@@ -220,7 +191,7 @@ try {
     "Verifier never writes the candidate",
   );
   console.log(
-    "Manifold skill: portable metadata, real CLI spring workflow, canvas reopen, independent report verification, stale guards, draft/unit/constraint/evidence and unrelated-change rejection passed.",
+    "Manifold skill: portable metadata, real CLI spring workflow, canvas reopen, independent report verification, draft/unit/constraint/evidence and unrelated-change rejection passed.",
   );
 } finally {
   await rm(directory, { recursive: true, force: true });

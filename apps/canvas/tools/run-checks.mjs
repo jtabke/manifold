@@ -1,12 +1,14 @@
-import { readFile, mkdir } from "node:fs/promises";
-import { spawn, spawnSync } from "node:child_process";
+import { readFile, mkdir, mkdtemp, rm, open } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+import { createConnection } from "node:net";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const browser = process.argv.includes("--browser");
-const requested = process.argv.slice(2).filter((name) => name !== "--browser");
-const files = [];
-const checks = [
+const names = [
+  "check-test-runner.mjs",
   "check-headless.mjs",
   "check-headless-discovery.mjs",
   "check-headless-authoring.mjs",
@@ -19,6 +21,7 @@ const checks = [
   "check-drawing.mjs",
   "check-drawing-regularization.mjs",
   "check-drawing-browser.mjs",
+  "check-drawing-scene-browser.mjs",
   "check-drawing-regularization-browser.mjs",
   "check-drawing-performance-browser.mjs",
   "check-drawing-publication-profile.mjs",
@@ -37,6 +40,7 @@ const checks = [
   "check-model-analyses.mjs",
   "check-canvas-storage.mjs",
   "check-canvas-capacity.mjs",
+  "check-capacity-fixture.mjs",
   "check-storage-budget.mjs",
   "check-save-yielding.mjs",
   "check-canvas-retention.mjs",
@@ -90,79 +94,362 @@ const checks = [
   "check-dataset-browser.mjs",
   "check-models-browser.mjs",
 ];
-for (const name of checks) {
-  const source = await readFile(
-    new URL(`../tests/${name}`, import.meta.url),
-    "utf8",
-  );
-  if (source.includes("@playwright/test") !== browser) continue;
-  if (
-    requested.length &&
-    !requested.some((item) => name === `${item}.mjs` || name === item)
-  )
-    continue;
-  files.push(name);
-}
-if (!files.length)
-  throw new Error(
-    "No matching checks. Use check filenames, with or without .mjs.",
-  );
+export const checks = names.map((name) => {
+  const mode =
+    name.endsWith("-browser.mjs") || name === "check-equation-editing.mjs"
+      ? "browser"
+      : "local";
+  const diagnostic = name === "check-drawing-performance-browser.mjs";
+  return {
+    name,
+    mode,
+    diagnostic,
+    timeoutMs: diagnostic ? 900000 : mode === "browser" ? 300000 : 60000,
+  };
+});
 
-let server;
-try {
-  if (browser)
-    await mkdir(new URL("../../../evidence/current/canvas/", import.meta.url), {
-      recursive: true,
-    });
-  let baseURL = process.env.MANIFOLD_BASE_URL;
-  if (browser && !baseURL) {
-    baseURL = "http://127.0.0.1:58312";
-    // A private port leaves the engineer's normal app and saved canvas alone.
-    server = spawn(
-      process.env.PYTHON || "python3",
-      ["server.py", "--port", "58312"],
-      {
-        cwd: root,
-        stdio: ["ignore", "inherit", "inherit"],
-      },
-    );
-    let startupError;
-    server.on("error", (error) => {
-      startupError = error;
-    });
-    let ready = false;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (startupError) throw startupError;
-      if (server.exitCode !== null)
-        throw new Error("Canvas server exited before becoming ready.");
-      try {
-        ready = (await fetch(`${baseURL}/api/health`)).ok;
-      } catch {
-        /* Server is starting. */
-      }
-      if (ready) break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    if (!ready)
-      throw new Error("Canvas server did not become ready within 10 seconds.");
+export function selectChecks(
+  manifest,
+  { mode = "local", diagnostic = false, requested = [] } = {},
+) {
+  const selected = requested.map((name) =>
+    name.endsWith(".mjs") ? name : `${name}.mjs`,
+  );
+  if (new Set(selected).size !== selected.length)
+    throw Error("Duplicate requested check");
+  for (const name of selected) {
+    const check = manifest.find((check) => check.name === name);
+    if (!check) throw Error(`Unknown check: ${name}`);
+    if (check.mode !== mode)
+      throw Error(
+        `${name} requires ${check.mode === "browser" ? "--browser" : "local mode (omit --browser)"}`,
+      );
+    if (check.diagnostic !== diagnostic)
+      throw Error(
+        `${name} ${check.diagnostic ? "requires" : "does not use"} --diagnostic`,
+      );
   }
-  for (const name of files) {
-    console.log(`\n${name}`);
-    const result = spawnSync(process.execPath, [`tests/${name}`], {
-      cwd: root,
-      stdio: "inherit",
+  const files = manifest.filter(
+    (check) =>
+      check.mode === mode &&
+      check.diagnostic === diagnostic &&
+      (!selected.length || selected.includes(check.name)),
+  );
+  if (!files.length) throw Error("No matching checks");
+  return files;
+}
+
+function terminate(child, signal) {
+  if (!child.pid) return;
+  try {
+    if (process.platform === "win32") child.kill(signal);
+    else process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error.code !== "ESRCH") throw error;
+  }
+}
+
+/** One isolated child; timeout/interruption reaps its POSIX process group as well. */
+async function execute(
+  check,
+  { cwd, env, log, signal, timeoutMs, killGraceMs },
+) {
+  const started = performance.now();
+  const handle = await open(log, "w");
+  let child, timer, reason;
+  let escalate;
+  const stop = (why) => {
+    reason ??= why;
+    terminate(child, "SIGTERM");
+    escalate ??= setTimeout(() => terminate(child, "SIGKILL"), killGraceMs);
+  };
+  const interrupt = () => stop("interrupted");
+  try {
+    const [command, ...args] = check.command ?? [
+      process.execPath,
+      `tests/${check.name}`,
+    ];
+    child = spawn(command, args, {
+      cwd,
+      env,
+      detached: process.platform !== "win32",
+      stdio: ["ignore", handle.fd, handle.fd],
+    });
+    const ended = new Promise((resolve) => {
+      child.once("error", (error) => resolve({ error: error.message }));
+      child.once("close", (code, signal) => resolve({ code, signal }));
+    });
+    signal?.addEventListener("abort", interrupt, { once: true });
+    if (signal?.aborted) interrupt();
+    timer = setTimeout(() => stop("timeout"), timeoutMs ?? check.timeoutMs);
+    const result = await ended;
+    // A failed or successful leader must not leave daemon descendants behind.
+    terminate(child, "SIGKILL");
+    return {
+      name: check.name,
+      ...result,
+      ...(reason ? { reason } : {}),
+      passed: !reason && !result.error && result.code === 0,
+      ms: Math.round(performance.now() - started),
+      log,
+    };
+  } finally {
+    clearTimeout(timer);
+    clearTimeout(escalate);
+    signal?.removeEventListener("abort", interrupt);
+    await handle.close();
+  }
+}
+
+/** Bounded local parallelism retains process isolation and non-interleaved, durable failure logs. */
+export async function runChecks(
+  files,
+  {
+    cwd = root,
+    env = process.env,
+    jobs = 1,
+    timeoutMs,
+    killGraceMs = 1000,
+    signal,
+    report = console.log,
+  } = {},
+) {
+  if (!Number.isInteger(jobs) || jobs < 1 || jobs > 4)
+    throw Error("--jobs must be an integer from 1 to 4");
+  if (
+    jobs !== 1 &&
+    files.some((check) => check.mode !== "local" || check.diagnostic)
+  )
+    throw Error("Browser and diagnostic workloads must run serially");
+  if (
+    timeoutMs !== undefined &&
+    (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647)
+  )
+    throw Error(
+      "MANIFOLD_CHECK_TIMEOUT_MS must be an integer from 1 to 2147483647",
+    );
+  if (!Number.isInteger(killGraceMs) || killGraceMs < 1 || killGraceMs > 1000)
+    throw Error("killGraceMs must be an integer from 1 to 1000");
+  const logDir = await mkdtemp(join(tmpdir(), "manifold-checks-"));
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  const results = [],
+    workerErrors = [];
+  let index = 0,
+    failed = false;
+  try {
+    await Promise.all(
+      Array.from({ length: Math.min(jobs, files.length) }, async () => {
+        try {
+          while (!controller.signal.aborted && index < files.length) {
+            const check = files[index++];
+            const result = await execute(check, {
+              cwd,
+              env,
+              log: join(logDir, check.name + ".log"),
+              signal: controller.signal,
+              timeoutMs,
+              killGraceMs,
+            });
+            results.push(result);
+            if (!result.passed) {
+              failed = true;
+              controller.abort();
+            }
+            report(
+              `\n${result.name} (${result.ms} ms)\n${await readFile(result.log, "utf8")}`,
+            );
+          }
+        } catch (error) {
+          workerErrors.push(error.message);
+          failed = true;
+          controller.abort();
+        }
+      }),
+    );
+    if (failed || controller.signal.aborted) {
+      const failures = results
+        .filter((result) => !result.passed)
+        .map(
+          (result) =>
+            `${result.name}: ${result.reason ?? result.error ?? result.signal ?? `exit ${result.code}`}`,
+        )
+        .join(", ");
+      const error = Error(
+        `Checks failed or interrupted (${[failures, ...workerErrors].filter(Boolean).join("; ") || "cancelled before launch"}); logs retained at ${logDir}`,
+      );
+      error.results = results;
+      error.logDir = logDir;
+      throw error;
+    }
+    await rm(logDir, { recursive: true, force: true });
+    return results;
+  } finally {
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
+async function occupied(port) {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    socket.setTimeout(500, () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", (error) => {
+      socket.destroy();
+      resolve(error.code !== "ECONNREFUSED");
+    });
+  });
+}
+
+async function main() {
+  const requested = [];
+  let mode = "local",
+    diagnostic = false,
+    jobs = 1,
+    list = false;
+  const seen = new Set();
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith("--")) {
+      requested.push(arg);
+      continue;
+    }
+    if (seen.has(arg)) throw Error(`Duplicate option: ${arg}`);
+    seen.add(arg);
+    if (arg === "--browser") mode = "browser";
+    else if (arg === "--diagnostic") diagnostic = true;
+    else if (arg === "--list") list = true;
+    else if (arg === "--jobs") jobs = Number(args[++i]);
+    else throw Error(`Unknown option: ${arg}`);
+  }
+  const files = selectChecks(checks, { mode, diagnostic, requested });
+  if (
+    !Number.isInteger(jobs) ||
+    jobs < 1 ||
+    jobs > 4 ||
+    (mode === "browser" && jobs !== 1)
+  )
+    throw Error("Use --jobs 1..4 locally; browser workloads must run serially");
+  if (list) {
+    console.log(JSON.stringify(files, null, 2));
+    return;
+  }
+  const timeoutMs =
+    process.env.MANIFOLD_CHECK_TIMEOUT_MS === undefined
+      ? undefined
+      : Number(process.env.MANIFOLD_CHECK_TIMEOUT_MS);
+  if (
+    timeoutMs !== undefined &&
+    (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647)
+  )
+    throw Error(
+      "MANIFOLD_CHECK_TIMEOUT_MS must be an integer from 1 to 2147483647",
+    );
+  let server, serverEnded;
+  const controller = new AbortController();
+  let interrupted;
+  const onSignal = (signal) => {
+    interrupted = signal;
+    controller.abort();
+  };
+  const onInt = () => onSignal("SIGINT"),
+    onTerm = () => onSignal("SIGTERM");
+  process.on("SIGINT", onInt);
+  process.on("SIGTERM", onTerm);
+  try {
+    let baseURL = process.env.MANIFOLD_BASE_URL;
+    if (mode === "browser")
+      await mkdir(
+        new URL("../../../evidence/current/canvas/", import.meta.url),
+        { recursive: true },
+      );
+    if (mode === "browser" && !baseURL) {
+      if (await occupied(58312))
+        throw Error(
+          "Port 58312 is already owned; use an explicit MANIFOLD_BASE_URL for a server you own",
+        );
+      baseURL = "http://127.0.0.1:58312";
+      server = spawn(
+        process.env.PYTHON || "python3",
+        ["server.py", "--port", "58312"],
+        {
+          cwd: root,
+          detached: process.platform !== "win32",
+          stdio: ["ignore", "inherit", "inherit"],
+        },
+      );
+      let startupError;
+      serverEnded = new Promise((resolve) => {
+        server.once("error", (error) => {
+          startupError = error;
+          resolve();
+        });
+        server.once("close", resolve);
+      });
+      let ready = false;
+      const startupDeadline = performance.now() + 10000;
+      while (
+        performance.now() < startupDeadline &&
+        !controller.signal.aborted
+      ) {
+        if (startupError) throw startupError;
+        if (server.exitCode !== null)
+          throw Error("Canvas server exited before becoming ready");
+        try {
+          ready = (
+            await fetch(`${baseURL}/api/health`, {
+              signal: AbortSignal.timeout(500),
+            })
+          ).ok;
+        } catch {
+          /* Starting. */
+        }
+        if (ready) break;
+        await delay(100);
+      }
+      if (!ready)
+        throw Error("Canvas server did not become ready or was interrupted");
+    }
+    const results = await runChecks(files, {
+      jobs,
+      signal: controller.signal,
+      timeoutMs,
       env: {
         ...process.env,
         ...(baseURL ? { MANIFOLD_BASE_URL: baseURL } : {}),
       },
     });
-    if (result.error) throw result.error;
-    if (result.status !== 0)
-      throw new Error(`${name} failed (${result.status ?? result.signal}).`);
+    console.log(
+      `\n${results.length} ${diagnostic ? "diagnostic" : mode} checks passed.`,
+    );
+  } finally {
+    if (server) {
+      terminate(server, "SIGTERM");
+      const timer = setTimeout(() => terminate(server, "SIGKILL"), 1000);
+      await serverEnded;
+      terminate(server, "SIGKILL");
+      clearTimeout(timer);
+    }
+    process.removeListener("SIGINT", onInt);
+    process.removeListener("SIGTERM", onTerm);
+    if (interrupted) process.exitCode = interrupted === "SIGINT" ? 130 : 143;
   }
-  console.log(
-    `\n${files.length} ${browser ? "browser" : "local"} checks passed.`,
-  );
-} finally {
-  server?.kill();
+}
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode ||= 1;
+  });
 }

@@ -41,8 +41,9 @@ make verify         # All of the above, plus foundation and canvas browser workf
 ```
 
 Browser workflows require installed Chrome. Build/browser phases share output, so run them
-sequentially. `make verify-application-foundation` is an alias for `make verify`; it does not
-regenerate optional diagnostic reports.
+sequentially. `make verify` builds the canvas once and reuses that output for its browser
+phase; standalone `make check-browser` still builds first. `make verify-application-foundation`
+is an alias for `make verify`. Large drawing profiling is opt-in, not part of either gate.
 
 For narrower checks:
 
@@ -64,6 +65,37 @@ npm --prefix apps/canvas run build
 npm --prefix apps/canvas run test:all-browser -- check-blank-canvas-browser
 ```
 
+### Selecting and running checks
+
+```sh
+npm --prefix apps/canvas test -- --list
+npm --prefix apps/canvas test -- --jobs 2
+npm --prefix apps/canvas run test:all-browser -- --list
+```
+
+Every requested filename must exist in the registry and match the selected mode. A mixed list
+of valid and misspelled names fails before any test or server starts. Browser checks require
+`--browser` (already supplied by `test:all-browser`); diagnostic checks additionally require
+`--diagnostic`. Default browser selection excludes diagnostics. Registration checks detect
+missing/duplicate entries, including browser checks with older non-browser filenames.
+
+Local checks remain serial by default. `--jobs 1..4` enables bounded process-isolated local
+workers with grouped output; browser and diagnostic checks stay serial. Builds are never
+parallelized by this option. The runner reports per-file elapsed time. On failure it stops
+queuing work, cancels active siblings and retains stdout/stderr logs in the reported temporary
+directory; successful-run logs are removed. POSIX cancellation/timeout terminates the child
+process group, including descendant CLI processes; Windows uses direct-child termination.
+Default execution budgets are 60 seconds per local check, five minutes per browser check,
+and fifteen minutes for the drawing diagnostic. Set `MANIFOLD_CHECK_TIMEOUT_MS` to a positive
+integer to override the per-file budget for a slower environment or investigation. An expired
+budget is a failed check, never a pass. SIGINT/SIGTERM also stop workers and owned servers.
+An occupied default server port is rejected; an explicit `MANIFOLD_BASE_URL` is never killed.
+
+Success screenshots and screenshot-only staging are disabled by default. Set
+`MANIFOLD_TEST_EVIDENCE=1` to opt into them; existing failure captures remain unconditional.
+These files are diagnostic evidence, not visual regression comparisons. Evidence-gating and
+runner lifecycle/selection behavior have local mock/subprocess checks requiring no browser.
+
 The agent checks cover JSON contracts, atomic edits and aliases, revision guards, diagnostics,
 semantic differences and evidence, plus CLI subprocess exit/channel behavior, safe publication,
 file changes, pending-job timeout/signals and retained failed receipts. Existing headless checks
@@ -75,6 +107,12 @@ async callbacks, expired editor handles and disposal:
 ```sh
 npm --prefix apps/canvas test -- check-headless check-headless-discovery check-headless-authoring
 ```
+
+The over-capacity legacy fixture now derives repeated scalar receipt metadata from one real
+checked execution using public foundation document/receipt contracts, not private storage-record
+layouts. `check-capacity-fixture` compares small generated cases with genuine repeated execution
+and verifies decoding and retired identities. The full MAX/MAX+1 admission and unchanged rescue
+checks remain in `check-canvas-capacity`; they are not duplicated in the fixture-equivalence test.
 
 ### Agent-to-canvas browser handoff
 
@@ -101,9 +139,12 @@ The [`manifold` skill](../../.agents/skills/manifold/SKILL.md) has a
 [checked-in spring task and native baseline](../../apps/canvas/tests/fixtures/agent-spring/task.md).
 `check-agent-skill` verifies portable metadata, runs the real CLI from outside the repository,
 and independently checks numerical facts, preserved authored content, current computation
-receipts and an honest structured report. Negative cases include stale edits, incorrect
-units, drafts/unresolved source, a loosened constraint, missing or stale evidence, misleading
-reports and unrelated content changes.
+receipts and an honest structured report. Negative cases include incorrect units,
+drafts/unresolved source, a loosened constraint, missing or stale evidence, misleading reports
+and unrelated content changes. Generic stale-edit and rollback probes live in `check-agent-cli`
+and `check-agent`, rather than repeating in every acceptance scenario. The three acceptance
+scenarios share a small real-process JSON/channel assertion helper; their independent
+engineering oracles and distinct negative candidates remain separate.
 
 The [conduction task](../../apps/canvas/tests/fixtures/agent-conduction/task.md) adds a distinct
 workflow: author a worksheet from a problem statement, retain an initial stage, then revise
@@ -121,7 +162,7 @@ not current. `check-agent-recovery` runs the real CLI through diagnosis, one gua
 a separately saved pre-computation stage and explicit spring execution. It checks the residual
 failed requirement, protected revisions/views and receipt-pinned history, all historical receipts
 and their contexts, unrelated model evidence, honest statuses and structured handoff, plus
-rollback, stale guards and negative candidates. It uses the native export policy for retained
+distinct negative candidates. It uses the native export policy for retained
 revisions: superseded unpinned source heads may be omitted; session Undo is not file history. A passing verifier
 does not establish that every claimed command was executed; cached requests can leave no new
 saved evidence. Review command logs for that distinction.
@@ -200,11 +241,17 @@ not prerequisites for ordinary checks. Read each tool's source for its workload 
 | `make measure-model-analyses` | Model-backed analysis workload. |
 | `make measure-worksheet-evaluation` | 64/256-row sparse, chain and fan-out derivation and cache limits. |
 
-For the large drawing workload, including 2,000 marks and an 8,192-point stroke:
+The default `check-drawing-scene-browser` retains one correctness-only 100-mark native
+Open, whole-scene resize/Undo, view-only translation and durable reload, without measurement
+loops. Existing drawing tests retain drawing gestures, limits, regularization and safety
+coverage; deterministic structural/render-count gates remain in the correctness suite.
+
+For the opt-in large drawing workload, including 2,000 marks and an 8,192-point stroke:
 
 ```sh
-npm --prefix apps/canvas run build
-npm --prefix apps/canvas run test:all-browser -- check-drawing-performance-browser
+make measure-drawing-browser
+# Or, after building:
+npm --prefix apps/canvas run test:all-browser -- --diagnostic check-drawing-performance-browser
 ```
 
 Its report, `evidence/current/canvas/drawing-browser-results.json`, separates preview geometry,

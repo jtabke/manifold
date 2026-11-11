@@ -59,12 +59,16 @@ verify:
 	$(MAKE) check
 	node packages/foundation/test/browser.mjs
 	node packages/foundation/test/composition-browser.mjs
-	$(MAKE) check-browser
+	# check-canvas already built the canvas; do not rebuild it for the browser phase.
+	npm --prefix apps/canvas run test:all-browser
 
 # Retain the documented entry point, without requiring private evaluation archives.
 verify-application-foundation: verify
 
 # Optional reproducible diagnostics. Generated reports stay local/CI-ephemeral.
+.PHONY: measure-drawing-browser
+measure-drawing-browser: build prepare-reports
+	npm --prefix apps/canvas run test:all-browser -- --diagnostic check-drawing-performance-browser
 .PHONY: prepare-reports
 prepare-reports:
 	mkdir -p evidence/current/canvas evidence/current/foundation

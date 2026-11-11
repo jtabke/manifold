@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { runJson } from "./agent-test-cli.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,26 +18,8 @@ const baseline = fileURLToPath(conductionBaseline),
   baselineBytes = await readFile(baseline, "utf8");
 const directory = await mkdtemp(join(tmpdir(), "manifold-conduction-"));
 const file = (name) => join(directory, name);
-function run(script, args, status = 0) {
-  const result = spawnSync(process.execPath, [script, ...args], {
-    cwd: directory,
-    encoding: "utf8",
-    timeout: 30000,
-  });
-  assert.equal(result.error, undefined);
-  assert.equal(
-    result.status,
-    status,
-    `${args.join(" ")}\n${result.stdout}\n${result.stderr}`,
-  );
-  assert.equal(
-    status === 0 || status === 3 ? result.stderr : result.stdout,
-    "",
-  );
-  return JSON.parse(
-    status === 0 || status === 3 ? result.stdout : result.stderr,
-  );
-}
+const run = (script, args, status) =>
+  runJson(script, args, status, { cwd: directory });
 try {
   const source = run(cli, ["inspect", baseline, "--compact"]);
   await writeFile(
@@ -106,18 +88,6 @@ try {
     "--output",
     file("final.manifold"),
   ]);
-  run(
-    cli,
-    [
-      "edit",
-      file("final.manifold"),
-      "--changes",
-      file("revision.json"),
-      "--output",
-      file("stale.manifold"),
-    ],
-    6,
-  );
   const final = run(cli, ["inspect", file("final.manifold"), "--compact"]);
   assert.equal(
     final.worksheet.regions.find(

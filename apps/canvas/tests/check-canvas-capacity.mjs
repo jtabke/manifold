@@ -15,6 +15,7 @@ import {
   CanvasStorageBudget,
   MAX_CANVAS_LOCAL_BYTES,
   MAX_CANVAS_FILE_BYTES,
+  MAX_CANVAS_RECEIPTS,
 } from "../src/regions/app/canvasStorageBudget.ts";
 import { canvasLocalStore } from "../src/regions/app/canvasLocalStore.ts";
 import { legacyCapacitySnapshot, withoutScene } from "./capacity-fixture.mjs";
@@ -162,7 +163,18 @@ const inspected = await f.decode(
   f.webHash,
   { maxBytes: MAX_CANVAS_FILE_BYTES },
 );
-assert.equal(inspected.receipts.length, old.count);
+assert.equal(inspected.receipts.length, MAX_CANVAS_RECEIPTS + 1);
+const retained = f.SharedMap.from(
+  inspected.receipts.map((receipt) => [receipt.id, receipt]),
+);
+assert.throws(
+  () => budget.check({ ...inspected, receipts: retained }, canvasSchemas),
+  /recovery budget/,
+);
+budget.check(
+  { ...inspected, receipts: retained.delete(inspected.receipts.at(-1).id) },
+  canvasSchemas,
+);
 assert.deepEqual(await old.backend.head(), head);
 assert.equal(
   (await old.backend.snapshot()).state.revision,
