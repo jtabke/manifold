@@ -1,3 +1,4 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { sceneFixture } from "./scene-fixture.mjs";
@@ -183,7 +184,7 @@ try {
     .getByRole("menuitem", { name: "Choose overlapping item…", exact: true })
     .click();
   await chooser().locator(`[data-command-id="overlap.pick:${output}"]`).click();
-  await page.screenshot({ path: "screenshots/overlap-selection.png" });
+  await captureEvidence(page, { path: "screenshots/overlap-selection.png" });
   const handle = await grip.boundingBox();
   await page.mouse.move(
     handle.x + handle.width / 2,

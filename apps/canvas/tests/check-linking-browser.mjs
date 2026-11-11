@@ -1,3 +1,4 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import { readWorkspace } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
@@ -255,8 +256,7 @@ try {
   await expect(
     page.getByRole("dialog", { name: "Connections", exact: true }),
   ).toContainText("Q_loss");
-  await mkdir("/tmp/manifold-linking", { recursive: true });
-  await page.screenshot({
+  await captureEvidence(page, {
     path: "/tmp/manifold-linking/connected-workspace.png",
     clip: { x: 0, y: 0, width: 1500, height: 840 },
   });

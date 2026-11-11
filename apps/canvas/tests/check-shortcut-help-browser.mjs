@@ -1,3 +1,4 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { sceneFixture } from "./scene-fixture.mjs";
@@ -51,7 +52,7 @@ try {
   await search().fill("pan");
   await expect(help.locator("dt")).toHaveCount(2);
   await expect(search()).toHaveCSS("outline-style", "none");
-  await page.screenshot({ path: "screenshots/keyboard-shortcuts.png" });
+  await captureEvidence(page, { path: "screenshots/keyboard-shortcuts.png" });
   await page.keyboard.press("Escape");
   await expect(help).toHaveCount(0);
   await expect(trigger).toBeFocused();

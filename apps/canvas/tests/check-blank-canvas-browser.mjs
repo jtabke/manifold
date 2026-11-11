@@ -1,6 +1,6 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import { readWorkspace } from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -21,8 +21,7 @@ try {
     page.getByRole("link", { name: "Manifold Workshop", exact: true }),
   ).not.toBeVisible();
   await expect(page.getByLabel("Reveal layer", { exact: true })).toHaveCount(0);
-  await mkdir(new URL("../screenshots/", import.meta.url), { recursive: true });
-  await page.screenshot({
+  await captureEvidence(page, {
     path: new URL("../screenshots/blank-canvas-reset.png", import.meta.url)
       .pathname,
   });

@@ -1,8 +1,8 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import { readWorkspace } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
 import { RegionSession, project } from "../src/regions/document.ts";
 import { archive, makeArtifact } from "../src/regions/artifacts.ts";
 const s = new RegionSession(),
@@ -327,9 +327,8 @@ try {
   await thermal
     .getByLabel("Detail for Thermal balance")
     .selectOption("interface");
-  await mkdir("/tmp/manifold-models", { recursive: true });
   await expect(thermal).toBeInViewport();
-  await page.screenshot({ path: "/tmp/manifold-models/system.png" });
+  await captureEvidence(page, { path: "/tmp/manifold-models/system.png" });
   await thermal
     .getByRole("button", { name: "Enter model Thermal balance", exact: true })
     .click();
@@ -337,7 +336,7 @@ try {
   await expect(
     page.locator(`[data-region-id="${temp}"] math`),
   ).toBeInViewport();
-  await page.screenshot({ path: "/tmp/manifold-models/inside.png" });
+  await captureEvidence(page, { path: "/tmp/manifold-models/inside.png" });
   checks.push(
     "Hierarchy and interfaces round-trip through the portable archive; results regenerate from original definitions",
   );

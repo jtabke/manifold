@@ -1,3 +1,4 @@
+import { captureEvidence } from "../../../apps/canvas/tests/browser-evidence.mjs";
 /** Repository Chrome workflow: exercise real controls, native files and IndexedDB; no debug globals. */
 import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
@@ -216,12 +217,11 @@ try {
     "native v3 download decodes independently and opens in a fresh browser context with all values/provenance and no jobs",
   );
   const qa = join(root, ".manifold/foundation-qa");
-  await mkdir(qa, { recursive: true });
-  await page.screenshot({
+  await captureEvidence(page, {
     path: join(qa, "composition-desktop.png"),
     fullPage: true,
   });
-  await recipient.screenshot({
+  await captureEvidence(recipient, {
     path: join(qa, "composition-mobile.png"),
     fullPage: true,
   });

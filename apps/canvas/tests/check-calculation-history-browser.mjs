@@ -1,3 +1,4 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import { chromium, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -68,7 +69,7 @@ try {
   await expect(page.getByLabel("Workspace save status")).toHaveText(
     "Saved locally",
   );
-  await page.screenshot({
+  await captureEvidence(page, {
     path: `${tmpdir()}/manifold-kept-calculations-desktop.png`,
   });
   const original = (await readWorkspace(page, key)).page.calculations[0];
@@ -208,7 +209,7 @@ try {
   expect(await readFile(await (await sourceDownload).path(), "utf8")).toBe(csv);
   const bounds = await panel.boundingBox();
   expect(bounds.width).toBeLessThanOrEqual(390);
-  await receiver.screenshot({
+  await captureEvidence(receiver, {
     path: `${tmpdir()}/manifold-kept-calculations-mobile.png`,
   });
   expect(executions).toBe(0);

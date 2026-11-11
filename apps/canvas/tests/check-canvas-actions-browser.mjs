@@ -1,6 +1,6 @@
+import { captureEvidence, evidenceEnabled } from "./browser-evidence.mjs";
 import { readWorkspace } from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -98,25 +98,23 @@ try {
     await expect(plot).toHaveAttribute("data-status", "current");
     await expect(page.locator('[data-result-for="P"]')).toContainText("60 W");
 
-    await power.click({ button: "right", position: { x: 400, y: 25 } });
-    if (width === 1440) {
-      await mkdir(new URL("../screenshots/", import.meta.url), {
-        recursive: true,
-      });
-      await page.screenshot({
+    if (evidenceEnabled && width === 1440) {
+      await power.click({ button: "right", position: { x: 400, y: 25 } });
+      await captureEvidence(page, {
         animations: "disabled",
         path: new URL("../screenshots/context-actions.png", import.meta.url)
           .pathname,
       });
+      await page.keyboard.press("Escape");
     }
-    await page.keyboard.press("Escape");
+    await power.click({ position: { x: 400, y: 25 } });
     await page.keyboard.press("Shift+Space");
     await expect(pie).toBeVisible();
     const small = await pie.boundingBox();
     expect(small.width).toBeLessThanOrEqual(240);
     await expect(item("Try alternative")).toHaveCount(0);
     if (width === 1440)
-      await page.screenshot({
+      await captureEvidence(page, {
         animations: "disabled",
         path: new URL("../screenshots/canvas-actions.png", import.meta.url)
           .pathname,

@@ -1,3 +1,4 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { chromium, expect } from "@playwright/test";
@@ -410,7 +411,9 @@ try {
     await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth),
     true,
   );
-  await page.screenshot({ path: "screenshots/shortcut-customization.png" });
+  await captureEvidence(page, {
+    path: "screenshots/shortcut-customization.png",
+  });
   assert.deepEqual(errors, []);
   console.log(
     "Configurable shortcuts: capture/conflicts/protection, strict JSON, atomic swaps/import/export, persistence, stale reads, storage failure, corrupt recovery, drawing dispatch and native history isolation passed.",

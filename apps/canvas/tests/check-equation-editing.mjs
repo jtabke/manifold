@@ -1,3 +1,4 @@
+import { captureEvidence, evidenceEnabled } from "./browser-evidence.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 import { REGION_STEP } from "../src/regions/pageLayout.ts";
@@ -23,9 +24,9 @@ try {
       .click({ position: { x: 100, y: 80 } });
     const writing = page.locator(".er-region.is-editing");
     await expect(editor()).toBeFocused();
-    if (width === 1500) {
+    if (evidenceEnabled && width === 1500) {
       const box = await editor().boundingBox();
-      await page.screenshot({
+      await captureEvidence(page, {
         path: new URL("../screenshots/compact-writing.png", import.meta.url)
           .pathname,
         caret: "initial",
@@ -275,7 +276,7 @@ try {
     expect(below.y).toBeGreaterThanOrEqual(before.y + REGION_STEP - 1);
     await expect(artifact).toHaveAttribute("style", plotPosition);
     if (width === 1500)
-      await page.screenshot({
+      await captureEvidence(page, {
         path: new URL(
           "../screenshots/equation-editing-continue.png",
           import.meta.url,

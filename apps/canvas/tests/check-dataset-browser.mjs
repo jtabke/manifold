@@ -1,7 +1,7 @@
+import { captureEvidence, evidenceEnabled } from "./browser-evidence.mjs";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
 import { project } from "../src/regions/document.ts";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const page = await browser.newPage({ viewport: { width: 1870, height: 1080 } });
@@ -215,13 +215,14 @@ try {
     .click();
   expect(await model()).toEqual(pageBeforeFocus);
 
-  await page
-    .getByRole("button", { name: "Select measurement row 2", exact: true })
-    .click();
-  await mkdir("/tmp/manifold-dataset", { recursive: true });
-  await page.screenshot({
-    path: "/tmp/manifold-dataset/connected-dataset.png",
-  });
+  if (evidenceEnabled) {
+    await page
+      .getByRole("button", { name: "Select measurement row 2", exact: true })
+      .click();
+    await captureEvidence(page, {
+      path: "/tmp/manifold-dataset/connected-dataset.png",
+    });
+  }
   const before = await model();
   await result
     .getByLabel("Move calculated dataset")
@@ -236,13 +237,16 @@ try {
   checks.push(
     "Plot and table share the relation; moving it preserves computation and recovery reevaluates from portable source data",
   );
-  // Restore a useful frame for the evidence screenshot using the user-facing Arrange action or the stored coordinates from accepted creation.
-  await page
-    .getByRole("button", { name: "Select measurement row 2", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Fit page", exact: true }).click();
-  await mkdir("/tmp/manifold-dataset", { recursive: true });
-  await page.screenshot({ path: "/tmp/manifold-dataset/restored-dataset.png" });
+  // Framing this optional capture is unrelated to the recovery assertions above.
+  if (evidenceEnabled) {
+    await page
+      .getByRole("button", { name: "Select measurement row 2", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Fit page", exact: true }).click();
+    await captureEvidence(page, {
+      path: "/tmp/manifold-dataset/restored-dataset.png",
+    });
+  }
   // Large source: new isolated browser context; never touch the user's saved canvas.
   const large = await browser.newPage({
     viewport: { width: 1870, height: 1080 },

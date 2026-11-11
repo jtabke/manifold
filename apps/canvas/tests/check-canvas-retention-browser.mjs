@@ -1,3 +1,4 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import { chromium, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -91,7 +92,9 @@ try {
   await expect(
     dialog.getByRole("button", { name: "Clean history and save", exact: true }),
   ).toBeEnabled();
-  await page.screenshot({ path: `${tmpdir()}/manifold-cleanup-desktop.png` });
+  await captureEvidence(page, {
+    path: `${tmpdir()}/manifold-cleanup-desktop.png`,
+  });
   await dialog
     .getByRole("button", { name: "Close", exact: true })
     .press("Escape");
@@ -150,7 +153,9 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   const bounds = await dialog.boundingBox();
   expect(bounds.width).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: `${tmpdir()}/manifold-cleanup-mobile.png` });
+  await captureEvidence(page, {
+    path: `${tmpdir()}/manifold-cleanup-mobile.png`,
+  });
   await page.evaluate(() => {
     window.failCleanupDelete = true;
   });

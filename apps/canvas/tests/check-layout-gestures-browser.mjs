@@ -1,3 +1,4 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { sceneFixture } from "./scene-fixture.mjs";
@@ -228,7 +229,7 @@ try {
   await held();
   assert.equal((await readWorkspace(page)).document.id, before.document.id);
   const firstPreview = await preview();
-  await page.screenshot({ path: "screenshots/deliberate-docking.png" });
+  await captureEvidence(page, { path: "screenshots/deliberate-docking.png" });
   await page.mouse.up();
   await page.clock.resume();
   let accepted = await matchesPreview(firstPreview);

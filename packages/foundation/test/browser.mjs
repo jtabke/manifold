@@ -1,3 +1,4 @@
+import { captureEvidence } from "../../../apps/canvas/tests/browser-evidence.mjs";
 import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { typedBrowserProbe } from "./typed-browser-probe.mjs";
@@ -802,9 +803,14 @@ try {
     "typed geometry shares checked evidence, native v4 and IndexedDB recovery with no recipient executor or unchanged writes",
   );
   const qa = join(root, ".manifold/foundation-qa");
-  await mkdir(qa, { recursive: true });
-  await page.screenshot({ path: join(qa, "desktop.png"), fullPage: true });
-  await recipient.screenshot({ path: join(qa, "mobile.png"), fullPage: true });
+  await captureEvidence(page, {
+    path: join(qa, "desktop.png"),
+    fullPage: true,
+  });
+  await captureEvidence(recipient, {
+    path: join(qa, "mobile.png"),
+    fullPage: true,
+  });
   for (const width of [320, 390, 1440]) {
     await recipient.setViewportSize({ width, height: 900 });
     assert.equal(

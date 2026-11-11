@@ -1,6 +1,6 @@
+import { captureEvidence } from "./browser-evidence.mjs";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const errors = [];
@@ -151,8 +151,7 @@ try {
   await expect(controls).toBeVisible();
   await change(28);
   await expect(page.locator('[data-result-for="P"]')).toContainText("84 W");
-  await mkdir(new URL("../screenshots/", import.meta.url), { recursive: true });
-  await page.screenshot({
+  await captureEvidence(page, {
     path: new URL("../screenshots/continuous-exploration.png", import.meta.url)
       .pathname,
     animations: "disabled",
