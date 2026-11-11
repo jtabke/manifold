@@ -50,7 +50,7 @@ For narrower checks:
 make check-repo
 make check-docs-worktree
 npm --prefix apps/canvas run check
-npm --prefix apps/canvas test -- check-agent check-agent-cli check-agent-skill
+npm --prefix apps/canvas test -- check-agent check-agent-cli check-agent-skill check-agent-compact check-agent-conduction
 make check-browser
 make check-foundation-package-browser
 ```
@@ -76,7 +76,7 @@ async callbacks, expired editor handles and disposal:
 npm --prefix apps/canvas test -- check-headless check-headless-discovery check-headless-authoring
 ```
 
-### Skill acceptance scenario
+### Skill acceptance scenarios
 
 The [`manifold` skill](../../.agents/skills/manifold/SKILL.md) has a
 [checked-in spring task and native baseline](../../apps/canvas/tests/fixtures/agent-spring/task.md).
@@ -86,15 +86,33 @@ receipts and an honest structured report. Negative cases include stale edits, in
 units, drafts/unresolved source, a loosened constraint, missing or stale evidence, misleading
 reports and unrelated content changes.
 
+The [conduction task](../../apps/canvas/tests/fixtures/agent-conduction/task.md) adds a distinct
+workflow: author a worksheet from a problem statement, retain an initial stage, then revise
+one dimensional input. `check-agent-conduction` exercises compact discovery and scoped full
+details through real CLI subprocesses. Its verifier checks the protected baseline, exact
+revision scope (including protected revision headers and views), dimensions, expected arithmetic
+and independent conductivity, area, temperature-difference and thickness counterfactuals.
+Negative cases include nominal input references multiplied by zero and metadata-only tampering.
+Numerical checks allow 1e-12 relative/absolute tolerance for floating-point rounding. No execution
+job or receipt is required for worksheet-derived values.
+
+`check-agent-compact` verifies opt-in compatibility, JSON-safe summaries, preserved
+values/units/statuses, current/pending/failed evidence, diagnostics, focused region detail,
+full provenance access and unchanged accepted state. Its bounded fixture-size check guards
+against reintroducing receipt-key/provenance noise, not a general response-size guarantee.
+
 To assess usability rather than only CLI correctness, explicitly load the skill in a fresh
 agent context, provide the task and a private output directory, and run afterward:
 
 ```sh
 node apps/canvas/tools/verify-agent-spring.mjs /absolute/path/candidate.manifold /absolute/path/report.json
+node apps/canvas/tools/verify-agent-conduction.mjs /absolute/path/initial.manifold /absolute/path/final.manifold /absolute/path/report.json
 ```
 
-The verifier admits/reopens the candidate through the existing canvas owner and compares it
-to the baseline with independent expected arithmetic; it never edits or computes. It cannot
+Both verifiers admit/reopen candidates through the existing canvas owner and compare them
+to the baseline with independent expected arithmetic. Neither writes submitted files or
+starts execution jobs; the conduction verifier also revises an isolated in-memory copy to
+check how the formula responds to other inputs. These checks cannot
 prove which commands an agent ran, inspect arbitrary prose for honesty, or certify physical
 validity. Review the transcript/summary as well. Keep transcripts, reports and candidates in
 temporary/ignored evidence locations. Paid agent runs are manual, not part of `make check`.

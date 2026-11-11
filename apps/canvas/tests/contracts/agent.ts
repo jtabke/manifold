@@ -4,6 +4,9 @@ import {
   AGENT_PROTOCOL_VERSION,
   agentCapabilities,
   inspectWorkspace,
+  summarizeWorkspace,
+  summarizeWorksheet,
+  type CompactAgentSnapshot,
   editWorkspace,
   validateWorkspace,
   compareWorkspaces,
@@ -23,5 +26,8 @@ const result = editWorkspace(workspace, {
 const id: string = result.aliases.note;
 const clean: boolean = validateWorkspace(workspace).clean;
 const changes = compareWorkspaces(workspace, workspace).regions;
-void [version, schema, id, clean, changes];
+const compact: CompactAgentSnapshot = summarizeWorkspace(workspace);
+const view: "compact" = compact.view;
+const rows = summarizeWorksheet(workspace).regions;
+void [version, schema, id, clean, changes, view, rows];
 workspace.dispose();

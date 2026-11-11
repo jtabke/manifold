@@ -11,6 +11,8 @@ import {
 import {
   agentCapabilities,
   inspectWorkspace,
+  summarizeWorkspace,
+  summarizeWorksheet,
   editWorkspace,
   validateWorkspace,
   compareWorkspaces,
@@ -20,16 +22,17 @@ const help = `Manifold agent CLI (experimental, protocolVersion 1; Node 22.18+)
 Usage: manifold <command> [workspace.json] [options]
   capabilities                         Discover operations and edit JSON schema
   create --output FILE                 Create an empty native workspace
-  inspect FILE                         Inspect worksheet, models and result currency
-  worksheet FILE                       Inspect worksheet source and derived values
-  models FILE                          Discover models and public ports/requests
-  model FILE --model ID                Inspect one discovered model
+  inspect FILE [--compact]             Inspect worksheet, models and result currency
+  worksheet FILE [--region ID] [--compact]  Inspect worksheet source and derived values
+  models FILE [--compact]              Discover models and public ports/requests
+  model FILE --model ID [--compact]    Inspect one discovered model
   edit FILE --changes FILE --output FILE  Apply an atomic JSON edit batch
   validate FILE [--strict]              Report content issues; strict exits 3 if any
   diff BASELINE CANDIDATE               Compare source, values and result currency
   compute FILE --request ID --output FILE [--timeout-ms N]
                                        Execute one discovered model request
 All responses are JSON on stdout (--json is accepted). Errors go to stderr.
+Discovery defaults to full JSON; --compact omits provenance trees and receipt keys.
 Output files must not exist. No in-place writes, implicit computation, or sampling.
 Exit codes: 0 success, 2 input/domain error, 3 validation issues, 4 compute failure,
 5 filesystem error, 6 stale input, 124 timeout, 130 interrupted.
@@ -50,10 +53,10 @@ function parse(args) {
   const specs = {
     capabilities: [],
     create: ["output"],
-    inspect: [],
-    worksheet: [],
-    models: [],
-    model: ["model"],
+    inspect: ["compact"],
+    worksheet: ["region", "compact"],
+    models: ["compact"],
+    model: ["model", "compact"],
     edit: ["changes", "output"],
     validate: ["strict"],
     diff: [],
@@ -74,7 +77,7 @@ function parse(args) {
       Object.hasOwn(options, name)
     )
       fail(`Unknown or duplicate option: ${value}`);
-    if (name === "json" || name === "strict") options[name] = true;
+    if (["json", "strict", "compact"].includes(name)) options[name] = true;
     else {
       if (!rest[i + 1] || rest[i + 1].startsWith("--"))
         fail(`Missing value for ${value}`);
@@ -193,26 +196,48 @@ async function main() {
         break;
       }
       case "inspect":
-        data = inspectWorkspace(workspace);
+        data = options.compact
+          ? summarizeWorkspace(workspace)
+          : inspectWorkspace(workspace);
         break;
-      case "worksheet":
-        data = { documentId: workspace.read().id, ...workspace.worksheet() };
+      case "worksheet": {
+        data = options.compact
+          ? summarizeWorksheet(workspace)
+          : { documentId: workspace.read().id, ...workspace.worksheet() };
+        if (options.region) {
+          const region = data.regions.find(
+            (region) => region.id === options.region,
+          );
+          if (!region)
+            throw new HeadlessError(
+              "ITEM_NOT_FOUND",
+              "Worksheet region not found",
+              { item: options.region },
+            );
+          data = { ...data, regions: [region] };
+        }
         break;
+      }
       case "models":
         data = {
           documentId: workspace.read().id,
-          models: inspectWorkspace(workspace).models,
+          ...(options.compact ? { view: "compact" } : {}),
+          models: options.compact
+            ? summarizeWorkspace(workspace).models
+            : inspectWorkspace(workspace).models,
         };
         break;
       case "model": {
-        const model = inspectWorkspace(workspace).models.find(
-          (model) => model.id === options.model,
-        );
+        const model = (
+          options.compact
+            ? summarizeWorkspace(workspace)
+            : inspectWorkspace(workspace)
+        ).models.find((model) => model.id === options.model);
         if (!model)
           throw new HeadlessError("ITEM_NOT_FOUND", "Model not found", {
             item: options.model,
           });
-        data = model;
+        data = options.compact ? { view: "compact", ...model } : model;
         break;
       }
       case "edit": {

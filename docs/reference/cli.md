@@ -32,10 +32,10 @@ must not exist. Options are command-specific; unknown or duplicate options rejec
 | --- | --- | --- |
 | `capabilities` | None | Operations, edit JSON Schema, built-in model families and default execution profile. |
 | `create` | `--output FILE` | Empty native workspace plus its inspection snapshot and output path. |
-| `inspect` | `FILE` | Document identity/root ID, worksheet and model snapshots. |
-| `worksheet` | `FILE` | Effective worksheet context, regions and document ID. |
-| `models` | `FILE` | Discovered models and document ID. |
-| `model` | `FILE --model ID` | One discovered model description. |
+| `inspect` | `FILE [--compact]` | Document identity/root ID, worksheet and model snapshots. |
+| `worksheet` | `FILE [--region ID] [--compact]` | Effective worksheet context, regions and document ID. |
+| `models` | `FILE [--compact]` | Discovered models and document ID. |
+| `model` | `FILE --model ID [--compact]` | One discovered model description. |
 | `edit` | `FILE --changes JSON_FILE --output FILE` | Current document ID, accepted alias mapping and output path. |
 | `validate` | `FILE [--strict]` | Admission/content report; strict mode exits 3 when issues exist. |
 | `diff` | `BASELINE CANDIDATE` | Document IDs, shared-identity flag and semantic region/model changes. |
@@ -65,6 +65,33 @@ receipt, `current` means a matching successful receipt, and other statuses are `
 `failed`, and `blocked`. Available receipt summaries include the evidence ID, execution key,
 outcome, and physical validity. Projection provenance remains available for inspection; raw
 persistent document collections and receipt context maps are deliberately not exposed.
+
+### Compact discovery and focused details
+
+Discovery remains **full by default**, preserving existing protocol-1 responses. Opt into
+`--compact` on `inspect`, `worksheet`, `models` or `model`. Compact responses are marked
+`view: "compact"`; they are additive views, not a silent change to the full contract.
+`capabilities.discovery` advertises supported views and the default.
+
+Compact output retains document IDs for guarded editing, region IDs/source/classification,
+editable flags, derived values/units, diagnostics, constraints, model input IDs/declared units,
+defaults/bindings/edit bounds, output values and computation statuses. Available receipt
+summaries retain IDs, outcomes and physical-validity markers. Unresolved projections retain
+status/reason; quantities remain null when unavailable. Reads never compute or mutate.
+
+Compact worksheet quantities omit dimension vectors and positions; constraints have `pass`,
+`bound` and `unit` (null if unavailable), not the expression tree. Compact model projections
+use `{ status: "resolved", type: "scalar", value, unit }` for scalars, rather than the full
+projection/provenance object. Other resolved projection types retain their JSON value.
+Request references, revision/definition IDs, dependencies and receipt keys are omitted;
+input bindings remain explicit and may contain qualified references. Receipt outcomes retain
+meaning and may still contain structured output. Compact is not pagination or a byte cap.
+
+For full selectors, provenance, dimensions or receipt keys, omit `--compact`. Focus detail
+with `model FILE --model ID` or `worksheet FILE --region ID`. The region filter returns the
+usual worksheet envelope with a single region and rejects an unknown ID as `ITEM_NOT_FOUND`.
+Compact requests retain their opaque ID, which the CLI accepts as `compute --request ID`;
+TypeScript callers can use `workspace.reference(request.id)` before `compute`.
 
 ## Atomic edits
 

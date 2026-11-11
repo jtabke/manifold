@@ -92,7 +92,9 @@ For browser-free document inspection, editing and explicit computation, see the
 For agent workflows with JSON discovery, atomic edits, validation, comparison and explicit
 computation, see the [agent guide](docs/guides/agents.md) and [CLI reference](docs/reference/cli.md).
 A [bundled Manifold skill](.agents/skills/manifold/SKILL.md) teaches agents that workflow;
-its [practice task](apps/canvas/tests/fixtures/agent-spring/task.md) has an independent verifier.
+the [spring edit](apps/canvas/tests/fixtures/agent-spring/task.md) and
+[worksheet authoring](apps/canvas/tests/fixtures/agent-conduction/task.md) practice tasks have
+independent verifiers. Use `inspect --compact` for concise discovery; full detail remains the default.
 
 - [Contributing](CONTRIBUTING.md) and [development guide](docs/development/README.md)
 - [Architecture and extension patterns](docs/design/canvas-extension-patterns.md)

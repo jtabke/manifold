@@ -13,6 +13,8 @@ const checks = [
   "check-agent.mjs",
   "check-agent-cli.mjs",
   "check-agent-skill.mjs",
+  "check-agent-compact.mjs",
+  "check-agent-conduction.mjs",
   "check-drawing.mjs",
   "check-drawing-regularization.mjs",
   "check-drawing-browser.mjs",

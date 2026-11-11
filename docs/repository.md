@@ -24,7 +24,7 @@ record architecture choices.
 | `apps/canvas/tools`, `scripts` | Other diagnostics, check orchestration and repository policy. |
 | `docs/images` | Curated, real application screenshots used by the README. |
 | `.agents/skills/manifold` | Checkout-scoped Manifold product skill; links to public guides/reference rather than duplicating the CLI. |
-| `apps/canvas/tests/fixtures/agent-spring` | Native baseline and bounded skill acceptance task; generated candidates/reports are not checked in. |
+| `apps/canvas/tests/fixtures/agent-spring`, `agent-conduction` | Native baselines and bounded skill acceptance tasks for editing/computation and worksheet authoring/revision; generated candidates/reports are not checked in. |
 | `docs/guides` | Task-oriented canvas and agent usage. |
 | `docs/reference` | Exact CLI and headless/agent API contracts. |
 | `docs/development` | Contributor setup, checks and optional diagnostics. |

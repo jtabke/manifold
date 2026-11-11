@@ -224,6 +224,9 @@ import {
   AGENT_PROTOCOL_VERSION,
   agentCapabilities,
   inspectWorkspace,
+  summarizeWorkspace,
+  summarizeWorksheet,
+  type CompactAgentSnapshot,
   editWorkspace,
   validateWorkspace,
   compareWorkspaces,
@@ -236,12 +239,15 @@ import {
 | `AGENT_PROTOCOL_VERSION` | Current JSON protocol version, initially `1`. |
 | `agentCapabilities()` | Operations, edit JSON Schema, creatable model families and the default local automation profile. Does not introspect executors a trusted host injects. |
 | `inspectWorkspace(workspace)` | Immutable `AgentSnapshot` of document identity/root, worksheet and discovered models. Includes public projections and receipt summaries, not raw persistent collections or receipt context maps. |
+| `summarizeWorkspace(workspace)` | Immutable `CompactAgentSnapshot`, marked `view: "compact"`, retaining values/units/statuses but omitting provenance trees, request references and receipt keys. Existing `inspectWorkspace` output is unchanged. |
+| `summarizeWorksheet(workspace)` | Compact worksheet source, quantities/units, diagnostics and constraint summaries. Does not inspect models. |
 | `editWorkspace(workspace, unknownPayload)` | Validate a plain JSON batch and publish through the existing atomic transaction. Return the accepted document ID and creation alias mapping. |
 | `validateWorkspace(workspace)` | Report content issues after native admission. Does not execute or certify physical validity. |
 | `compareWorkspaces(before, after)` | Compare two owners' public semantic snapshots without mutation or execution. Not an exhaustive archive comparison. |
 
 The [CLI reference](cli.md) owns the shared JSON edit, validation, comparison and result-status
-contracts. These helpers share the headless owner's admission and mutation paths; they do
+contracts, including [compact versus full discovery](cli.md#compact-discovery-and-focused-details).
+These helpers share the headless owner's admission and mutation paths; they do
 not create a second operation engine. Always dispose owners you create. A future MCP or
 service adapter should use these owners rather than reimplement domain logic.
 

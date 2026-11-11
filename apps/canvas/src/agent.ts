@@ -1,5 +1,11 @@
 /** Versioned, JSON-facing automation contracts over the single headless owner. */
-import { freeze, json, type ModelDefinition } from "@manifold/foundation";
+import {
+  freeze,
+  json,
+  scalar,
+  type ModelDefinition,
+  type ProjectionResult,
+} from "@manifold/foundation";
 import type { HeadlessWorkspace } from "./headless.ts";
 import { HeadlessError } from "./headlessErrors.ts";
 import { modelFamilies } from "./regions/foundationModels.ts";
@@ -51,6 +57,14 @@ export function agentCapabilities() {
       "diff",
       "compute",
     ],
+    discovery: {
+      views: ["full", "compact"],
+      default: "full",
+      compactCommands: ["inspect", "worksheet", "models", "model"],
+      regionFilter: "worksheet --region ID",
+      details:
+        "Omit --compact for full provenance, selectors and receipt keys; use model --model ID or worksheet --region ID to focus.",
+    },
     execution: { explicit: true, sampling: false, arbitraryCode: false },
     modelFamilies: Object.entries(modelFamilies).map(([id, family]) => ({
       id,
@@ -260,6 +274,114 @@ export function inspectWorkspace(workspace: HeadlessWorkspace) {
   });
 }
 export type AgentSnapshot = ReturnType<typeof inspectWorkspace>;
+
+function compactProjection(result: ProjectionResult) {
+  if (result.status !== "resolved") return result;
+  if (result.projection.type === "scalar") {
+    const value = result.projection.value;
+    scalar(value);
+    return {
+      status: result.status,
+      type: "scalar",
+      value: value.value,
+      unit: value.unit,
+    };
+  }
+  return {
+    status: result.status,
+    type: result.projection.type,
+    value: result.projection.value,
+  };
+}
+
+/** Same worksheet facts, without dimension vectors or constraint expression trees. */
+export function summarizeWorksheet(workspace: HeadlessWorkspace) {
+  const worksheet = workspace.worksheet();
+  return freeze({
+    protocolVersion: AGENT_PROTOCOL_VERSION,
+    view: "compact" as const,
+    documentId: worksheet.documentId,
+    context: worksheet.context,
+    regions: worksheet.regions.map((region) => ({
+      id: region.id,
+      text: region.text,
+      kind: region.kind,
+      name: region.name,
+      editable: region.editable,
+      quantity: region.quantity
+        ? {
+            value: region.quantity.value,
+            unit: region.quantity.unit,
+            ...(region.quantity.absolute !== undefined
+              ? { absolute: region.quantity.absolute }
+              : {}),
+          }
+        : null,
+      diagnostic: region.diagnostic,
+      constraint: region.constraint
+        ? {
+            pass: region.constraint.pass,
+            bound: region.constraint.bound.value,
+            unit: region.quantity?.unit ?? null,
+          }
+        : null,
+    })),
+  });
+}
+
+/** Opt-in compact discovery. Full inspectWorkspace contracts remain unchanged. No execution. */
+export function summarizeWorkspace(workspace: HeadlessWorkspace) {
+  const models = workspace.models();
+  return freeze({
+    protocolVersion: AGENT_PROTOCOL_VERSION,
+    view: "compact" as const,
+    documentId: workspace.read().id,
+    document: workspace.read().document,
+    worksheet: summarizeWorksheet(workspace),
+    models: models.map((model) => ({
+      id: model.id,
+      label: model.label,
+      documentId: model.documentId,
+      inputs: model.inputs.map((input) => ({
+        id: input.id,
+        label: input.label,
+        unit: input.unit,
+        defaultValue: input.defaultValue,
+        binding: input.binding,
+        numericEdit: input.numericEdit,
+        projection: compactProjection(input.projection),
+      })),
+      outputs: model.outputs.map((output) => ({
+        id: output.id,
+        label: output.label,
+        unit: output.unit,
+        projection: compactProjection(output.projection),
+      })),
+      requests: model.requests.map((request) => ({
+        id: request.id,
+        label: request.label,
+        outputs: request.outputs,
+        result: {
+          status: request.result.status,
+          ...("reason" in request.result
+            ? { reason: request.result.reason }
+            : {}),
+          ...("job" in request.result ? { job: request.result.job } : {}),
+          ...(request.result.receipt
+            ? {
+                receipt: {
+                  id: request.result.receipt.id,
+                  outcome: request.result.receipt.outcome,
+                  physicalValidity: request.result.receipt.physicalValidity,
+                },
+              }
+            : {}),
+        },
+      })),
+    })),
+  });
+}
+export type CompactAgentSnapshot = ReturnType<typeof summarizeWorkspace>;
 
 /** File admission has already succeeded; this reports content issues, not physical safety. */
 export function validateWorkspace(workspace: HeadlessWorkspace) {

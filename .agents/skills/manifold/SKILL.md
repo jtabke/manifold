@@ -26,7 +26,11 @@ or recovering errors. For TypeScript integrations use the
 
 ## Working loop
 
-1. **Inspect before acting.** Read `inspect`, `worksheet` and `models` as needed. Discover
+1. **Inspect before acting.** Prefer `inspect --compact`, `worksheet --compact` and
+   `models --compact` as needed. Full JSON remains the default for compatibility. For focused
+   provenance or dimensional detail, omit `--compact` and use `model --model ID` or
+   `worksheet --region ID`. Compact output retains statuses, units and receipt IDs, but
+   omits revision trees, receipt keys and request references. Discover
    opaque region, input, output and request IDs. Labels are not unique. Record the reviewed
    `documentId`, source, input units, diagnostics, constraints and evidence currency.
 2. **Bound the change.** Preserve unrelated objects, source and limits. Model inputs use
@@ -37,6 +41,10 @@ or recovering errors. For TypeScript integrations use the
    Related changes belong in one atomic batch. Discover IDs rather than guessing them;
    aliases only refer to earlier creations in that batch. Choose fresh output paths: there
    is no in-place/force mode. Do not modify the baseline or rewrite the archive by hand.
+   When authoring from a problem statement, write inputs with explicit units, equations that
+   derive outputs from those inputs, unchanged requirement constraints and plain-language
+   assumptions. Save the initial worksheet before revising a discovered input; inspect its
+   new document ID rather than reusing the authoring batch's old guard.
 4. **Review consequences.** Diff baseline/candidate and validate the candidate. Successful
    editing can retain drafts or unresolved equations. `admitted` is not `clean` and neither
    certifies engineering safety. `validate --strict` exit 3 is an issues report, not a reason
@@ -45,7 +53,8 @@ or recovering errors. For TypeScript integrations use the
 5. **Compute explicitly when the task calls for it.** Discover the request on the candidate,
    then use `compute` with a timeout and another fresh output path. Derived projections are
    not checked receipts. Retention alone is not success: inspect completion, outcome and
-   current result status. Inspect/validate again after computation. Do not enable sampling,
+   current result status. Plain worksheet expressions derive synchronously and need no
+   invented model, execution request or receipt. Inspect/validate again after computation. Do not enable sampling,
    arbitrary code, network/process executors, or weaken limits to make a task pass.
 6. **Hand back evidence.** Return the final candidate path, changed source/inputs with units,
    resulting values and constraint transitions, computation/outcome/currency, and unresolved
@@ -69,6 +78,9 @@ or recovering errors. For TypeScript integrations use the
 ## Practice and verification
 
 The [spring acceptance scenario](../../../apps/canvas/tests/fixtures/agent-spring/task.md)
-provides a native workspace and task. Its verifier checks candidate facts and a structured
-handoff independently of the agent's claims. It is an example workflow, not an alternative
-CLI or an instruction to solve the practice task when the user requested different work.
+checks guarded edits and explicit model computation. The
+[conduction authoring scenario](../../../apps/canvas/tests/fixtures/agent-conduction/task.md)
+checks authoring a worksheet from a problem statement, dimensional inputs and a later revision
+without inventing job evidence. Their verifiers check candidate facts and structured handoffs
+independently of agent claims. These are examples, not alternative CLIs or instructions to
+solve practice tasks when the user requested different work.
