@@ -6,6 +6,7 @@ import {
   passes,
   expressionBody,
   references,
+  unitLabel,
 } from "../src/notebook/math.ts";
 const mathematical = (text) =>
   /^\s*[A-Za-z_][A-Za-z_0-9]*\s*(?::=|<=|>=|<|>|=|≤|≥)/.test(text) ||
@@ -66,12 +67,13 @@ export function referenceCalculate(regions, overrides = {}) {
       else {
         const actual = resolve(s.name),
           bound = evaluate(s.expression, resolve);
-        if (
-          !same(actual.dimension, bound.dimension) ||
-          !!actual.absolute !== !!bound.absolute
-        )
+        if (!same(actual.dimension, bound.dimension))
           throw Error(
-            "The limit and the result need matching units and temperature conventions.",
+            `The result ${s.name} has units ${unitLabel(actual) || "1"}, but its limit has units ${unitLabel(bound) || "1"}. Check the units of ${s.name} and its inputs.`,
+          );
+        if (!!actual.absolute !== !!bound.absolute)
+          throw Error(
+            `The result ${s.name} and its limit mix absolute temperature and a temperature difference. Use matching temperature conventions.`,
           );
         constraints.set(id, {
           pass: passes(s.relation, actual.value, bound.value),

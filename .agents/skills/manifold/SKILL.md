@@ -65,6 +65,13 @@ or recovering errors. For TypeScript integrations use the
 
 - Use structured error codes and statuses, not English message matching. On stale document
   or file state, reinspect and review the differences before deciding whether to retry.
+- Diagnose causes before editing: a unit-mismatch diagnostic may appear on a downstream
+  constraint, so inspect its referenced input sources and units. An unresolved reference is
+  not zero. A diagnostic's suggested repair is not authorization to add symbols or expand
+  task scope; replacing a mistaken reference may be the authorized correction instead.
+  A resolved projection without a current receipt is not checked evidence; report
+  the actual status (`ready`, for example), not an invented `stale` status. After repair,
+  revalidate: a now-evaluable requirement can genuinely fail without any remaining diagnostic.
 - A failed atomic edit publishes nothing. Use disposable probes for incomplete or incompatible
   expressions when appropriate; do not pass them off as a finished candidate.
 - A completed failed computation may save failure evidence and exit 4. Timeout/interruption
@@ -82,5 +89,8 @@ checks guarded edits and explicit model computation. The
 [conduction authoring scenario](../../../apps/canvas/tests/fixtures/agent-conduction/task.md)
 checks authoring a worksheet from a problem statement, dimensional inputs and a later revision
 without inventing job evidence. Their verifiers check candidate facts and structured handoffs
-independently of agent claims. These are examples, not alternative CLIs or instructions to
-solve practice tasks when the user requested different work.
+independently of agent claims. The
+[recovery scenario](../../../apps/canvas/tests/fixtures/agent-recovery/task.md) checks diagnosis
+of wrong units, an unresolved reference and non-current computation evidence, followed by a
+bounded repair that does not conceal a genuinely failed requirement. These are examples, not
+alternative CLIs or instructions to solve practice tasks when the user requested different work.

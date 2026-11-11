@@ -50,7 +50,7 @@ For narrower checks:
 make check-repo
 make check-docs-worktree
 npm --prefix apps/canvas run check
-npm --prefix apps/canvas test -- check-agent check-agent-cli check-agent-skill check-agent-compact check-agent-conduction
+npm --prefix apps/canvas test -- check-agent check-agent-cli check-agent-skill check-agent-compact check-agent-conduction check-agent-recovery
 make check-browser
 make check-foundation-package-browser
 ```
@@ -76,6 +76,25 @@ async callbacks, expired editor handles and disposal:
 npm --prefix apps/canvas test -- check-headless check-headless-discovery check-headless-authoring
 ```
 
+### Agent-to-canvas browser handoff
+
+`check-agent-handoff-browser` authors separate ready/computed spring candidates with the real
+CLI, opens them through native file input, checks displayed source/units/results and the failed
+constraint, edits worksheet displacement through the UI, exercises Undo/Redo, exports and
+reopens in fresh browser contexts. Durable IndexedDB evidence, receipt identities and request
+statuses must survive without executor requests; worksheet edits must not change the independent
+model's evidence. Overlapping fixture model cards are moved using actual UI handles before editing.
+This verifies interaction mechanics, not unfamiliar-engineer usability.
+
+```sh
+npm --prefix apps/canvas run build
+npm --prefix apps/canvas run test:all-browser -- check-agent-handoff-browser
+```
+
+Chrome is the default browser, as in the existing browser suite. This new check also accepts
+`MANIFOLD_BROWSER_EXECUTABLE=/absolute/path/to/chromium` for explicit local Chromium verification;
+that override applies only to this check and is not a passing Chrome gate for the full suite.
+
 ### Skill acceptance scenarios
 
 The [`manifold` skill](../../.agents/skills/manifold/SKILL.md) has a
@@ -96,6 +115,17 @@ Negative cases include nominal input references multiplied by zero and metadata-
 Numerical checks allow 1e-12 relative/absolute tolerance for floating-point rounding. No execution
 job or receipt is required for worksheet-derived values.
 
+The [recovery task](../../apps/canvas/tests/fixtures/agent-recovery/task.md) starts with wrong
+worksheet units, an unresolved reference and a spring projection whose checked evidence is
+not current. `check-agent-recovery` runs the real CLI through diagnosis, one guarded repair,
+a separately saved pre-computation stage and explicit spring execution. It checks the residual
+failed requirement, protected revisions/views and receipt-pinned history, all historical receipts
+and their contexts, unrelated model evidence, honest statuses and structured handoff, plus
+rollback, stale guards and negative candidates. It uses the native export policy for retained
+revisions: superseded unpinned source heads may be omitted; session Undo is not file history. A passing verifier
+does not establish that every claimed command was executed; cached requests can leave no new
+saved evidence. Review command logs for that distinction.
+
 `check-agent-compact` verifies opt-in compatibility, JSON-safe summaries, preserved
 values/units/statuses, current/pending/failed evidence, diagnostics, focused region detail,
 full provenance access and unchanged accepted state. Its bounded fixture-size check guards
@@ -107,10 +137,11 @@ agent context, provide the task and a private output directory, and run afterwar
 ```sh
 node apps/canvas/tools/verify-agent-spring.mjs /absolute/path/candidate.manifold /absolute/path/report.json
 node apps/canvas/tools/verify-agent-conduction.mjs /absolute/path/initial.manifold /absolute/path/final.manifold /absolute/path/report.json
+node apps/canvas/tools/verify-agent-recovery.mjs /absolute/path/repaired.manifold /absolute/path/candidate.manifold /absolute/path/report.json
 ```
 
-Both verifiers admit/reopen candidates through the existing canvas owner and compare them
-to the baseline with independent expected arithmetic. Neither writes submitted files or
+All three verifiers admit/reopen candidates through the existing canvas owner and compare them
+to the baseline with independent expected arithmetic. None writes submitted files or
 starts execution jobs; the conduction verifier also revises an isolated in-memory copy to
 check how the formula responds to other inputs. These checks cannot
 prove which commands an agent ran, inspect arbitrary prose for honesty, or certify physical

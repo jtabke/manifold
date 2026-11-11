@@ -87,6 +87,30 @@ for (const lines of [
   ["x := 1", "x <= 25 °C"],
 ])
   assert.ok(calculate(regions(lines)).errors.size > 0, lines.join(";"));
+const unitMismatch = calculate(
+  regions(["x := 4 s", "k := 10 N/mm", "F = k*x", "F < 30 N"]),
+);
+assert.equal(
+  unitMismatch.errors.get("3"),
+  "The result F has units kg·s^-1, but its limit has units N. Check the units of F and its inputs.",
+);
+assert.equal(unitMismatch.constraints.has("3"), false);
+assert(!unitMismatch.errors.get("3").includes("temperature"));
+assert.equal(
+  calculate(regions(["x := 1", "x < 2 m"])).errors.get("1"),
+  "The result x has units 1, but its limit has units m. Check the units of x and its inputs.",
+);
+for (const source of [
+  ["T := 25 °C", "T < 30 K"],
+  ["T := 25 K", "T < 30 °C"],
+]) {
+  const mismatch = calculate(regions(source));
+  assert.equal(
+    mismatch.errors.get("1"),
+    "The result T and its limit mix absolute temperature and a temperature difference. Use matching temperature conventions.",
+  );
+  assert.equal(mismatch.constraints.size, 0);
+}
 for (const payload of [
   "x := globalThis.alert(1)",
   "x := __proto__.constructor",
