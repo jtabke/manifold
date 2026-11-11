@@ -19,7 +19,8 @@ make canvas
 ```
 
 Leave the Python server running and use `make canvas-dev` in another terminal for
-frontend development. See the [application guide](apps/canvas/README.md).
+frontend development. See the [development guide](docs/development/README.md) for setup
+variants and focused checks, or the [canvas guide](docs/guides/canvas.md) for product usage.
 
 The root `package-lock.json` owns both npm workspaces. Use `npm install` at the root
 when updating dependencies and include the lockfile. `npm ci` installs shared tools
@@ -74,5 +75,13 @@ Optional workload/profile tools may generate ignored local reports. Reports are 
 required inputs to ordinary builds or correctness checks, and CI does not publish them
 as artifacts. Engineering provenance inside a user's workspace is product data, not a
 repository evaluation report; its contracts and tests must remain intact.
+
+## Documentation changes
+
+Use the [documentation index](docs/README.md) to find each topic's owner. Guides explain user
+and agent tasks; reference defines API/CLI contracts; development documentation owns workflows;
+design views and ADRs own architecture and rationale. Update the owning page instead of
+copying contracts or migration histories into package READMEs. Keep links and CLI help paths
+current and run `make check-docs-worktree` after changes.
 
 Contributions are licensed under Apache-2.0.

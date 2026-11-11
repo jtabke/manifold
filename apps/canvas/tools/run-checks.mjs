@@ -7,6 +7,12 @@ const browser = process.argv.includes("--browser");
 const requested = process.argv.slice(2).filter((name) => name !== "--browser");
 const files = [];
 const checks = [
+  "check-headless.mjs",
+  "check-headless-discovery.mjs",
+  "check-headless-authoring.mjs",
+  "check-agent.mjs",
+  "check-agent-cli.mjs",
+  "check-agent-skill.mjs",
   "check-drawing.mjs",
   "check-drawing-regularization.mjs",
   "check-drawing-browser.mjs",

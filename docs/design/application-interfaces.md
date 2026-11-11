@@ -374,10 +374,14 @@ bounded workflows before adoption. Adding more base record kinds does not resolv
 needs a concrete user scenario, a remove-or-merge counterexample, failure/recovery rules,
 portable encoding and cost evidence that compositions cannot reasonably supply.
 
-## Design verification
+## Historical design verification
 
-2026-10-27: `make check-application-contracts` passes strict types and nine negative
-compile checks. All 114 existing core tests and 24 reduction probes pass with unchanged
+These are dated design-review results, not current check instructions or an outstanding
+adoption backlog. Public verification commands live in the
+[development guide](../development/README.md#checks).
+
+2026-10-27: the local-only application contract probe passed strict types and nine negative
+compile checks. At that review, all 114 core tests and 24 reduction probes passed with unchanged
 foundation source digest `sha256:36ca79c21274bfcbf91476fe59fa25354de99133e6364d18c95f99dc2052d0db`.
 `make check-docs-worktree` checks local links/anchors, including these untracked drafts,
 and the existing deployment/ownership diagram summaries. The operation-flow page was
@@ -386,4 +390,5 @@ console errors. The source-identified typed execution proof (local-only experime
 adds 21 passing scenarios, an actual fresh-process handoff and measured independent
 occurrences sharing source bytes. Production runtime, native formats and application UI
 remain unchanged. `make check-canvas` also passes formatting, build and 23 local checks
-against the unchanged app source. Full API and product adoption are future implementation work.
+against the unchanged app source. At that review, full API and product adoption were future
+implementation work; use the [extension patterns](canvas-extension-patterns.md) for current ports.

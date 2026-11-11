@@ -3,12 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./headless": "./src/headless.ts",
+    "./agent": "./src/agent.ts"
+  },
+  "bin": {
+    "manifold": "./tools/manifold.mjs"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 58311",
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
-    "format": "prettier --write src/main.tsx src/style.css src/regions src/notebook/math.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
-    "format:check": "prettier --check src/main.tsx src/style.css src/regions src/notebook/math.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
+    "format": "prettier --write src/agent.ts tools/manifold.mjs tools/verify-agent-spring.mjs src/headless*.ts src/main.tsx src/style.css src/regions src/notebook/math.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
+    "format:check": "prettier --check src/agent.ts tools/manifold.mjs tools/verify-agent-spring.mjs src/headless*.ts src/main.tsx src/style.css src/regions src/notebook/math.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
     "test": "node tools/run-checks.mjs",
     "test:all-browser": "node tools/run-checks.mjs --browser"
   },

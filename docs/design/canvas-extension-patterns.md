@@ -251,14 +251,13 @@ and removal/merge counterexamples. Require evidence for:
 - Resource limits and representative sparse/fanout cases; count actual writes/closure/DOM and report
   time/heap methodology. Keep the original LOC/complexity baseline and retire replaced code.
 
-Run `make verify-application-foundation` for the complete sequential acceptance path: local/core
-checks, both browser suites, seven core and thirteen application workloads, production counts and exact-
-source structural guards. `make check` remains the faster local/type/build path. Keep browser/build
-phases sequential when they share app output. The local/browser model scripts are in the standard canvas check
-runner. Run `make measure-foundation-models` and the existing workload commands, then
-`make check-application-foundation-evidence`; stale source digests fail. Timing diagnostics alone
-do not close product performance gates. EVIDENCE (local-only report) records
-the current exact results and limitations.
+Run `make check` for repository/docs/Python/type/local-test/build gates and `make verify` to
+also run both browser suites sequentially. `make verify-application-foundation` is an alias for
+`make verify`, not a workload or historical-evidence regeneration target. Local/browser model
+scripts are included in the standard canvas runner. Optional measurements, such as
+`make measure-foundation-models`, are separate diagnostics; timing alone does not close product
+performance gates. The [development guide](../development/README.md) owns current check commands,
+focused workflows and diagnostic tooling.
 
 [Sampling plans](decisions/0027-normalized-sampling-plans.md) are the sampler's normalized request
 adapter. Compiler projections publish/validate with the worksheet in one batch and retain explicit

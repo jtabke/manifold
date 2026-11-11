@@ -19,9 +19,16 @@ record architecture choices.
 | `apps/canvas/src/notebook` | Bounded mathematics and immutable derived views. |
 | `apps/canvas/server.py`, `artifact_sampler.py` | Static/API host and restricted Python sampling. |
 | `apps/canvas/tests`, `packages/foundation/test` | Executable contracts, browser workflows and fixtures. |
-| `apps/canvas/tools`, `scripts` | Reproducible diagnostics, check orchestration and repository policy. |
+| `apps/canvas/src/headless*.ts`, `apps/canvas/src/agent.ts` | Browser-free canvas owner and transport-free JSON automation contracts. |
+| `apps/canvas/tools/manifold.mjs` | File-based agent CLI over the headless owner; explicit computation and no-clobber candidate publication. |
+| `apps/canvas/tools`, `scripts` | Other diagnostics, check orchestration and repository policy. |
 | `docs/images` | Curated, real application screenshots used by the README. |
-| `docs/design` | Maintained contracts and architecture decisions. |
+| `.agents/skills/manifold` | Checkout-scoped Manifold product skill; links to public guides/reference rather than duplicating the CLI. |
+| `apps/canvas/tests/fixtures/agent-spring` | Native baseline and bounded skill acceptance task; generated candidates/reports are not checked in. |
+| `docs/guides` | Task-oriented canvas and agent usage. |
+| `docs/reference` | Exact CLI and headless/agent API contracts. |
+| `docs/development` | Contributor setup, checks and optional diagnostics. |
+| `docs/design` | Architecture/invariants, labelled proposals and decision rationale. |
 
 The application shell lives in `app/Regions.tsx`. Keep exploration, renderer buffers,
 commands and presentation in their owning modules rather than adding another accepted store.
@@ -32,6 +39,15 @@ lines alone is not simplification.
 worksheet derivation/caches. `authoredModels.ts`, `modelCommands.ts` and `modelResults.ts`
 own reusable model definitions, publication and output requests; `modelAnalysis.ts` and
 `modelAnalysisCommands.ts` own bounded sweeps and accepted analysis intents.
+
+## Documentation entry points
+
+[Documentation](README.md) routes readers by task. The root README owns product overview and
+quick start; [Contributing](../CONTRIBUTING.md) owns contribution expectations. Application
+package READMEs are short entry points, while the reusable foundation keeps its own public
+interface in its [package guide](../packages/foundation/README.md). Keep each contract in
+one owning page and link to it from guides; maintain history in ADRs rather than repeating
+migration status in current usage documentation.
 
 ## Package and tooling boundaries
 

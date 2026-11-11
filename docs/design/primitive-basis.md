@@ -1,5 +1,10 @@
 # Primitive basis and reduction review
 
+**Historical, version-scoped audit.** Findings and follow-up experiments below refer to the
+reviewed foundation versions, not the current product backlog. Use the
+[extension patterns](canvas-extension-patterns.md) for implemented contracts and the
+[development guide](../development/README.md#checks) for public verification commands.
+
 **Review date:** 2026-10-26, America/Los_Angeles.  
 **Scope:** Foundation 0.9 reduction review, regressed against the 0.10 selection consolidation.  
 **Finding:** Preserve the information and lifecycle distinctions below. Reduce the conceptual
@@ -201,17 +206,14 @@ architecture family. Real external writeback and unfamiliar-engineer workflows s
 The implementation evidence (local-only report) remains scoped; the audit does
 not turn those earlier passing tests into proof of a universal minimal kernel.
 
-## Reproduction
+## Historical reproduction
 
-```sh
-node experiments/reducibility/check.mjs
-make check-foundation-reducibility
-make check-foundation-package
-```
+The local-only reducibility harness ran 24 probes alongside the then-current foundation
+correctness/worksheet gates, strict types, 114 core tests and workbench builds. That private
+harness and its old Make target are not part of the public checkout. Use the
+[development guide](../development/README.md#checks) to verify the maintained package today.
 
-The focused target checks audit formatting and reruns its 24 probes. The package target also runs
-the original F1/F1b/F2/F3 correctness/worksheet gates, strict types, 114 core tests and production
-workbench builds. The audit writes only its own `reduction-results.json`; it does not change foundation source
-or overwrite earlier source-matched performance/browser reports. Its digest combines the current
-foundation source digest with the exact audit harness bytes. Browser and capacity claims remain
-those of the separately linked evidence, not additional claims from this read-only kernel review.
+The audit wrote its own `reduction-results.json`, without changing foundation source or
+overwriting earlier source-matched reports. Its digest combined the reviewed foundation
+source with the exact harness bytes. Those bounded results add no new browser or capacity
+guarantee.

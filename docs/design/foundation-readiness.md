@@ -9,10 +9,10 @@ interfaces that support the [vision](../vision.md), with concrete ownership, ext
 portability, failure, cost and adoption rules. The following evidence establishes that
 design baseline and identifies which implementation boundaries remain separate work.
 
-**Production follow-through, 2026-10-28:** The application acceptance audit (internal design note)
-and current evidence (local-only report) now track the implemented canvas migration,
-shared typed execution, ordinary scene records and complete input/workspace boundaries. The dated
-design/counts below remain historical; use the extension guide for current shipped ports.
+**Historical audit:** The dated design findings, counts and follow-up gates below describe
+that review, not the current implementation backlog. Use the
+[extension patterns](canvas-extension-patterns.md) for shipped ports and the
+[development guide](../development/README.md#checks) for public verification commands.
 
 ## Requirement and evidence
 
@@ -29,18 +29,16 @@ design/counts below remain historical; use the extension guide for current shipp
 | Extension and deployment do not change source authority. | [Block diagram](application-interfaces.md#architecture-choice), trusted schema/method boundaries and external-writeback protocol. | Modules can share a process; servers deliver code, run jobs or persist records through separate ports. AI uses the same operations. External writes require remote revision guards and reconciliation, not a fictitious distributed transaction. |
 | Methodical buildout and compatibility. | [Five ordered gates](application-interfaces.md#build-order-and-decision-gates), probe exit decision (internal design note), existing foundation/app source-identified evidence. | The first execution proof passes. Next wrap one existing canvas operation, then integrate independent scope and assess representation parity. Each future slice has explicit acceptance/failure/compatibility obligations; none requires an immediate UI or native-format rewrite. |
 
-## Verification boundary
+## Historical verification boundary
 
-`make check-application-contracts` checks strict types and nine invalid-use boundaries.
-`make check-typed-execution` runs the 21 runtime scenarios, real fresh-process handoff
-and diagnostic, producing source-identified results (local-only experiment).
-`make check-foundation-package` retains the existing F1–F3 correctness/comparison gates,
-114 core tests, 24 reduction probes, strict types/formatting and workbench production build.
-`make check-docs-worktree` validates local links/anchors and existing diagram summaries
-without staging unrelated work. The current source digests distinguish reusable/core and
-application evidence; experimental code is not imported into the product.
+The 2026-10-27 review used local-only application contract and typed-execution probes:
+nine invalid-use boundaries, 21 runtime scenarios, a fresh-process handoff and diagnostic.
+The then-current foundation checks included 114 core tests, 24 reduction probes, strict
+types/formatting and workbench builds. Those private probe targets are not part of the public
+Makefile. Source digests identified the exact reviewed core/application code; experimental
+code was not imported into the product.
 
-The current review also passes `make check-canvas` (formatting, build and 23 local checks).
+That review also recorded formatting, build and 23 local canvas checks.
 Its source digest remains `sha256:5e17dc7345c242fee2cf5b6b8aa37952ca317f16e146b53917e6a96c0972a0e0`.
 The build's roughly 699 kB JS chunk warning is recorded in the cost model; startup
 capacity is not inferred from passing a production build.

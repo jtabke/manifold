@@ -1,8 +1,9 @@
 # Architecture baseline
 
-**Current production status, 2026-10-28:** the shared application foundation and canvas migration (internal design note)
-is achieved and verified within its bounded scope. The [implemented extension patterns](canvas-extension-patterns.md)
-own the production ports; the [repository map](../repository.md) owns code locations and package boundaries.
+The [implemented extension patterns](canvas-extension-patterns.md) own the current production
+ports; the [repository map](../repository.md) owns code locations and package boundaries.
+This page distinguishes the implemented runtime from broader responsibility proposals and
+historical experiments. Use the [documentation index](../README.md) for user guides and API/CLI reference.
 
 The foundation owns accepted immutable document changes, preview/Keep/Undo, checked execution
 receipts, resources and durable publication. Canvas domain adapters provide schemas, explicit
@@ -23,10 +24,10 @@ See ADRs [0029](decisions/0029-canvas-sampler-on-shared-evidence.md),
 [0035](decisions/0035-authorable-scalar-models-and-general-outputs.md) and
 [0036](decisions/0036-model-backed-analysis-requests.md) and
 [0037](decisions/0037-bounded-incremental-worksheet-derivation.md) for the adopted boundaries and costs.
-Current evidence (local-only report) records checked workflows and limits.
+The [development guide](../development/README.md#checks) lists public verification commands.
 
-The original F1–F6 sequence (internal design note), isolated experiments and
-[interface design](application-interfaces.md) retain historical/proposed scope. Broader ontologies,
+The historical F1–F6 experiments and [interface design](application-interfaces.md) retain
+historical/proposed scope. Broader ontologies,
 a universal SDK, general solvers and partial-source access are not implied by current adoption.
 The diagrams below express the broader responsibility model; they are not deployment promises.
 
@@ -57,8 +58,10 @@ flowchart TB
 <!-- architecture-diagram:deployment:end -->
 
 The browser is the initial host for a platform-neutral document runtime. The same pure
-contracts must work in F1's separate-process tests; a future headless reader can use
-them without mounting React. No headless product or new service is required now.
+contracts also run in separate-process tests. The [headless programmatic canvas API](../reference/headless-api.md)
+uses the installed canvas schemas and owner without mounting React. The [local CLI](../reference/cli.md)
+is a file-based adapter over that owner, with explicit computation and separate candidate
+files. Neither adapter installs an HTTP service, MCP server or live-browser bridge.
 The app host delivers application code, while the browser renders and edits work.
 A native document can be opened locally without uploading the whole project.
 
@@ -271,38 +274,21 @@ only its bounded identity, read/write, recovery and portable round-trip contract
 relationships, evaluation, context policy and production storage advance through their
 own gates; this diagram does not select an exhaustive domain schema or a database.
 
-### F2 browser and storage seam
+### Historical browser and storage experiments
 
-The isolated F2 harness (local-only experiment) exercises a real browser loop
-before production state migration. Its property/claim/relation/native record kinds are
-concrete fixture schemas. Value authority remains with source bytes; relation roles
-express authored meaning rather than execution direction. One operation owner publishes
-content/views and semantic selections together; the incident index is derived.
+The F2–F4 experiments tested operation ownership, generation-checked persistence, request
+currency and coherent alternatives before production adoption. Their fixture schemas and
+limits are not current application contracts. Rationale and supersession are retained in
+[ADR 0007](decisions/0007-f2-explicit-claims-and-transactional-save-probe.md),
+[ADR 0008](decisions/0008-f3-requests-and-execution-evidence.md) and
+[ADR 0009](decisions/0009-reusable-foundation-and-frozen-alternatives.md).
 
-The IndexedDB probe stages immutable assets/metadata and atomically compares/swaps one
-durable generation. Reopen verifies bytes and semantics before adoption. Exact-root/
-binding acknowledgements and draft-buffer checks prevent a stale completion from marking
-new work saved or a late Open from discarding typing. This does not select production
-storage, establish power-loss durability, or resolve asynchronous large-source access.
-The F3 experiment (local-only experiment) now adds authored requests,
-actual input/method keys, checked receipts and affected-request indexes. Receipt arrival
-has its own version outside authored Undo. Root/evidence/binding checks protect Save and
-late Open; native handoff restores evidence without executing. Source value changes
-notify their dependents without rebuilding unchanged edges. This remains an isolated
-fixture with a closed method catalog, eager source access and unbounded evidence retention;
-the v0 package/workbench (local-only report) now closes the bounded
-F4 coherent-alternative gate. Contexts retain only reachable selections and never borrow
-a newer baseline. Repeated contexts/snapshots share transport metadata. The
-retention slice (internal design note) now prunes unused current payloads while
-protecting Undo, active captures and citations, with durable identity ledgers and evidence
-sequence metadata. Incremental hot local saves (internal design note) now reuse
-committed map branches and atomically publish changed batches; native transport stays separate.
-Recovery restores physical shape only after owner validation. Reviewed stored-data reclamation
-now guards coherent read snapshots and Save epochs. Full metadata validation, larger partial
-sources and final container choices remain F5 work. The canvas owner/Keep and incremental storage (internal design note) gates now
-pass. Protected app retention and saved-storage cleanup (internal design note) now pass;
-compact snapshots/source pins (internal design note) now pass. Richer execution/
-partial source access and independent composition remain separate integration. Recent/kept calculations (internal design note) now have explicit lifetime/authority boundaries.
+Current storage/retention ownership is described in the
+[extension patterns](canvas-extension-patterns.md), with decisions on
+[incremental snapshots](decisions/0011-incremental-local-snapshots.md),
+[reclamation](decisions/0013-coordinated-storage-reclamation.md), and the
+[canvas owner/native handoff](decisions/0014-canvas-document-owner-and-native-handoff.md).
+Do not interpret historical experiment milestones as outstanding migration work.
 
 ## Context, containers and deployment today
 
@@ -313,8 +299,9 @@ No live AI provider, remote collaboration service or native CAD service is conne
 The private native V7 file carries registered authored content/views, alternatives, scalar/analysis/sampler
 receipts and verified resources in one foundation envelope. The conditional V5 writer and sampler
 sidecar are retired; V1–V6 are read boundaries. No-execution file Open and fresh compatible-browser
-handoff pass for worksheets and bounded independent scalar models. Broader arrangement/tool portability
-and conditional-writer retirement remain open under the portability gates.
+handoff cover worksheets, bounded independent scalar models, and authored group/tool/named-layout
+records. Active camera and selection remain personal. Broader resource capacity and partial-source
+access are separate concerns, not implied by these portable records.
 
 ```mermaid
 flowchart LR
@@ -426,31 +413,17 @@ shared bytes, dependency locality, retention and extension boundaries. Typecheck
 fixtures and synthetic sizing are linked [evidence](model/evidence.md), not passing
 production architecture or workload guarantees.
 
-## Next architecture work
+## Remaining architecture scope
 
-Follow the foundation sequence (internal design note), beginning
-with F3's explicit-request/result-currency experiment on the tested F2 candidate.
-F1b removes unrelated revision scans and dense edit-map copies, and bounds Undo
-selections; retained revisions, identity ledgers, full transport and slower metadata
-reads remain explicit tradeoffs. Its later slices map the P1–P4 probes
-to relationships, execution, contexts and composition. Evaluate the evidence before
-selecting a production data model. Keep/Undo is the planned application integration
-case once its operation/reference/evaluation contracts are evidenced; it remains
-bounded by its existing IDs/format scope and QS2–QS5 requirements. Identity and frozen-context format changes require staged
-migration and compatibility fixtures; reusable instances and richer executors
-remain separate work. The usability study continues independently. This proposal
-does not authorize a broad rewrite.
+General solvers, partial-source access, broader resource/renderer capacity, hosted collaboration
+and a universal SDK are not supplied by the current adapters. Evaluate each against a concrete
+workflow and the existing owner, source-revision, execution and persistence boundaries. Product
+priorities belong in the [product plan](../product-plan.md) and [roadmap](../ecosystem-and-roadmap.md),
+not in a second migration backlog here. Identity or format changes require compatibility fixtures
+and an explicit design decision; this baseline does not authorize a broad rewrite.
 
-[ADR 0026](decisions/0026-canvas-model-composition-and-portable-captures.md) and the
-[implemented extension patterns](canvas-extension-patterns.md) cover current scalar model adoption,
-full capture/native recovery, renderer buffers and terminal session teardown.
-The parent migration (internal design note) keeps generic typed evidence, affected-record
-writes, conditional legacy writer retirement and broad resource/performance acceptance open.
-
-The [shared sampler decision](decisions/0029-canvas-sampler-on-shared-evidence.md) records the current
-execution/file boundary: installed method validation and scoped resource I/O run inside the existing
-core owner; demand services and renderers cannot admit output. Current/stale legacy results preserve
-original meaning at import. The common owner also reserves bounded receipt metadata before execution;
-it never silently evicts durable evidence. Current [extension patterns](canvas-extension-patterns.md)
-and evidence (local-only report) identify the exact ports, cost tradeoffs and
-remaining full-goal work.
+The [shared sampler decision](decisions/0029-canvas-sampler-on-shared-evidence.md) records the
+current execution/file boundary: installed method validation and scoped resource I/O run inside
+the existing owner; demand services and renderers cannot admit output. The owner reserves bounded
+receipt metadata before execution and never silently evicts durable evidence. Public checks and
+optional diagnostics are documented in the [development guide](../development/README.md).

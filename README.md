@@ -74,7 +74,8 @@ npm --prefix apps/canvas run build
 python3 apps/canvas/server.py
 ```
 
-See the [application guide](apps/canvas/README.md) for controls and file handling.
+See the [canvas guide](docs/guides/canvas.md) for controls and file handling, or the
+[documentation index](docs/README.md) for guides, reference and architecture.
 
 ## Develop and contribute
 
@@ -86,8 +87,14 @@ make verify         # Also runs foundation and canvas browser workflows; needs C
 For frontend development, leave the Python server running and use `make canvas-dev`.
 The reusable, UI-independent foundation and its examples live in
 [`packages/foundation`](packages/foundation/README.md); run `make foundation` for its workbench.
+For browser-free document inspection, editing and explicit computation, see the
+[headless TypeScript API](docs/reference/headless-api.md).
+For agent workflows with JSON discovery, atomic edits, validation, comparison and explicit
+computation, see the [agent guide](docs/guides/agents.md) and [CLI reference](docs/reference/cli.md).
+A [bundled Manifold skill](.agents/skills/manifold/SKILL.md) teaches agents that workflow;
+its [practice task](apps/canvas/tests/fixtures/agent-spring/task.md) has an independent verifier.
 
-- [Contributing](CONTRIBUTING.md)
+- [Contributing](CONTRIBUTING.md) and [development guide](docs/development/README.md)
 - [Architecture and extension patterns](docs/design/canvas-extension-patterns.md)
 - [Repository map](docs/repository.md)
 - [Vision](docs/vision.md) and [interaction design](docs/interaction-design.md)
