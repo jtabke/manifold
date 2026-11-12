@@ -56,6 +56,27 @@ Use settings to choose another provider/model, refresh Pi configuration or disco
 is missing or connection fails, submitting opens settings and preserves your text instead of
 sending or discarding it. Toggling settings never clears the request draft.
 
+The assistant can use these canvas tools after you submit a request:
+
+- **Inspect canvas:** drawing marks, representation IDs/positions, groups, plot definitions,
+  the invocation point in world coordinates, the current viewport and measured object frames.
+- **Look at canvas:** a bounded image of the viewport or one visible object. This is offered
+  only to models declaring image support. Captures exclude assistant/settings UI and page
+  chrome; requested images go to your configured provider. Images are ephemeral, not saved in
+  the workspace. A canvas/document or camera change during capture requires a fresh look.
+- **Inspect plot:** exact derived worksheet curve points, or retained scalar-analysis/sampling
+  outcomes with their actual result status. Reading never executes a computation.
+- **Propose edits:** create/revise/delete drawings, add drawing labels and connectors attached
+  to rectangle/ellipse drawings, move representations, group/ungroup, create worksheet plots,
+  or create scalar-model sweep setups, alongside the existing equation/note/model-input edits.
+
+Drawing, plot and layout changes appear in the proposal review and share one atomic Apply/Undo
+with any engineering edits. Grouping alone preserves positions; arranging uses explicit world
+coordinates. A scalar sweep setup needs an explicit **Compute** after approval. This remains a
+bounded declarative tool set, not arbitrary mouse/keyboard control, shell access or permission
+to execute code. It does not yet expose every manual canvas action, renderer resize or view-navigation
+operation. Screenshots help interpret layout but are not numerical or checked computation evidence.
+
 For a provider without existing credentials, open **Configure an API key** in settings, enter
 it, then connect. A supplied key is held only in this connection's memory; it is never written
 to Pi, browser storage or the workspace archive. You must reenter it after disconnecting.

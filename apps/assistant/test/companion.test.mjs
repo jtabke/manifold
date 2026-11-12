@@ -259,7 +259,10 @@ test("real Pi SDK session loads only canvas tools and no discovered resources; n
     ({ session } = await createAgentSession(options));
     assert.deepEqual(session.getActiveToolNames().sort(), [
       "capabilities",
+      "inspect_canvas",
+      "inspect_plot",
       "inspect_workspace",
+      ...(model.input.includes("image") ? ["look_at_canvas"] : []),
       "prepare_edit",
     ]);
     assert.equal(options.resourceLoader.getExtensions().extensions.length, 0);
@@ -272,6 +275,25 @@ test("real Pi SDK session loads only canvas tools and no discovered resources; n
     assert.deepEqual(JSON.parse(result.content[0].text), {
       name: "inspect_workspace",
     });
+    const visual = canvasTools(async () => ({
+      mimeType: "image/jpeg",
+      data: "aGVsbG8=",
+      width: 10,
+      height: 10,
+      documentId: "test",
+    })).find((tool) => tool.name === "look_at_canvas");
+    const image = await visual.execute("image", {}, undefined);
+    assert.equal(image.content[1].type, "image");
+    assert.equal(image.content[1].mimeType, "image/jpeg");
+    assert(
+      !image.content[0].text.includes("aGVsbG8="),
+      "base64 must not be duplicated into text",
+    );
+    assert(
+      !canvasTools(async () => ({}), { images: false }).some(
+        (tool) => tool.name === "look_at_canvas",
+      ),
+    );
     assert.equal(session.messages.length, 0);
   } finally {
     session?.dispose();

@@ -6,6 +6,7 @@ import type { Point, RegionSession } from "../document";
 import { useCanvasAssistant } from "../app/useCanvasAssistant";
 import { AssistantConversation } from "./AssistantConversation";
 import type { WorkspaceEdits } from "../app/workspaceFiles";
+import type { AssistantCanvasPort } from "../assistantCanvas";
 
 export function CanvasAssistant({
   session,
@@ -13,14 +14,16 @@ export function CanvasAssistant({
   edits,
   close,
   anchor,
+  canvas,
 }: {
+  canvas: AssistantCanvasPort;
   anchor: Point;
   session: RegionSession;
   selection: string[];
   edits: WorkspaceEdits;
   close: () => void;
 }) {
-  const assistant = useCanvasAssistant(session, edits);
+  const assistant = useCanvasAssistant(session, edits, canvas);
   const {
     connection,
     connect,
@@ -141,7 +144,8 @@ export function CanvasAssistant({
           {selection.length
             ? `${selection.length} selected object(s) will be attached. `
             : "Worksheet context. "}
-          Sends canvas context to your model; edits need approval.
+          Sends canvas context and requested canvas images to your model; edits
+          need approval.
         </span>
         <div className="assistant-inline-actions">
           <button

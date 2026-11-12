@@ -6,6 +6,7 @@ import {
 } from "../assistant";
 import type { RegionSession } from "../document";
 import type { WorkspaceEdits } from "./workspaceFiles";
+import type { AssistantCanvasPort } from "../assistantCanvas";
 
 export type AssistantConnectionState = "offline" | "connecting" | "ready";
 export type AssistantTurn = {
@@ -31,7 +32,10 @@ function disposeBridge(current: Bridge | undefined) {
 export function useCanvasAssistant(
   session: RegionSession,
   edits: WorkspaceEdits,
+  canvas: AssistantCanvasPort,
 ) {
+  const canvasPort = useRef(canvas);
+  canvasPort.current = canvas;
   const [connection, setConnection] =
     useState<AssistantConnectionState>("offline");
   const [submitting, setSubmitting] = useState(false);
@@ -91,7 +95,7 @@ export function useCanvasAssistant(
         current.resolveConnection = resolve;
       });
       bridge.current = current;
-      socket.onmessage = (event) => {
+      socket.onmessage = async (event) => {
         if (bridge.current !== current) return;
         try {
           const message = JSON.parse(event.data);
@@ -121,21 +125,55 @@ export function useCanvasAssistant(
                 : "Inspecting the canvas…",
             );
             try {
-              const result = current.assistant.tool(
-                message.requestId,
-                message.name,
-                message.args,
-              );
+              if (!current.assistant.active(message.requestId)) return;
+              if (message.name === "look_at_canvas" && edits.read().editing)
+                throw Error(
+                  "Finish or cancel the current canvas edit before capturing an image",
+                );
+              const result =
+                message.name === "look_at_canvas"
+                  ? await canvasPort.current.capture(message.args)
+                  : message.name === "inspect_canvas"
+                    ? {
+                        ...current.assistant.tool(
+                          message.requestId,
+                          message.name,
+                          message.args,
+                        ),
+                        attention: canvasPort.current.inspect(),
+                      }
+                    : current.assistant.tool(
+                        message.requestId,
+                        message.name,
+                        message.args,
+                      );
+              if (
+                bridge.current !== current ||
+                !current.assistant.active(message.requestId)
+              )
+                return;
+              if (message.name === "look_at_canvas" && edits.read().editing)
+                throw Error(
+                  "Canvas editing began during capture; finish or cancel the edit and look again",
+                );
               sync();
-              socket.send(
-                JSON.stringify({
-                  type: "tool_result",
-                  id: message.id,
-                  requestId: message.requestId,
-                  result,
-                }),
-              );
+              const response = JSON.stringify({
+                type: "tool_result",
+                id: message.id,
+                requestId: message.requestId,
+                result,
+              });
+              if (new TextEncoder().encode(response).byteLength > 1_800_000)
+                throw Error(
+                  "Canvas tool result is too large; inspect a smaller page or one object",
+                );
+              socket.send(response);
             } catch (failure) {
+              if (
+                bridge.current !== current ||
+                !current.assistant.active(message.requestId)
+              )
+                return;
               socket.send(
                 JSON.stringify({
                   type: "tool_result",

@@ -16,7 +16,9 @@ Its normal coding tools and resource discovery are inappropriate defaults for th
 ## Decision
 
 Keep `RegionSession` in the browser authoritative. An optional loopback Node companion
-hosts Pi and routes only `inspect_workspace`, `capabilities` and `prepare_edit` to the canvas.
+hosts Pi and routes only `inspect_workspace`, `inspect_canvas`, `inspect_plot`, `look_at_canvas`,
+`capabilities` and `prepare_edit` to the canvas. Image inspection is registered only when the
+selected model declares image support.
 The local Python server lazily starts and owns one companion, proxies authenticated configuration
 requests, and shuts it down on server exit. Canvas setup detects Pi credential metadata and the
 configured default model, offers provider/model selection and an optional API key, and obtains a
@@ -47,6 +49,22 @@ review lifecycle. `CanvasAssistant` owns the anchored composer and settings visi
 `AssistantConversation` renders responses and proposal diagnostics without transport authority.
 Disconnect and unmount share bridge disposal. Neither this controller nor its views owns accepted
 workspace state, persistence or a separate Undo history.
+
+`assistantCanvas` extends only the live assistant's edit schema, leaving the file/headless protocol
+unchanged. Drawing, connector, grouping, placement, worksheet-plot and scalar-sweep setup operations
+lower through the existing drawing, scene and session commands. Canvas diffs include geometry,
+marks, plot/analysis definitions and group changes; Apply retains their exact reviewed identities.
+Grouping is not automatic layout, drawing text is not engineering source, and creating a sweep
+request never executes it. Plot reads retain actual result currency and do not manufacture receipts.
+
+The composition root supplies a narrow canvas-inspection/capture port, not DOM scripting or generic
+browser control. `inspect_canvas` includes current measured frames, viewport and invocation point
+in world coordinates. `look_at_canvas` captures only the canvas subtree or one visible representation
+using the existing raster export machinery. JPEG dimensions and payload size are bounded; images
+exclude assistant/settings and browser chrome, are sent as native image tool content rather than
+base64 text, and are never persisted. Document/camera changes reject an in-flight capture, and
+Stop/disconnect revoke asynchronous results before they can be delivered. Workspace text and pixels
+remain untrusted content, not instructions. Image interpretation is not computation evidence.
 
 `RegionSession.prepare` collects validated commands in a disposable staging session. For
 consequence inspection, a disposable candidate reader uses the existing domain/result-currency

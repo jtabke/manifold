@@ -2,9 +2,14 @@ import { browserOptions } from "../../../scripts/browser.mjs";
 import { chromium, expect } from "@playwright/test";
 import { startCompanion } from "../../assistant/src/server.mjs";
 import { readWorkspace } from "./browser-workspace.mjs";
+import { drawings } from "../src/regions/drawing.ts";
+import { evidenceEnabled } from "./browser-evidence.mjs";
+import { mkdir, writeFile } from "node:fs/promises";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const requests = [];
+const images = [];
+const plotReads = [];
 let tools = 0,
   disposed = 0;
 const companion = await startCompanion({
@@ -22,6 +27,91 @@ const companion = await startCompanion({
           await new Promise((_resolve, reject) => {
             aborted = reject;
           });
+          return;
+        }
+        if (text.startsWith("Read created plot")) {
+          const scene = await call("inspect_canvas", {}, undefined);
+          tools++;
+          const plot = scene.plots.at(-1);
+          plotReads.push(
+            await call("inspect_plot", { id: plot.id }, undefined),
+          );
+          tools++;
+          images.push(await call("look_at_canvas", { id: plot.id }, undefined));
+          tools++;
+          return;
+        }
+        if (text.startsWith("Use canvas tools")) {
+          const state = await call("inspect_workspace", {}, undefined);
+          tools++;
+          const scene = await call("inspect_canvas", {}, undefined);
+          tools++;
+          if (
+            !scene.attention?.point ||
+            !scene.attention?.viewport ||
+            !scene.attention.frames.length
+          )
+            throw Error("Missing live cursor/viewport context");
+          const view = scene.objects.find(
+            (object) => object.object === state.models[0].id,
+          );
+          images.push(await call("look_at_canvas", {}, undefined));
+          tools++;
+          images.push(await call("look_at_canvas", { id: view.id }, undefined));
+          tools++;
+          await call(
+            "prepare_edit",
+            {
+              explanation:
+                "Draw a visual annotation, organize the spring and add a response plot.",
+              batch: {
+                expectedDocumentId: scene.documentId,
+                edits: [
+                  {
+                    operation: "createDrawing",
+                    mark: {
+                      kind: "rectangle",
+                      color: "#8b5cf6",
+                      width: 3,
+                      points: [
+                        { x: 0, y: 0, pressure: 1 },
+                        { x: 140, y: 80, pressure: 1 },
+                      ],
+                      text: "",
+                      start: null,
+                      end: null,
+                    },
+                    at: { x: 650, y: 600 },
+                    as: "box",
+                  },
+                  {
+                    operation: "placeObjects",
+                    placements: [{ id: view.id, at: { x: 110, y: 300 } }],
+                  },
+                  {
+                    operation: "createEquation",
+                    text: "x := 2 mm",
+                    as: "input",
+                    at: { x: 650, y: 140 },
+                  },
+                  {
+                    operation: "createEquation",
+                    text: "y = 2*x",
+                    as: "output",
+                    at: { x: 650, y: 200 },
+                  },
+                  {
+                    operation: "createPlot",
+                    input: "$input",
+                    output: "$output",
+                    at: { x: 650, y: 250 },
+                  },
+                ],
+              },
+            },
+            undefined,
+          );
+          tools++;
           return;
         }
         const state = await call("inspect_workspace", {}, undefined);
@@ -421,9 +511,91 @@ try {
   expect(requests).toHaveLength(inferenceCount);
   expect(disposed).toBe(2);
   expect(tools).toBe(9, "configuration and Connect must not request the model");
+  delayedConnection = undefined;
+  await page.getByRole("button", { name: "Ask agent", exact: true }).click();
+  const beforeCanvas = await readWorkspace(page);
+  await ask("Use canvas tools to annotate, organize and plot");
+  const canvasProposal = panel
+    .getByRole("article", { name: "Proposed canvas edit" })
+    .last();
+  await expect(
+    canvasProposal.getByText("Review drawing, plot and layout changes", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(drawings((await readWorkspace(page)).document)).toHaveLength(0);
+  expect((await readWorkspace(page)).document.id).toBe(
+    beforeCanvas.document.id,
+  );
+  expect(images).toHaveLength(2);
+  for (const image of images) {
+    expect(image.mimeType).toBe("image/jpeg");
+    expect(image.width).toBeLessThanOrEqual(1280);
+    expect(image.height).toBeLessThanOrEqual(960);
+    const painted = await page.evaluate(async ({ data }) => {
+      const image = await createImageBitmap(
+        await (await fetch(`data:image/jpeg;base64,${data}`)).blob(),
+      );
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      image.close();
+      const pixels = context.getImageData(
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      ).data;
+      let dark = 0;
+      for (let i = 0; i < pixels.length; i += 4)
+        if (pixels[i] < 180 && pixels[i + 1] < 180 && pixels[i + 2] < 180)
+          dark++;
+      return dark;
+    }, image);
+    expect(painted).toBeGreaterThan(100);
+  }
+  if (evidenceEnabled) {
+    const directory = new URL(
+      "../../../evidence/current/canvas/",
+      import.meta.url,
+    );
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      new URL("assistant-viewport.jpg", directory),
+      Buffer.from(images[0].data, "base64"),
+    );
+    await writeFile(
+      new URL("assistant-object.jpg", directory),
+      Buffer.from(images[1].data, "base64"),
+    );
+  }
+  await canvasProposal
+    .getByRole("button", { name: "Apply edit", exact: true })
+    .click();
+  await expect(page.locator('[data-drawing-kind="rectangle"]')).toHaveCount(1);
+  expect((await readWorkspace(page)).page.plots).toHaveLength(1);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.locator('[data-drawing-kind="rectangle"]')).toHaveCount(0);
+  expect((await readWorkspace(page)).page.plots).toHaveLength(0);
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(page.locator('[data-drawing-kind="rectangle"]')).toHaveCount(1);
+  await ask("Read created plot without executing");
+  expect(plotReads[0].status).toBe("derived-not-checked");
+  expect(plotReads[0].points).toHaveLength(81);
+  expect(images).toHaveLength(3);
+  await panel
+    .getByRole("button", { name: "Close canvas assistant", exact: true })
+    .click();
+  await expect.poll(() => disposed).toBe(3);
+  await page.reload();
+  await expect(page.locator('[data-drawing-kind="rectangle"]')).toHaveCount(1);
+  expect((await readWorkspace(page)).page.plots).toHaveLength(1);
+  expect(tools).toBe(17);
   expect(errors).toEqual([]);
   console.log(
-    "Canvas assistant browser: selected model context, real companion transport, review-only edits, Apply/Undo/Redo, evidence currency, human drafts, stale/dismiss, Stop, disconnect and saved continuity pass (deterministic agent; no paid calls).",
+    "Canvas assistant browser: cursor/model context, real companion transport, bounded viewport/object images, drawing/plot/layout review, exact Apply/Undo/Redo, derived plot reads, human drafts, stale/dismiss, Stop, cancelled setup and saved continuity pass (deterministic agent; no paid calls).",
   );
 } finally {
   await browser.close();

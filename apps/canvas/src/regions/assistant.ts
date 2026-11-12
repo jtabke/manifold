@@ -2,13 +2,19 @@
 import { freeze } from "@manifold/foundation";
 import { bindLiveWorkspace } from "../headless.ts";
 import {
-  agentCapabilities,
   compareWorkspaces,
-  editWorkspace,
   summarizeWorkspace,
   validateWorkspace,
 } from "../agent.ts";
 import { RegionSession } from "./document.ts";
+import {
+  assistantCapabilities,
+  canvasChanges,
+  editCanvas,
+  inspectCanvas,
+  inspectPlot,
+  summarizeCanvas,
+} from "./assistantCanvas.ts";
 
 export type AssistantProposal = Readonly<{
   id: string;
@@ -16,7 +22,9 @@ export type AssistantProposal = Readonly<{
   explanation: string;
   documentId: string;
   status: "pending" | "applied" | "dismissed" | "stale";
-  diff: ReturnType<typeof compareWorkspaces>;
+  diff: ReturnType<typeof compareWorkspaces> & {
+    canvas: ReturnType<typeof canvasChanges>;
+  };
   validation: ReturnType<typeof validateWorkspace>;
 }>;
 
@@ -51,6 +59,9 @@ export function createCanvasAssistant(session: RegionSession) {
       if (request) throw Error("An assistant request is already running");
       request = requestId;
     },
+    active(requestId: string) {
+      return !closed && request === requestId;
+    },
     end(requestId: string) {
       if (request === requestId) request = undefined;
     },
@@ -59,7 +70,9 @@ export function createCanvasAssistant(session: RegionSession) {
       if (request !== requestId)
         throw Error("Assistant request is no longer active");
       if (name === "inspect_workspace") return summarizeWorkspace(workspace);
-      if (name === "capabilities") return agentCapabilities();
+      if (name === "inspect_canvas") return summarizeCanvas(session, args);
+      if (name === "inspect_plot") return inspectPlot(session, args);
+      if (name === "capabilities") return assistantCapabilities();
       if (name !== "prepare_edit") throw Error("Unsupported assistant tool");
       if (!args || typeof args !== "object" || Array.isArray(args))
         throw Error("Expected an edit proposal");
@@ -81,12 +94,7 @@ export function createCanvasAssistant(session: RegionSession) {
           "Proposal limit reached; reconnect to start a new conversation",
         );
       const plan = session.prepare((staged) => {
-        const editor = bindLiveWorkspace(staged);
-        try {
-          editWorkspace(editor, batch);
-        } finally {
-          editor.dispose();
-        }
+        editCanvas(staged, batch);
         // A disposable candidate reader reuses the normal result-currency implementation.
         // It has no transport, storage, UI history or execution authority; the live owner is untouched.
         const inspection = new RegionSession(
@@ -109,7 +117,13 @@ export function createCanvasAssistant(session: RegionSession) {
         const candidate = bindLiveWorkspace(inspection);
         try {
           return {
-            diff: compareWorkspaces(workspace, candidate),
+            diff: {
+              ...compareWorkspaces(workspace, candidate),
+              canvas: canvasChanges(
+                inspectCanvas(session),
+                inspectCanvas(inspection),
+              ),
+            },
             validation: validateWorkspace(candidate),
           };
         } finally {

@@ -8,6 +8,7 @@ import {
 } from "../interaction/shortcutBindings";
 import { KeyboardShortcuts } from "../renderers/KeyboardShortcuts";
 import { CanvasAssistant } from "../renderers/CanvasAssistant";
+import { captureAssistantCanvas } from "../renderers/assistantCapture";
 import { isDialogEvent } from "../interaction/modalInput";
 import {
   useCanvasOverlaps,
@@ -206,6 +207,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     x: 200,
     y: 120,
   });
+  const [assistantPoint, setAssistantPoint] = useState<Point>({ x: 0, y: 0 });
   const assistantButton = useRef<HTMLButtonElement>(null);
   const shortcutPreferences = useShortcutPreferences();
   const [authoringModel, setAuthoringModel] = useState<{
@@ -2520,6 +2522,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const openAssistant = (at: Point) => {
     if (!workspaceEdits.finish()) return false;
     setAssistantAnchor({ x: at.x, y: at.y });
+    setAssistantPoint(canvasPoint(at.x, at.y));
     setAssistantOpen(true);
     return true;
   };
@@ -3269,6 +3272,35 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           <CanvasAssistant
             session={session}
             anchor={assistantAnchor}
+            canvas={{
+              inspect: () => ({
+                point: assistantPoint,
+                scope: hierarchy.scope,
+                viewport: {
+                  scroll: viewportScroll(canvas.current),
+                  zoom,
+                  width: canvas.current?.clientWidth,
+                  height: canvas.current?.clientHeight,
+                },
+                frames: spatial.frames,
+              }),
+              capture: async (args) => {
+                const root = canvas.current;
+                if (!root) throw Error("Canvas is not visible");
+                const expected = session.document;
+                const image = await captureAssistantCanvas(
+                  root,
+                  zoom,
+                  expected.id,
+                  args,
+                );
+                if (session.document !== expected)
+                  throw Error(
+                    "Canvas changed during capture; inspect it again",
+                  );
+                return image;
+              },
+            }}
             edits={workspaceEdits}
             selection={[
               ...new Set(

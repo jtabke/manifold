@@ -187,8 +187,9 @@ export function AssistantConnection({
       <h3>Assistant settings</h3>
       <p className="assistant-privacy">
         Requests and inspected canvas content go to your configured model
-        provider. Edits require your approval. No shell access or automatic
-        computation.
+        provider. Requested canvas images also reach that provider; assistant
+        settings and credentials are excluded from capture. Edits require your
+        approval. No shell access or automatic computation.
       </p>
       {loading ? (
         <p role="status">Reading your local Pi configuration…</p>

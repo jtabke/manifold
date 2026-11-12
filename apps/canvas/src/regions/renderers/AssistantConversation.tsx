@@ -73,6 +73,16 @@ export function AssistantConversation({
                     })}
                   </div>
                 ))}
+                {(proposal.diff.canvas.objects.length > 0 ||
+                  proposal.diff.canvas.drawings.length > 0 ||
+                  proposal.diff.canvas.plots.length > 0 ||
+                  proposal.diff.canvas.analyses.length > 0 ||
+                  proposal.diff.canvas.scene) && (
+                  <details>
+                    <summary>Review drawing, plot and layout changes</summary>
+                    <pre>{JSON.stringify(proposal.diff.canvas, null, 2)}</pre>
+                  </details>
+                )}
                 <p>
                   Validation:{" "}
                   {proposal.validation.clean
