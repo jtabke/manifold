@@ -470,9 +470,9 @@ try {
     .click();
   await page
     .getByRole("textbox", { name: "Search commands", exact: true })
-    .fill("Export workspace");
+    .fill("Save workspace file");
   await page
-    .getByRole("button", { name: "Export workspace", exact: true })
+    .getByRole("button", { name: "Save workspace file", exact: true })
     .click();
   const opened = await stageWorkspaceFile(
     await readFile(await (await downloading).path(), "utf8"),

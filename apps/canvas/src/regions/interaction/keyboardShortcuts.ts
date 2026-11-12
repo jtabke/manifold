@@ -13,6 +13,18 @@ type ShortcutEntry = readonly [
 ];
 type ShortcutReference = readonly [group: string, ...ShortcutEntry];
 const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
+  Files: [
+    [
+      "⌘ / Ctrl + S",
+      "Save workspace file",
+      "Downloads a portable .manifold copy after finishing pending edits. Browser autosave does not update downloaded files.",
+    ],
+    [
+      "⌘ / Ctrl + O",
+      "Open workspace file",
+      "Choose a .manifold or legacy JSON file. Validates it and preserves current work before opening a fresh canvas URL. Never runs loaded code.",
+    ],
+  ],
   Navigation: [
     [
       "Space + drag / Middle-button drag",

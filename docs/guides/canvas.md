@@ -251,12 +251,21 @@ reviewed interfaces; evaluation currently uses globally unique symbols.
 ## Save, open and share
 
 Accepted work, its title and navigation state save in this browser on this device.
-**New canvas** creates an independent URL. Keep that URL to reopen it. Portable
-workspace export is available through the command palette and produces a `.manifold` file.
-Use **Open workspace** or drop a `.manifold`/legacy JSON file to load it under a fresh canvas
-URL after preserving current work. Opening loaded Python never executes it; verified saved
-results can display, and changed/unchecked results need **Run Python**. Export finishes the
-current edit. Session Undo, recent calculation history and temporary previews do not travel; explicitly kept
+**New canvas** creates an independent URL. Keep that URL to reopen it.
+
+- **Save file** in the toolbar (Ctrl/Cmd+S) downloads a portable `.manifold` copy after
+  finishing pending edits. Keep a copy outside browser storage for backup or sharing.
+  Your browser controls the download location and whether to ask for a filename.
+  Later edits autosave only in this browser; use **Save file** again for an updated copy.
+  This does not overwrite an opened file or keep a connection to it.
+- **Open** in the toolbar (Ctrl/Cmd+O), or dropping a `.manifold`/legacy JSON file,
+  validates the file and loads it under a fresh canvas URL after preserving current work.
+  Cancelling the picker or choosing an invalid file leaves current work intact.
+- The command palette also offers **Save workspace file** (searchable as “export”) and
+  **Open workspace**. **Saved locally** means browser storage, not a file backup or cloud sync.
+
+Opening loaded Python never executes it; verified saved results can display, and
+changed/unchecked results need **Run Python**. Session Undo, recent calculation history and temporary previews do not travel; explicitly kept
 calculations preserve their original mathematics and source records. Title, active camera and
 tool attention remain personal. Authored groups, tool arrangements and named layouts travel
 with the workspace, as described under [portable arrangements](#portable-arrangements).
@@ -331,7 +340,7 @@ and 4,096 receipts. Local recovery is bounded to 64 MiB physical bytes; native V
 permits 128 MiB, with admission checked before Open. These are rejection limits, not heap,
 latency or engineering-validity promises.
 
-If validated old saved work exceeds policy, **Export saved work** can recover a verified
+If validated old saved work exceeds policy, **Save recovered file** can recover a verified
 copy without adopting, acknowledging or overwriting its head. A backup is eligible only when
 no newer primary is authoritative; corrupt data is preserved and refused.
 

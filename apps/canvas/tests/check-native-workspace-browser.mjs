@@ -62,10 +62,40 @@ try {
     exact: true,
   });
   await editor.fill("Keep this previous work");
-  await editor.press("Escape");
+  // Save from the editor finishes its buffer, without relying on browser autosave.
+  const shortcutDownload = page.waitForEvent("download");
+  await editor.press("Control+s");
+  const shortcutBytes = await readFile(
+    await (await shortcutDownload).path(),
+    "utf8",
+  );
+  expect((await decodeWorkspace(shortcutBytes)).page.regions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ text: "Keep this previous work" }),
+    ]),
+  );
+  await expect(
+    page.getByRole("status").filter({ hasText: "Workspace download started" }),
+  ).toBeVisible();
+  const toolbarDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Save file", exact: true }).click();
+  expect((await toolbarDownload).suggestedFilename()).toBe(
+    "manifold-workspace.manifold",
+  );
   const previous = await readWorkspace(page);
   const originalURL = page.url();
-  await page.getByLabel("Open workspace file", { exact: true }).setInputFiles({
+  // Cancelling the toolbar picker leaves work and navigation alone.
+  const cancelledChooser = page.waitForEvent("filechooser");
+  await page
+    .getByRole("button", { name: "Open workspace", exact: true })
+    .click();
+  await (await cancelledChooser).setFiles([]);
+  expect(page.url()).toBe(originalURL);
+  const choosing = page.waitForEvent("filechooser");
+  await page.keyboard.press("Control+o");
+  await (
+    await choosing
+  ).setFiles({
     name: "shared.manifold",
     mimeType: "application/json",
     buffer: Buffer.from(legacy),
@@ -109,10 +139,10 @@ try {
     .click();
   await page
     .getByRole("textbox", { name: "Search commands", exact: true })
-    .fill("Export workspace");
+    .fill("export");
   const downloadEvent = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: "Export workspace", exact: true })
+    .getByRole("button", { name: "Save workspace file", exact: true })
     .click();
   const download = await downloadEvent;
   expect(download.suggestedFilename()).toBe("manifold-workspace.manifold");

@@ -636,7 +636,7 @@ export function workspaceCommands(
     ["history.open", "Calculation history", "inspect"],
     ["marking.open", "Marking menu (experimental)", "focus"],
     ["workspace.open", "Open workspace", "import"],
-    ["workspace.export", "Export workspace", "reference"],
+    ["workspace.export", "Save workspace file", "reference"],
   ];
   if (c.supportsArtifacts)
     definitions.push([
@@ -667,7 +667,13 @@ export function workspaceCommands(
       label,
       icon,
       keywords:
-        id === "help.shortcuts" ? [label, "help", "hotkeys", "keys"] : [label],
+        id === "help.shortcuts"
+          ? [label, "help", "hotkeys", "keys"]
+          : id === "workspace.export"
+            ? [label, "export", "download", "backup", ".manifold"]
+            : id === "workspace.open"
+              ? [label, "file", "import", ".manifold"]
+              : [label],
       unavailable,
       parameters: {},
       preview: label,

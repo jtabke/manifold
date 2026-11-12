@@ -59,6 +59,7 @@ import {
   Check,
   GripVertical,
   FilePlus2,
+  Save,
   Layers,
   LayoutGrid,
   Link2,
@@ -1594,6 +1595,30 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setConcept(undefined);
   };
   useEffect(() => {
+    // Capture document actions before editors consume their own key events.
+    const fileAction = (event: KeyboardEvent) => {
+      if (isDialogEvent(event) || actionMenu) return;
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !(event.ctrlKey && event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !event.isComposing &&
+        !event.getModifierState("AltGraph") &&
+        ["s", "o"].includes(event.key.toLowerCase())
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) {
+          if (event.key.toLowerCase() === "s") void exportArtifacts();
+          else workspaceFile.current?.click();
+        }
+      }
+    };
+    window.addEventListener("keydown", fileAction, true);
+    return () => window.removeEventListener("keydown", fileAction, true);
+  });
+  useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (isDialogEvent(event)) return;
       const active = (event.target as HTMLElement).closest(
@@ -2069,7 +2094,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         setMessage("Finish or cancel pending edits before continuing.");
         return;
       }
-      setMessage("");
       const blob = new Blob([text], { type: "application/json" });
       const url = URL.createObjectURL(blob),
         link = document.createElement("a");
@@ -2079,8 +2103,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         : "manifold-workspace.manifold";
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMessage(
+        "Workspace download started. Keep the .manifold file as a backup or to open on another device. Further edits autosave only in this browser, not to that file.",
+      );
     } catch (error) {
-      setMessage(`Could not export workspace: ${(error as Error).message}`);
+      setMessage(`Could not save workspace file: ${(error as Error).message}`);
     }
   };
   const mention =
@@ -3484,10 +3511,21 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           />
           <button
             aria-label="Open workspace"
-            title="Open a .manifold workspace"
+            title="Open a .manifold file · Ctrl/Cmd+O · keeps current work in this browser"
+            aria-keyshortcuts="Control+O Meta+O"
             onClick={() => workspaceFile.current?.click()}
           >
             <FileInput size={16} />
+            <span>Open</span>
+          </button>
+          <button
+            aria-label="Save file"
+            title="Download a .manifold file · Ctrl/Cmd+S · separate from browser autosave"
+            aria-keyshortcuts="Control+S Meta+S"
+            onClick={() => void exportArtifacts()}
+          >
+            <Save size={16} />
+            <span>Save file</span>
           </button>
           <button
             aria-label="New canvas"
@@ -6765,7 +6803,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           </div>
         )}
         {artifactMode && (
-          <span className="er-save-status" aria-label="Workspace save status">
+          <span
+            className="er-save-status"
+            aria-label="Workspace save status"
+            title="Autosaved in this browser on this device only. Use Save file for a portable backup; downloaded files are not updated automatically."
+          >
             {session.isSaved && !storageError
               ? "Saved locally"
               : "Unsaved changes"}
@@ -6776,7 +6818,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             {storageError}
             {saved?.blocked && (workspace.store() || saved.legacyRescue) && (
               <button onClick={() => void exportArtifacts(true)}>
-                Export saved work
+                Save recovered file
               </button>
             )}
             {!saved?.blocked && (
@@ -6785,7 +6827,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   Retry local save
                 </button>
                 <button onClick={() => void exportArtifacts()}>
-                  Export current work
+                  Save current work to file
                 </button>
               </>
             )}

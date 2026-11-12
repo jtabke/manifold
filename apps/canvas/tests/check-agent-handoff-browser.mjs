@@ -158,10 +158,10 @@ async function save(page, name) {
     .click();
   await page
     .getByRole("textbox", { name: "Search commands", exact: true })
-    .fill("Export workspace");
+    .fill("Save workspace file");
   const event = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: "Export workspace", exact: true })
+    .getByRole("button", { name: "Save workspace file", exact: true })
     .click();
   const download = await event;
   expect(download.suggestedFilename()).toBe("manifold-workspace.manifold");

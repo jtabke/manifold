@@ -66,7 +66,7 @@ try {
   const before = await readWorkspaceBytes(page);
   const pending = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: "Export saved work", exact: true })
+    .getByRole("button", { name: "Save recovered file", exact: true })
     .click();
   const download = await pending;
   expect(download.suggestedFilename()).toBe(
@@ -98,7 +98,7 @@ try {
   await expect(legacy.locator(".er-storage-error")).toBeVisible();
   const legacyDownload = legacy.waitForEvent("download");
   await legacy
-    .getByRole("button", { name: "Export saved work", exact: true })
+    .getByRole("button", { name: "Save recovered file", exact: true })
     .click();
   assert.equal(
     await readFile(await (await legacyDownload).path(), "utf8"),

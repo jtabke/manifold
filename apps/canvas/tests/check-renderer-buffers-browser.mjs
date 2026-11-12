@@ -53,7 +53,7 @@ try {
   const before = await readWorkspaceBytes(page);
   let downloads = 0;
   page.on("download", () => downloads++);
-  await command(page, "Export workspace");
+  await command(page, "Save workspace file");
   await expect(art.getByRole("alert")).toContainText(
     "Run this Python draft or use model code",
   );
@@ -80,7 +80,7 @@ try {
     .getByRole("button", { name: "Use model code", exact: true })
     .click();
   const downloading = page.waitForEvent("download");
-  await command(page, "Export workspace");
+  await command(page, "Save workspace file");
   const exported = await decodeWorkspace(
     await readFile(await (await downloading).path(), "utf8"),
   );
@@ -153,7 +153,7 @@ try {
   await delayedOpen(() =>
     panelCode.fill((originalCode || "# Code") + "\n# pending panel draft"),
   );
-  await command(pane, "Export workspace");
+  await command(pane, "Save workspace file");
   await expect(python.getByRole("alert")).toContainText(
     "Run or cancel this Python draft",
   );
@@ -167,7 +167,7 @@ try {
   await delayedOpen(() => text.fill("x := 2 mm"), false);
   await expect(text).toHaveValue("x := 2 mm");
   const saving = pane.waitForEvent("download");
-  await command(pane, "Export workspace");
+  await command(pane, "Save workspace file");
   const accepted = await decodeWorkspace(
     await readFile(await (await saving).path(), "utf8"),
   );
