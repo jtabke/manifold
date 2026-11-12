@@ -89,6 +89,7 @@ import {
   SpatialComparison,
 } from "../renderers/Interactions";
 import "../styles/regions.css";
+import { exportSelectionPng } from "../renderers/selectionPng";
 import {
   CanvasActionMenu,
   type ActionMenuLocation,
@@ -2736,6 +2737,22 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     const { target } = command;
     const id = target.id;
     switch (command.operation) {
+      case "selection.copy-png":
+      case "selection.save-png":
+        if (canvas.current) {
+          setMessage("Rendering transparent PNG…");
+          void exportSelectionPng(
+            canvas.current,
+            target,
+            zoom,
+            command.operation === "selection.copy-png",
+          ).then(setMessage, (error: unknown) =>
+            setMessage(
+              `PNG export failed: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+        }
+        break;
       case "mathematics.enable":
         if (target.id) {
           session.enableScientificMath(target.id);

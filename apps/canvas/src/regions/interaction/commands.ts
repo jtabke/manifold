@@ -35,6 +35,8 @@ export type CommandTarget = {
   ids?: string[];
 };
 type SimpleOperation =
+  | "selection.copy-png"
+  | "selection.save-png"
   | "definition.edit"
   | "mathematics.enable"
   | "quantity.vary"
@@ -563,6 +565,24 @@ export function resolveCommands(
       undo: editUndo,
     });
     add("canvas.fit", "Fit canvas", "focus", "inspect");
+  }
+  if (t.kind !== "canvas") {
+    for (const [operation, label] of [
+      ["selection.copy-png", "Copy as PNG"],
+      ["selection.save-png", "Save as PNG…"],
+    ] as const)
+      add(operation, label, "image", undefined, {
+        preview:
+          "Export the visible selection as a tightly cropped, transparent PNG. This is a visual snapshot, not an editable workspace.",
+        undo: undoEffect("none", "Export changes no saved work or history."),
+        keywords: [
+          "image",
+          "transparent",
+          "background",
+          "screenshot",
+          "export",
+        ],
+      });
   }
   if (t.kind !== "canvas")
     add("canvas.write", "Write below", "edit", undefined, { undo: editUndo });

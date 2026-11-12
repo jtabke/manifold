@@ -18,11 +18,13 @@ import {
   Search,
   Plus,
   MoreHorizontal,
+  Image,
 } from "lucide-react";
 import type { CanvasCommand } from "../interaction/commands";
 import type { CanvasAction } from "./CanvasActionMenu";
 
 const commandIcons: Record<string, ReactNode> = {
+  image: <Image />,
   edit: <Pencil />,
   vary: <Hand />,
   plot: <ChartNoAxesCombined />,

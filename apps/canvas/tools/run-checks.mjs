@@ -85,6 +85,7 @@ const names = [
   "check-workspace-owner-browser.mjs",
   "check-authoring-recovery-browser.mjs",
   "check-canvas-actions-browser.mjs",
+  "check-selection-png-browser.mjs",
   "check-canvas-navigation-browser.mjs",
   "check-command-consistency-browser.mjs",
   "check-exploration-browser.mjs",

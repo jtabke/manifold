@@ -64,6 +64,22 @@ not embedded in engineering files or their Undo history. Reload already-open tab
 changed preferences; importing does not watch or stay linked to the source file. The **?**
 button always remains available if keys are cleared.
 
+## Copying images
+
+Select an equation, note, plot or other canvas object, then right-click → **Copy as PNG**.
+Shift-click multiple objects to copy their arrangement together. The same command is
+available in Ctrl/Cmd+K command search. Ordinary text Copy is unchanged.
+
+Images have a transparent background, tight cropping with a small margin and 2× resolution
+independent of canvas zoom. Canvas grids, menus and manipulation controls are excluded;
+content styling and card backgrounds are retained. **Save as PNG…** downloads
+`manifold-selection.png`; if image clipboard access is unavailable or denied, **Copy as PNG**
+downloads the image instead and reports the fallback. Very large selections are refused;
+select fewer or closer objects and try again.
+
+PNG is a visual snapshot, not an editable or recomputable workspace. Use workspace export
+when the recipient needs the engineering document.
+
 ## Scientific scalar math
 
 New equations support `sqrt`, `abs`, `sin`, `cos`, `tan`, `exp`, `ln`, `log10`,
