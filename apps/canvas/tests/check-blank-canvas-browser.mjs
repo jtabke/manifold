@@ -70,12 +70,22 @@ try {
   expect((await saved()).page.regions.find((r) => r.data)?.data.csv).toBe(csv);
   await page.getByLabel("Undo", { exact: true }).click();
   await expect(page.locator(".er-data")).toHaveCount(0);
-  await page.getByLabel("Import CSV file").setInputFiles({
+  const csvInput = page.getByLabel("Import CSV file");
+  const importFile = {
     name: "measurements.csv",
     mimeType: "text/csv",
     buffer: Buffer.from(csv),
-  });
+  };
+  await csvInput.setInputFiles(importFile);
   await expect(page.locator(".er-data")).toBeVisible();
+  await expect(csvInput).toHaveValue("");
+  expect((await saved()).page.regions.find((r) => r.data)?.data.csv).toBe(csv);
+  // Reset after reading must still allow the same file to be chosen again.
+  await page.getByLabel("Undo", { exact: true }).click();
+  await expect(page.locator(".er-data")).toHaveCount(0);
+  await csvInput.setInputFiles(importFile);
+  await expect(page.locator(".er-data")).toBeVisible();
+  await expect(csvInput).toHaveValue("");
   await page.reload();
   await expect(page.locator(".er-data")).toBeVisible();
 

@@ -3371,9 +3371,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           aria-label="Import CSV file"
           style={{ display: "none" }}
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (file) void importCsv(file);
+            const input = e.currentTarget;
+            const file = input.files?.[0];
+            // Finish reading the selected CSV before resetting the file input.
+            // Reset afterward so choosing the same CSV again still fires change.
+            if (file) void importCsv(file).finally(() => (input.value = ""));
           }}
         />
         <header className="er-header">
