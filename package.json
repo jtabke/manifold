@@ -4,12 +4,14 @@
   "type": "module",
   "workspaces": [
     "apps/canvas",
+    "apps/assistant",
     "packages/foundation"
   ],
   "engines": {
     "node": ">=22.18.0"
   },
   "scripts": {
+    "assistant": "node apps/assistant/src/main.mjs",
     "check": "make check",
     "verify": "make verify-application-foundation"
   },

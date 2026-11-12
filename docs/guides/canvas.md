@@ -1,8 +1,8 @@
 # Using the Manifold canvas
 
 Manifold is a freeform canvas for equations, notes, CSV measurements, plots, alternatives,
-models and diagrams. It is an early prototype with bounded arithmetic and Python sampling;
-no live AI service is connected.
+models and diagrams. It is an early prototype with bounded arithmetic and Python sampling.
+An optional local Pi assistant can inspect work and propose reviewed edits.
 
 ## Start the canvas
 
@@ -30,6 +30,67 @@ Use **Import CSV** or drop a CSV onto the canvas. Measurements retain their sour
 connections to mathematical quantities require explicit review. Plot responses and
 compare alternatives through the existing quantities. The command palette opens
 with Ctrl/Cmd+K.
+
+## Ask the canvas assistant (experimental)
+
+The assistant is optional: the canvas works without it. Start Manifold normally with
+`make canvas`; no second terminal, separate companion startup or copied connection URL is needed.
+
+1. Right-click a canvas point and choose **Ask agent**. A compact, single-line input opens at
+   that point, like a comment composer—not a sidebar. You can also use **Ask agent** on a scalar
+   model card, or the toolbar button to open at the last canvas point.
+2. Type a question or request, such as “Set displacement to 3 mm and explain the effect.”
+   **Enter** sends; **Shift+Enter** inserts a newline. The first request connects automatically
+   using the detected Pi provider, default model and credentials. Opening the panel alone does
+   not send a model request.
+3. Review the proposed source/input changes and diagnostics. **Apply edit** accepts the exact
+   reviewed transaction as one Undo step; **Dismiss** changes nothing.
+
+Only the input and small settings/send/close controls are shown initially. Multiline drafts grow
+as needed; replies, edit reviews and settings expand the same popup without leaving the viewport.
+**Escape** closes it and ends the connection. Selection context is attached when you send.
+
+Provider/model configuration is behind the **Assistant settings** gear button. Existing Pi
+configuration is read from `~/.pi/agent` (or `PI_CODING_AGENT_DIR` set when starting Manifold).
+Use settings to choose another provider/model, refresh Pi configuration or disconnect. If setup
+is missing or connection fails, submitting opens settings and preserves your text instead of
+sending or discarding it. Toggling settings never clears the request draft.
+
+For a provider without existing credentials, open **Configure an API key** in settings, enter
+it, then connect. A supplied key is held only in this connection's memory; it is never written
+to Pi, browser storage or the workspace archive. You must reenter it after disconnecting.
+Existing Pi sign-in can be reused without entering a key.
+
+The local canvas server starts and manages its Node companion automatically when the assistant opens,
+and shuts it down with the server. Setup, model discovery and Connect make no model inference
+request. **Refresh Pi configuration** rereads credentials/models after an external Pi login.
+Catalog presence is not a guarantee of account access; use your known working Pi model if a
+provider rejects a selection. OAuth-only/cloud providers may still require their normal Pi login
+or environment configuration; there is no embedded OAuth login flow yet.
+
+Requests and inspected canvas content are sent to your configured model provider and may
+consume its quota or incur charges. This version can inspect the whole bounded worksheet and
+scalar models, not just the selected objects. Selection is attached when you send a request.
+No shell/file tools, automatic computation or autonomous edit application are enabled.
+Derived values are not current checked computation evidence; compute explicitly through
+normal canvas controls when needed. Validation does not certify engineering safety.
+
+You can keep editing while the agent works. Finish/cancel unaccepted editor drafts before
+sending a request or applying a proposal. Authored changes invalidate older proposals: ask for
+a refreshed proposal rather than overwriting newer work. **Stop request** revokes further
+tool access for that request; it does not undo applied changes. Closing the panel or disconnecting
+discards pending proposals and the in-memory conversation connection, but preserves accepted
+changes and normal saving. Chat/proposals are not saved in native workspace files.
+
+The managed bridge accepts the local canvas server and Vite origins (`127.0.0.1` or
+`localhost`). This is a local HTTP integration, not a hosted/HTTPS assistant or general
+multiplayer service. Node.js and the repository's npm dependencies are required; setup errors
+leave normal canvas authoring intact.
+
+**Advanced:** a separately started companion is still supported with
+`npm run assistant -- --provider PROVIDER --model MODEL`. Open **Advanced: connect a separate
+companion** to paste its private URL. For that standalone mode, repeated `--origin` flags
+replace its default allowed origins and `--port` selects the port; stop it with Ctrl+C.
 
 ## Commands and keyboard shortcuts
 

@@ -7,6 +7,7 @@ import {
   type ShortcutAction,
 } from "../interaction/shortcutBindings";
 import { KeyboardShortcuts } from "../renderers/KeyboardShortcuts";
+import { CanvasAssistant } from "../renderers/CanvasAssistant";
 import { isDialogEvent } from "../interaction/modalInput";
 import {
   useCanvasOverlaps,
@@ -60,6 +61,7 @@ import {
   LayoutGrid,
   Link2,
   MoreHorizontal,
+  MessageSquare,
   FileInput,
   Plus,
   Search,
@@ -199,6 +201,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const [storageError, setStorageError] = useState(saved?.error || "");
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantAnchor, setAssistantAnchor] = useState<Point>({
+    x: 200,
+    y: 120,
+  });
+  const assistantButton = useRef<HTMLButtonElement>(null);
   const shortcutPreferences = useShortcutPreferences();
   const [authoringModel, setAuthoringModel] = useState<{
     source: ModelSource;
@@ -2509,6 +2517,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
   });
+  const openAssistant = (at: Point) => {
+    if (!workspaceEdits.finish()) return false;
+    setAssistantAnchor({ x: at.x, y: at.y });
+    setAssistantOpen(true);
+    return true;
+  };
   const openWorkspace = async (file: File) => {
     try {
       const search = await workspace.open(file, workspaceEdits);
@@ -3251,6 +3265,30 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         data-trial={trial || "combined"}
         data-interaction={explicit ? "A" : "B"}
       >
+        {assistantOpen && (
+          <CanvasAssistant
+            session={session}
+            anchor={assistantAnchor}
+            edits={workspaceEdits}
+            selection={[
+              ...new Set(
+                (canvasSelection.length
+                  ? canvasSelection
+                  : [areaSelection || selected || selectedId]
+                )
+                  .filter((id): id is string => !!id)
+                  .map(
+                    (id) =>
+                      session.document.views.get(id)?.reference.item || id,
+                  ),
+              ),
+            ]}
+            close={() => {
+              setAssistantOpen(false);
+              assistantButton.current?.focus();
+            }}
+          />
+        )}
         {actionMenu && (
           <CanvasActionMenu
             location={actionMenu}
@@ -3261,7 +3299,19 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 ? overlapChoices
                 : actionMenu.mode === "pie"
                   ? primaryMenuItems
-                  : [...overlapActions, ...actionMenuItems]
+                  : [
+                      ...overlapActions,
+                      ...actionMenuItems,
+                      {
+                        id: "ask-agent",
+                        key: "ask-agent",
+                        label: "Ask agent",
+                        icon: <MessageSquare />,
+                        run: () => {
+                          openAssistant(actionMenu);
+                        },
+                      },
+                    ]
             }
             close={() => setActionMenu(undefined)}
             search={() => paletteOpen("search")}
@@ -3419,6 +3469,31 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           >
             <Plus size={16} />
             <span>Write</span>
+          </button>
+          <button
+            ref={assistantButton}
+            aria-label="Ask agent"
+            aria-expanded={assistantOpen}
+            onClick={() => {
+              if (assistantOpen) {
+                setAssistantOpen(false);
+                return;
+              }
+              const rect = canvas.current?.getBoundingClientRect();
+              openAssistant(
+                lastCanvasPress.current?.point ||
+                  actionPointer.current || {
+                    x: rect
+                      ? rect.left + rect.width / 2
+                      : window.innerWidth / 2,
+                    y: rect
+                      ? rect.top + rect.height / 2
+                      : window.innerHeight / 2,
+                  },
+              );
+            }}
+          >
+            Ask agent
           </button>
           <button
             aria-label="Open canvas actions"
@@ -6093,6 +6168,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   <IndependentModels
                     session={session}
                     editBuffers={editBuffers}
+                    askAgent={(id, at) => {
+                      if (!openAssistant(at)) return;
+                      setCanvasSelection([]);
+                      setAreaSelection(undefined);
+                      setSelected(id);
+                    }}
                     positions={spatial.preview}
                     move={(id, event) => spatial.start(id, event, true)}
                     beforeAction={() => {

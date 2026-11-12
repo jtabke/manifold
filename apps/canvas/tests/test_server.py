@@ -6,17 +6,16 @@ import threading
 import unittest
 from unittest.mock import patch
 from http.client import HTTPConnection
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server import Handler
+from server import CanvasServer
 
 
 class ServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        cls.server = CanvasServer(("127.0.0.1", 0))
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
@@ -39,6 +38,10 @@ class ServerTests(unittest.TestCase):
             return response.status, json.loads(response.read())
         finally:
             connection.close()
+
+    def test_occupied_port_preserves_the_bind_error(self):
+        with self.assertRaises(OSError):
+            CanvasServer(self.server.server_address)
 
     def test_health(self):
         status, result = self.request("GET", "/api/health")
@@ -84,6 +87,35 @@ class ServerTests(unittest.TestCase):
             origin="https://example.com",
         )
         self.assertEqual(status, 400)
+
+    def test_assistant_configuration_uses_owned_bridge(self):
+        config = {"defaultProvider": "test", "defaultModel": "small", "providers": []}
+        with patch.object(self.server.assistant, "request", return_value=(200, config)) as request:
+            status, result = self.request("GET", "/api/assistant/configuration")
+            self.assertEqual(status, 200)
+            self.assertEqual(result, config)
+            request.assert_called_once_with("configuration", None, None)
+
+    def test_assistant_connect_does_not_log_or_save_configuration(self):
+        body = {"provider": "test", "model": "small", "apiKey": "test-key-not-a-secret"}
+        with patch.object(self.server.assistant, "request", return_value=(200, {"url": "ws://127.0.0.1:1/"})) as request:
+            status, _ = self.request("POST", "/api/assistant/connect", body)
+            self.assertEqual(status, 200)
+            request.assert_called_once_with("connect", body, None)
+
+    def test_assistant_rejects_cross_origin_before_startup(self):
+        with patch.object(self.server.assistant, "request") as request:
+            for method, path in (("GET", "/api/assistant/configuration"), ("POST", "/api/assistant/connect")):
+                status, _ = self.request(method, path, {}, origin="https://example.com")
+                self.assertEqual(status, 403)
+            request.assert_not_called()
+
+    def test_missing_node_is_recoverable(self):
+        with patch("assistant_bridge.shutil.which", return_value=None):
+            status, result = self.request("GET", "/api/assistant/configuration")
+            self.assertEqual(status, 503)
+            self.assertIn("Node.js", result["error"])
+        self.assertEqual(self.request("GET", "/api/health")[0], 200)
 
     def test_unknown_endpoint(self):
         for method in ("GET", "POST"):

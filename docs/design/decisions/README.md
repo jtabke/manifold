@@ -90,6 +90,8 @@ contexts require retained identity, and a reliable Keep/Undo requires one owner.
 
 | [0038: Versioned scientific scalar math](0038-versioned-scientific-scalar-math.md) | Restricted Math.js numerical/unit operations, explicit source versions and plain quantities across worksheets, models, sampling and native V8. | Accepted for the bounded scientific scalar slice. |
 
+| [0039: Live canvas assistant](0039-live-canvas-assistant.md) | Optional restricted Pi companion, browser-owned proposals and approval-only atomic live edits. | Accepted for the experimental local assistant slice. |
+
 ## Record lifecycle and template
 
 Create `NNNN-short-title.md` using the structure below. Begin as proposed. Record

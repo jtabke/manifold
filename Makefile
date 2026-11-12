@@ -15,7 +15,7 @@ canvas-dev:
 build:
 	npm --prefix apps/canvas run build
 
-check: check-repo check-docs check-python check-canvas check-foundation-package
+check: check-repo check-docs check-python check-canvas check-assistant check-foundation-package
 
 check-repo:
 	node_modules/.bin/prettier --check package.json scripts/check_repo.mjs scripts/repo_policy.test.mjs scripts/browser.mjs .github/workflows/ci.yml
@@ -35,6 +35,11 @@ check-canvas:
 	npm --prefix apps/canvas run format:check
 	npm --prefix apps/canvas run build
 	npm --prefix apps/canvas test
+
+.PHONY: check-assistant
+check-assistant:
+	node_modules/.bin/prettier --check apps/assistant/package.json apps/assistant/src/*.mjs apps/assistant/test/*.mjs
+	npm --workspace manifold-assistant test
 
 # Uses a temporary server on port 58312. Requires installed Chromium.
 check-browser:

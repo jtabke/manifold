@@ -115,6 +115,32 @@ layouts. `check-capacity-fixture` compares small generated cases with genuine re
 and verifies decoding and retired identities. The full MAX/MAX+1 admission and unchanged rescue
 checks remain in `check-canvas-capacity`; they are not duplicated in the fixture-equivalence test.
 
+### Live canvas assistant
+
+The optional companion is the `apps/assistant` npm workspace. The normal Python canvas server
+starts it lazily when the assistant opens. The first submitted request connects using detected
+Pi defaults; the gear reveals provider/model settings and manual Connect. No separate launch
+command is needed. Standalone `npm run assistant -- --provider PROVIDER --model MODEL`
+remains an advanced/testing option; see the
+[canvas assistant guide](../guides/canvas.md#ask-the-canvas-assistant-experimental) for connection,
+privacy and approval behavior, and [ADR 0039](../design/decisions/0039-live-canvas-assistant.md)
+for ownership and security boundaries. Login/configuration stays in Pi, not the canvas or native archive.
+
+```sh
+make check-assistant
+npm --prefix apps/canvas test -- check-canvas-assistant
+npm --prefix apps/canvas run build
+npm --prefix apps/canvas run test:all-browser -- check-canvas-assistant-browser
+```
+
+The companion checks create a restricted real SDK session without prompting a model. Transport
+and browser checks use deterministic agent sessions with the real authenticated WebSocket bridge.
+They cover inspected revisions, exact reviewed commands, approval/Undo, stale proposals, renderer
+drafts, Stop, disconnect cleanup, in-canvas configuration/key clearing and normal saved continuity.
+Python integration tests exercise the real managed Node process and assert startup/shutdown and
+that a supplied test key never reaches Pi's auth file. Setup and connection do not prompt a model. No provider calls or credentials
+are required; real-model quality and unfamiliar-user usability remain manual validation gaps.
+
 ### Agent-to-canvas browser handoff
 
 `check-agent-handoff-browser` authors separate ready/computed spring candidates with the real

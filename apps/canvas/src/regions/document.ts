@@ -385,6 +385,33 @@ export class RegionSession {
       paused: this.loadedArtifacts,
     }));
   }
+  /** Build a reviewable command batch without publishing, executing or changing attention. */
+  prepare<T>(operation: (staged: RegionSession) => T) {
+    const expected = this.document;
+    const staged = new RegionSession(
+      this.documentOwner.page,
+      () => this.retainedRegions(),
+      expected,
+      this.artifacts,
+      true,
+      undefined,
+      { artifactExecutor: null },
+    );
+    try {
+      const value = operation(staged);
+      if (value && typeof (value as { then?: unknown }).then === "function") {
+        void Promise.resolve(value).catch(() => {});
+        throw Error("Workspace preparations must be synchronous");
+      }
+      return Object.freeze({
+        expected,
+        commands: staged.documentOwner.stagedCommands(),
+        value,
+      });
+    } finally {
+      staged.dispose();
+    }
+  }
   /** Staging runs only synchronous domain commands; subscribers see one final publication. */
   atomic<T>(
     operation: (staged: RegionSession) => T,

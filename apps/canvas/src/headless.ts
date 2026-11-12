@@ -128,7 +128,12 @@ function describeModel(session: RegionSession, item: string) {
 
 export type ModelDescription = ReturnType<typeof describeModel>;
 
-function host(session: RegionSession) {
+/** Internal live-session adapter. Closing it never closes the canvas owner. */
+export function bindLiveWorkspace(session: RegionSession) {
+  return host(session, false);
+}
+
+function host(session: RegionSession, ownsSession = true) {
   let closed = false;
   let currentTransaction: { failure?: unknown } | undefined;
   function check() {
@@ -361,7 +366,7 @@ function host(session: RegionSession) {
       if (closed) return;
       check();
       closed = true;
-      headlessOperation("dispose", () => session.dispose());
+      if (ownsSession) headlessOperation("dispose", () => session.dispose());
     },
   });
 }

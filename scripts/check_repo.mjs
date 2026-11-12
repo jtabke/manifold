@@ -116,7 +116,11 @@ function main() {
     foundation = json("packages/foundation/package.json"),
     canvas = json("apps/canvas/package.json"),
     lock = json("package-lock.json");
-  assert.deepEqual(pkg.workspaces, ["apps/canvas", "packages/foundation"]);
+  assert.deepEqual(pkg.workspaces, [
+    "apps/canvas",
+    "apps/assistant",
+    "packages/foundation",
+  ]);
   assert.equal(canvas.dependencies[foundation.name], foundation.version);
   for (const path of pkg.workspaces)
     assert.ok(lock.packages[path], `Missing locked workspace ${path}`);
@@ -129,6 +133,7 @@ function main() {
   let count = 0;
   for (const file of [
     ...files("apps/canvas"),
+    ...files("apps/assistant"),
     ...files("packages/foundation"),
     ...files("scripts"),
   ].filter((p) => /\.(?:mjs|tsx?)$/.test(p))) {

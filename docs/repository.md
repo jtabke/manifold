@@ -1,6 +1,6 @@
 # Repository organization and maintenance
 
-Manifold is a two-package npm workspace with one lockfile and shared development tools.
+Manifold is a three-package npm workspace with one lockfile and shared development tools.
 The [extension guide](design/canvas-extension-patterns.md) defines implemented feature patterns;
 the [product plan](product-plan.md) owns priorities and [ADRs](design/decisions/README.md)
 record architecture choices.
@@ -17,9 +17,11 @@ record architecture choices.
 | `apps/canvas/src/regions/styles` | Canvas styles. |
 | `apps/canvas/src/regions/*.ts` | Domain schemas, models, projections and computation adapters. |
 | `apps/canvas/src/notebook` | Bounded mathematics and immutable derived views. |
-| `apps/canvas/server.py`, `artifact_sampler.py` | Static/API host and restricted Python sampling. |
+| `apps/canvas/server.py`, `artifact_sampler.py`, `assistant_bridge.py` | Static/API host, restricted Python sampling and lazy owned assistant-process bridge. |
 | `apps/canvas/tests`, `packages/foundation/test` | Executable contracts, browser workflows and fixtures. |
 | `apps/canvas/src/headless*.ts`, `apps/canvas/src/agent.ts` | Browser-free canvas owner and transport-free JSON automation contracts. |
+| `apps/assistant` | Optional server-managed Pi companion: authenticated setup/connection bridge, restricted tools, connection-scoped keys and ephemeral conversations. |
+| `apps/canvas/src/regions/assistant.ts` | Transient reviewed proposals over the active canvas owner; no second persistence/history authority. |
 | `apps/canvas/tools/manifold.mjs` | File-based agent CLI over the headless owner; explicit computation and no-clobber candidate publication. |
 | `apps/canvas/tools`, `scripts` | Other diagnostics, check orchestration and repository policy. |
 | `docs/images` | Curated, real application screenshots used by the README. |

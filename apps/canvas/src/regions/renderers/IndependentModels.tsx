@@ -31,8 +31,10 @@ export function IndependentModels({
   beforeAction,
   move,
   editBuffers,
+  askAgent,
 }: {
   session: RegionSession;
+  askAgent?: (id: string, at: Point) => void;
   positions: Record<string, Point>;
   beforeAction: () => boolean;
   move: (id: string, event: PointerEvent) => void;
@@ -47,6 +49,7 @@ export function IndependentModels({
       beforeAction={beforeAction}
       move={move}
       editBuffers={editBuffers}
+      askAgent={askAgent}
     />
   ));
 }
@@ -57,8 +60,10 @@ function ModelCard({
   beforeAction,
   move,
   editBuffers,
+  askAgent,
 }: {
   session: RegionSession;
+  askAgent?: (id: string, at: Point) => void;
   view: f.View;
   at: Point;
   beforeAction: () => boolean;
@@ -138,6 +143,21 @@ function ModelCard({
     >
       <header>
         <strong>{alternative?.label || name}</strong>
+        {askAgent && !alternative && (
+          <button
+            type="button"
+            aria-label={`Ask agent about ${name}`}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              askAgent(view.id, {
+                x: event.detail ? event.clientX : rect.right,
+                y: event.detail ? event.clientY : rect.top,
+              });
+            }}
+          >
+            Ask agent
+          </button>
+        )}
         <span>{alternative ? "Kept comparison" : "Independent instance"}</span>
         <button
           aria-label={`Move ${name} model`}
