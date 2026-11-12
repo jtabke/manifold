@@ -14,8 +14,8 @@
     "dev": "vite --host 127.0.0.1 --port 58311",
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
-    "format": "prettier --write src/agent.ts tools/manifold.mjs tools/verify-agent-spring.mjs tools/verify-agent-conduction.mjs tools/verify-agent-recovery.mjs src/headless*.ts src/main.tsx src/style.css src/regions src/notebook/*.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
-    "format:check": "prettier --check src/agent.ts tools/manifold.mjs tools/verify-agent-spring.mjs tools/verify-agent-conduction.mjs tools/verify-agent-recovery.mjs src/headless*.ts src/main.tsx src/style.css src/regions src/notebook/*.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
+    "format": "prettier --write src/agent.ts tools/manifold.mjs tools/read-bounded.mjs tools/verify-agent-spring.mjs tools/verify-agent-conduction.mjs tools/verify-agent-recovery.mjs src/headless*.ts src/main.tsx src/style.css src/regions src/notebook/*.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
+    "format:check": "prettier --check src/agent.ts tools/manifold.mjs tools/read-bounded.mjs tools/verify-agent-spring.mjs tools/verify-agent-conduction.mjs tools/verify-agent-recovery.mjs src/headless*.ts src/main.tsx src/style.css src/regions src/notebook/*.ts tests tools/run-checks.mjs vite.config.ts tsconfig.json package.json index.html",
     "test": "node tools/run-checks.mjs",
     "test:all-browser": "node tools/run-checks.mjs --browser"
   },

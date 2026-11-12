@@ -1427,13 +1427,11 @@ export class CanvasDocument {
         evidence: "all",
       }).document.revisions;
 
-    return JSON.parse(
-      f.encode(
-        Object.freeze({ ...document, revisions }),
-        [...receipts.entries()].map(([, receipt]) => receipt),
-        foundation?.resources ?? resources,
-        canvasSchemas,
-      ),
+    return f.encodeEnvelope(
+      Object.freeze({ ...document, revisions }),
+      [...receipts.entries()].map(([, receipt]) => receipt),
+      foundation?.resources ?? resources,
+      canvasSchemas,
     );
   }
 }

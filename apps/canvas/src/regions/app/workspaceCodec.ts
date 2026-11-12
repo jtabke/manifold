@@ -2,6 +2,7 @@
 import {
   byteLength,
   encode,
+  encodeEnvelope,
   type Loaded,
   type Schemas,
   type Envelope,
@@ -17,15 +18,22 @@ export function checkWorkspaceFileSize(bytes: number) {
 }
 export function archiveLoaded(state: Loaded, schemas: Schemas): string {
   return archive(
-    JSON.parse(
-      encode(
-        state.document,
-        state.receipts,
-        state.resources,
-        schemas,
-        state.original,
-      ),
-    ),
+    state.document.readOnly
+      ? JSON.parse(
+          encode(
+            state.document,
+            state.receipts,
+            state.resources,
+            schemas,
+            state.original,
+          ),
+        )
+      : encodeEnvelope(
+          state.document,
+          state.receipts,
+          state.resources,
+          schemas,
+        ),
   );
 }
 export function archive(foundation: Envelope): string {

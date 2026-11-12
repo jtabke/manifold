@@ -5,6 +5,7 @@ import {
   freeze,
   canonical,
   identity,
+  json,
   type Json,
 } from "./value.ts";
 import type { Schemas, Methods, Asset, Resources } from "./contracts.ts";
@@ -73,6 +74,16 @@ export function encode(
     assert(original, "Preserve the original unsupported document");
     return original;
   }
+  return JSON.stringify(encodeEnvelope(doc, receipts, resources, schemas));
+}
+/** Build a writable native envelope without serializing it. Unsupported data uses encode's original-text path. */
+export function encodeEnvelope(
+  doc: Document,
+  receipts: Iterable<Receipt>,
+  resources: Resources,
+  schemas: Schemas,
+): Envelope {
+  assert(!doc.readOnly, "Preserve the original unsupported document");
   const retained = [...receipts];
   const included: Record<string, string> = Object.create(null);
   for (const a of assets(doc, schemas, retained).values())
@@ -144,23 +155,61 @@ export function encode(
     receipts: records,
     assets: included,
   };
-  return JSON.stringify(envelope);
+  return envelope;
 }
+export type DecodeLimits = Readonly<{
+  maxBytes?: number;
+  /** Total records across all native tables (identity ledgers are bounded separately). */
+  maxRecords?: number;
+  maxReceipts?: number;
+  maxNodes?: number;
+}>;
 export async function decode(
   text: string,
   schemas: Schemas,
   methods: Methods,
   hash: Hash,
-  limits: Readonly<{
-    maxBytes?: number;
-    maxRecords?: number;
-    maxReceipts?: number;
-  }> = {},
+  limits: DecodeLimits = {},
+): Promise<Loaded> {
+  assert(
+    byteLength(text) <= (limits.maxBytes ?? 64 * 1024 * 1024),
+    "Native document byte budget exceeded",
+  );
+  return readEnvelope(JSON.parse(text), schemas, methods, hash, limits, text);
+}
+/** Validate an already parsed envelope. The host must bound transport bytes before parsing.
+ * Caller-owned objects are copied before asynchronous verification; only decode(text) preserves exact original text.
+ */
+export async function decodeEnvelope(
+  e: unknown,
+  schemas: Schemas,
+  methods: Methods,
+  hash: Hash,
+  limits: DecodeLimits = {},
+): Promise<Loaded> {
+  return readEnvelope(e, schemas, methods, hash, limits, undefined, true);
+}
+async function readEnvelope(
+  e: unknown,
+  schemas: Schemas,
+  methods: Methods,
+  hash: Hash,
+  limits: DecodeLimits,
+  original?: string,
+  copy = false,
 ): Promise<Loaded> {
   const maxBytes = limits.maxBytes ?? 64 * 1024 * 1024,
-    maxRecords = limits.maxRecords ?? 100000;
-  assert(byteLength(text) <= maxBytes, "Native document byte budget exceeded");
-  const e: unknown = JSON.parse(text);
+    maxRecords = limits.maxRecords ?? 100000,
+    maxReceipts = limits.maxReceipts ?? 100000,
+    maxNodes = limits.maxNodes ?? 1000000;
+  for (const limit of [maxBytes, maxRecords, maxReceipts, maxNodes])
+    assert(
+      Number.isSafeInteger(limit) && limit >= 0,
+      "Invalid native read limit",
+    );
+  // Check depth, node count and JSON safety before structuredClone or recursive freezing.
+  json(e, "$", new Set(), { remainingNodes: maxNodes });
+  if (copy) e = structuredClone(e);
   assert(object(e), "Invalid native document");
   fields(e, [
     "format",
@@ -182,14 +231,22 @@ export async function decode(
       object(e.snapshots),
     "Unsupported native document contract",
   );
-  assert(
-    object(e.document.revisions) &&
-      Object.keys(e.document.revisions).length <= maxRecords &&
-      Object.keys(e.contexts).length <= maxRecords &&
-      Object.keys(e.snapshots).length <= maxRecords &&
-      e.receipts.length <= (limits.maxReceipts ?? 100000),
-    "Native record budget exceeded",
-  );
+  const tables = [
+    e.document.items,
+    e.document.revisions,
+    e.document.views,
+    e.document.alternatives,
+    e.contexts,
+    e.snapshots,
+    e.assets,
+  ];
+  let records = e.receipts.length;
+  for (const table of tables) {
+    assert(object(table), "Invalid native record table");
+    records += Object.keys(table).length;
+    assert(records <= maxRecords, "Native record budget exceeded");
+  }
+  assert(e.receipts.length <= maxReceipts, "Native receipt budget exceeded");
   if (e.version !== 1) {
     assert(
       object(e.document.identities) &&
@@ -224,7 +281,7 @@ export async function decode(
       document: doc,
       receipts: Object.freeze([]),
       resources,
-      original: text,
+      original: original ?? JSON.stringify(e),
     });
   const contexts = new Map(
       Object.entries(e.contexts).map(([id, c]) => {
@@ -291,7 +348,12 @@ export async function decode(
     usedSnapshots.add(p.snapshot);
     return r;
   });
-  for (const asset of assets(doc, schemas, receipts).values())
+  const declaredAssets = assets(doc, schemas, receipts);
+  assert(
+    Object.keys(e.assets).every((digest) => declaredAssets.has(digest)),
+    "Unreferenced package asset",
+  );
+  for (const asset of declaredAssets.values())
     if (asset.disposition === "included")
       assert(
         resources.read(asset).status === "ready",
@@ -324,7 +386,7 @@ export async function decode(
         : doc,
     receipts: Object.freeze(receipts),
     resources,
-    original: text,
+    ...(original === undefined ? {} : { original }),
   });
 }
 export const receiptData = (r: Receipt) =>

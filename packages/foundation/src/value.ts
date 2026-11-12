@@ -35,7 +35,9 @@ export function json(
   v: unknown,
   path = "$",
   ancestors = new Set<object>(),
+  budget?: { remainingNodes: number },
 ): asserts v is Json {
+  if (budget) assert(--budget.remainingNodes >= 0, "JSON node budget exceeded");
   if (v === null || typeof v === "boolean" || typeof v === "string") return;
   if (typeof v === "number") {
     assert(Number.isFinite(v), "Nonfinite JSON at " + path);
@@ -110,7 +112,7 @@ export function json(
       property.enumerable && "value" in property,
       "Accessors/non-enumerable properties are not JSON",
     );
-    json(property.value, path + "." + String(k), ancestors);
+    json(property.value, path + "." + String(k), ancestors, budget);
   }
   ancestors.delete(v);
 }

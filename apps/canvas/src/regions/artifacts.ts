@@ -22,7 +22,7 @@ import {
   canonical,
   object,
   fields,
-  decode,
+  decodeEnvelope,
   webHash,
   byteLength,
   type Reference,
@@ -574,8 +574,8 @@ async function readWorkspace(
     );
     if (value.format !== "manifold-region-artifacts")
       throw Error("Unsupported workspace archive.");
-    foundation = await decode(
-      JSON.stringify(value.foundation),
+    foundation = await decodeEnvelope(
+      value.foundation,
       canvasSchemas,
       canvasMethods,
       webHash,

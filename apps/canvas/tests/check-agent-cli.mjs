@@ -7,11 +7,14 @@ import {
   readdir,
   rm,
   symlink,
+  open,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openHeadlessWorkspace } from "manifold-canvas/headless";
+import { readBoundedText } from "../tools/read-bounded.mjs";
+import { MAX_CANVAS_FILE_BYTES } from "../src/regions/app/canvasStorageBudget.ts";
 
 const cli = fileURLToPath(new URL("../tools/manifold.mjs", import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "manifold-agent-"));
@@ -71,6 +74,47 @@ async function parallel(args) {
   });
 }
 try {
+  await writeFile(file("bounded.txt"), "é123");
+  assert.equal(await readBoundedText(file("bounded.txt"), 5), "é123");
+  await assert.rejects(readBoundedText(file("bounded.txt"), 4), {
+    code: "FILE_TOO_LARGE",
+  });
+  // A lying/stale stat must not allow the actual read to exceed the byte budget.
+  const growth = spawnSync(
+    process.execPath,
+    [
+      ...preload(`
+      import fs from "node:fs/promises";
+      import { syncBuiltinESMExports } from "node:module";
+      const original = fs.open;
+      fs.open = async (...args) => {
+        const handle = await original(...args);
+        handle.stat = async () => ({ size: 0 });
+        return handle;
+      };
+      syncBuiltinESMExports();
+    `),
+      "--input-type=module",
+      "-e",
+      `
+      import assert from "node:assert/strict";
+      import { readBoundedText } from ${JSON.stringify(new URL("../tools/read-bounded.mjs", import.meta.url).href)};
+      await assert.rejects(readBoundedText(${JSON.stringify(file("bounded.txt"))}, 4), { code: "FILE_TOO_LARGE" });
+    `,
+    ],
+    { encoding: "utf8", timeout: 30000 },
+  );
+  assert.equal(growth.status, 0, growth.stderr);
+  const oversized = await open(file("oversized.manifold"), "w");
+  try {
+    await oversized.truncate(MAX_CANVAS_FILE_BYTES + 1);
+  } finally {
+    await oversized.close();
+  }
+  assert.equal(
+    run(["inspect", file("oversized.manifold")], 2).error.code,
+    "FILE_TOO_LARGE",
+  );
   const help = spawnSync(process.execPath, [cli, "--help"], {
     encoding: "utf8",
   });
@@ -376,6 +420,25 @@ try {
     "INTERRUPTED",
   );
   assert(!(await readdir(directory)).includes("interrupted.json"));
+  assert.equal(
+    run(
+      [
+        "edit",
+        file("initial.json"),
+        "--changes",
+        file("changes.json"),
+        "--output",
+        file("grown-input.json"),
+      ],
+      6,
+      duringPublicationSync(
+        `await fs.truncate(${JSON.stringify(file("initial.json"))}, ${MAX_CANVAS_FILE_BYTES + 1});`,
+      ),
+    ).error.code,
+    "STALE_FILE",
+  );
+  assert(!(await readdir(directory)).includes("grown-input.json"));
+  await writeFile(file("initial.json"), initialBytes);
   const changedInput = initialBytes + "\n";
   assert.equal(
     run(

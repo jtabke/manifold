@@ -169,9 +169,12 @@ review and visual explanation; no live browser tab is automatically updated.
 - Read-only operations and edits never implicitly execute. Opening/importing never runs code
   from a file. No automatic network connection, local browser storage, or background service.
 - Errors expose [stable headless codes](headless-api.md#discovery-and-errors) or CLI codes (`INVALID_ARGUMENT`, `INVALID_JSON`,
-  `OUTPUT_EXISTS`, `STALE_FILE`, `TIMEOUT`, `INTERRUPTED`); filesystem errors retain Node's code.
+  `OUTPUT_EXISTS`, `STALE_FILE`, `FILE_TOO_LARGE`, `TIMEOUT`, `INTERRUPTED`); filesystem errors retain Node's code.
   Use codes/statuses, not English message matching. On stale work, reinspect and review rather
   than blindly replaying an edit against the new revision.
+- Workspace and edit-batch input reads are capped at 128 MiB, including growth after the
+  initial size check. `FILE_TOO_LARGE` exits 2; an oversized input during publication's
+  stale-input recheck reports `STALE_FILE` instead. See the [file format reference](manifold-format.md).
 
 | Exit | Meaning |
 | --- | --- |

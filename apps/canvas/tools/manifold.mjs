@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /** Local agent CLI: no server, prompts, network executor, or in-place writes. */
-import { readFile, lstat, link, unlink, open } from "node:fs/promises";
+import { lstat, link, unlink, open } from "node:fs/promises";
+import { readBoundedText } from "./read-bounded.mjs";
+import { MAX_CANVAS_FILE_BYTES } from "../src/regions/app/canvasStorageBudget.ts";
 import { resolve, dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
@@ -128,7 +130,14 @@ async function publish(path, text, inputs, checkInterrupted) {
     await handle.close();
     handle = undefined;
     for (const input of inputs) {
-      if ((await readFile(input.path, "utf8")) !== input.text)
+      const current = await readBoundedText(
+        input.path,
+        MAX_CANVAS_FILE_BYTES,
+      ).catch((error) => {
+        if (error.code === "FILE_TOO_LARGE") return undefined;
+        throw error;
+      });
+      if (current !== input.text)
         throw new CliError(
           "STALE_FILE",
           `Input changed during operation: ${input.path}`,
@@ -177,7 +186,7 @@ async function main() {
     if (options.output) await absent(resolve(options.output));
     async function load(path) {
       path = resolve(path);
-      const text = await readFile(path, "utf8");
+      const text = await readBoundedText(path, MAX_CANVAS_FILE_BYTES);
       inputs.push({ path, text });
       const workspace = await openHeadlessWorkspace(text);
       owners.push(workspace);
@@ -242,7 +251,7 @@ async function main() {
       }
       case "edit": {
         const path = resolve(options.changes),
-          text = await readFile(path, "utf8");
+          text = await readBoundedText(path, MAX_CANVAS_FILE_BYTES);
         inputs.push({ path, text });
         data = editWorkspace(workspace, jsonFile(text, path));
         break;
@@ -348,7 +357,9 @@ try {
         ? error.code === "STALE_DOCUMENT"
           ? 6
           : 2
-        : 5;
+        : error.code === "FILE_TOO_LARGE"
+          ? 2
+          : 5;
   process.stderr.write(
     JSON.stringify({
       protocolVersion: 1,
