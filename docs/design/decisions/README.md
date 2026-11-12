@@ -92,6 +92,8 @@ contexts require retained identity, and a reliable Keep/Undo requires one owner.
 
 | [0039: Live canvas assistant](0039-live-canvas-assistant.md) | Optional restricted Pi companion, browser-owned proposals and approval-only atomic live edits. | Accepted for the experimental local assistant slice. |
 
+| [0040: Full-control canvas MCP](0040-full-control-canvas-mcp.md) | Local stdio MCP, explicit browser grant, direct atomic edits and registered computation through the live owner. | Accepted for the experimental local external-agent slice. |
+
 ## Record lifecycle and template
 
 Create `NNNN-short-title.md` using the structure below. Begin as proposed. Record

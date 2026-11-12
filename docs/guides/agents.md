@@ -5,8 +5,10 @@ check its consequences, compute explicitly, and return a candidate workspace for
 The CLI and TypeScript API use the same native workspaces and operation owner as the canvas;
 no browser or server is needed for the local CLI.
 
-**Experimental, repository-local interface.** This is not yet a published SDK, MCP service,
-or general code execution service. Start with the workflow below; use the
+**Experimental, repository-local interface.** For direct control of an open browser canvas,
+use the separate [live canvas MCP server](../reference/mcp.md), with explicit full-control
+opt-in. This guide covers file-based candidates, not live edits or general code execution.
+Start with the workflow below; use the
 [CLI reference](../reference/cli.md) for exact commands, payload rules, statuses and exit codes,
 or the [headless API reference](../reference/headless-api.md) for TypeScript integration.
 

@@ -12,6 +12,7 @@
   },
   "scripts": {
     "assistant": "node apps/assistant/src/main.mjs",
+    "mcp": "node apps/assistant/src/mcp-main.mjs",
     "check": "make check",
     "verify": "make verify-application-foundation"
   },

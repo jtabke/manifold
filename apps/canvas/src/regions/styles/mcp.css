@@ -1,0 +1,31 @@
+.er-mcp-control {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 100;
+  width: min(42rem, calc(100vw - 2rem));
+  padding: 0.8rem 1rem;
+  border: 1px solid #b7791f;
+  border-radius: 0.6rem;
+  background: #fffbeb;
+  color: #713f12;
+  box-shadow: 0 3px 16px #0002;
+  font-size: 0.85rem;
+}
+
+.er-mcp-control button {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid currentColor;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.er-mcp-control button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}

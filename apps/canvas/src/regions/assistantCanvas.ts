@@ -455,7 +455,7 @@ function drawingMark(
   return data;
 }
 
-/** Called only within RegionSession.prepare; no new accepted state or mutation engine. */
+/** Called only within a RegionSession staging owner; no new state or mutation engine. */
 export function editCanvas(session: RegionSession, payload: unknown) {
   json(payload);
   const batch = object(payload);
@@ -638,4 +638,5 @@ export function editCanvas(session: RegionSession, payload: unknown) {
       aliases.set(name, created);
     }
   }
+  return freeze({ aliases: Object.fromEntries(aliases) });
 }
