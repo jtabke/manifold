@@ -20,9 +20,14 @@ async function fixture(t, options) {
   return { app, client, call };
 }
 const text = (result) => JSON.parse(result.content[0].text);
-const open = async (endpoint, origin = "http://127.0.0.1:58310") => {
-  const ws = new WebSocket(endpoint, { origin });
+const open = async (endpoint, scope = "full-control") => {
+  const ws = new WebSocket(endpoint, { origin: "http://127.0.0.1:58310" });
+  const hello = once(ws, "message");
   await once(ws, "open");
+  assert.equal(JSON.parse((await hello)[0].toString()).agent.name, "test");
+  const ready = once(ws, "message");
+  ws.send(JSON.stringify({ type: "grant", scope, sessionId: "tab-session" }));
+  assert.equal(JSON.parse((await ready)[0].toString()).type, "ready");
   return ws;
 };
 const rejected = (url, origin) =>
@@ -53,10 +58,16 @@ test("MCP discovery, explicit connection, schemas and correlated tools", async (
     "look_at_canvas",
   ])
     assert(listed.tools.some((tool) => tool.name === name));
-  assert((await call("inspect_workspace")).isError);
-  assert((await call("undo", {})).isError);
-  assert((await call("validate", { extra: true })).isError);
-  assert((await call("bash")).isError);
+  assert.equal(
+    text(await call("inspect_workspace")).error.code,
+    "NO_CANVAS_CONNECTED",
+  );
+  assert.equal(text(await call("undo", {})).error.code, "INVALID_ARGUMENTS");
+  assert.equal(
+    text(await call("validate", { extra: true })).error.code,
+    "INVALID_ARGUMENTS",
+  );
+  assert.equal(text(await call("bash")).error.code, "UNKNOWN_TOOL");
   const connection = text(await call("connect_canvas"));
   assert.equal(
     new URLSearchParams(new URL(connection.url).hash.slice(1)).get("mcp"),
@@ -108,7 +119,7 @@ test("timeout cancels browser authority and disconnect releases a call", async (
   const response = call("validate");
   const id = JSON.parse((await request)[0].toString()).id;
   const cancelled = once(ws, "message");
-  assert((await response).isError);
+  assert.equal(text(await response).error.code, "TIMEOUT");
   assert.deepEqual(JSON.parse((await cancelled)[0].toString()), {
     type: "cancel",
     id,

@@ -21,7 +21,7 @@ record architecture choices.
 | `apps/canvas/tests`, `packages/foundation/test` | Executable contracts, browser workflows and fixtures. |
 | `apps/canvas/src/headless*.ts`, `apps/canvas/src/agent.ts` | Browser-free canvas owner and transport-free JSON automation contracts. |
 | `apps/assistant` | Optional server-managed Pi companion: authenticated setup/connection bridge, restricted tools, connection-scoped keys and ephemeral conversations. |
-| `apps/assistant/src/mcp.mjs`, `apps/canvas/src/regions/mcp.ts`, `apps/canvas/src/regions/app/CanvasMcp.tsx` | Local stdio MCP transport, full-control semantic tools and explicit browser connection grant over the existing owner. |
+| `apps/assistant/src/mcp*.mjs`, `apps/canvas/src/regions/mcp*.ts`, `apps/canvas/src/regions/app/CanvasMcp.tsx` | Local stdio MCP transport/tools, scoped semantic access, tab-session mutation/job recovery, focused reads, native snapshots and explicit browser grant/activity over the existing owner. |
 | `apps/canvas/src/regions/assistant.ts` | Transient reviewed proposals over the active canvas owner; no second persistence/history authority. |
 | `apps/canvas/tools/manifold.mjs` | File-based agent CLI over the headless owner; explicit computation and no-clobber candidate publication. |
 | `apps/canvas/tools`, `scripts` | Other diagnostics, check orchestration and repository policy. |

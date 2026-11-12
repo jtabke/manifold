@@ -2549,6 +2549,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   });
   const agentCanvas: import("../assistantCanvas").AssistantCanvasPort = {
     inspect: () => ({
+      selection: [
+        ...new Set(
+          (canvasSelection.length
+            ? canvasSelection
+            : [areaSelection || selected || selectedId]
+          ).filter((id): id is string => !!id),
+        ),
+      ],
       point: assistantPoint,
       scope: hierarchy.scope,
       viewport: {

@@ -90,7 +90,8 @@ The reusable, UI-independent foundation and its examples live in
 For browser-free document inspection, editing and explicit computation, see the
 [headless TypeScript API](docs/reference/headless-api.md).
 For external-agent control of an open canvas, see the [local MCP server](docs/reference/mcp.md)
-with explicit full-control opt-in for live editing and computation.
+with human-selected permissions, focused inspection, replay-safe live editing, asynchronous
+computation and portable native snapshots.
 For agent workflows with JSON discovery, atomic edits, validation, comparison and explicit
 computation, see the [agent guide](docs/guides/agents.md) and [CLI reference](docs/reference/cli.md).
 A [bundled Manifold skill](.agents/skills/manifold/SKILL.md) teaches agents that workflow;

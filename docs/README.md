@@ -6,7 +6,7 @@
 | --- | --- |
 | Use the engineering canvas | [Canvas guide](guides/canvas.md): authoring, drawing, models, saved work and sharing. |
 | Automate work with an agent | [Agent guide](guides/agents.md) and [bundled skill](../.agents/skills/manifold/SKILL.md): discover, inspect, edit, check, compute and hand back a candidate. |
-| Connect an external agent to a live canvas | [MCP reference](reference/mcp.md): local stdio setup, explicit full-control grant, editing and computation. |
+| Connect an external agent to a live canvas | [MCP reference](reference/mcp.md): scoped access, focused reads, replay-safe editing, asynchronous jobs and portable native export. |
 | Understand portable `.manifold` files | [File format reference](reference/manifold-format.md): envelopes, compatibility, assets, limits and trust boundaries. |
 | Look up a CLI command | [CLI reference](reference/cli.md): flags, JSON contracts, statuses, exit codes and file safety. |
 | Integrate the TypeScript API | [Headless and agent API reference](reference/headless-api.md): owners, transactions, execution and JSON helpers. |

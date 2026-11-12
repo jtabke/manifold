@@ -12,6 +12,25 @@
   color: #713f12;
   box-shadow: 0 3px 16px #0002;
   font-size: 0.85rem;
+  max-height: min(70vh, 38rem);
+  overflow: auto;
+}
+
+.er-mcp-control p {
+  margin: 0.4rem 0;
+}
+
+.er-mcp-control pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 16rem;
+  overflow: auto;
+}
+
+.er-mcp-control article {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid currentColor;
 }
 
 .er-mcp-control button {

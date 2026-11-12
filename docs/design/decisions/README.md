@@ -94,6 +94,8 @@ contexts require retained identity, and a reliable Keep/Undo requires one owner.
 
 | [0040: Full-control canvas MCP](0040-full-control-canvas-mcp.md) | Local stdio MCP, explicit browser grant, direct atomic edits and registered computation through the live owner. | Accepted for the experimental local external-agent slice. |
 
+| [0041: Scoped agent recovery and jobs](0041-scoped-agent-recovery-and-jobs.md) | Focused MCP reads, typed errors, tab-session guarded mutation recovery, nonblocking jobs, human-selected scopes/activity and chunked native snapshots. | Accepted for the experimental local MCP adapter. |
+
 ## Record lifecycle and template
 
 Create `NNNN-short-title.md` using the structure below. Begin as proposed. Record

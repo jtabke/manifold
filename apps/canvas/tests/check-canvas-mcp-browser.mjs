@@ -3,6 +3,8 @@ import { chromium, expect } from "@playwright/test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { browserOptions } from "../../../scripts/browser.mjs";
+import { MCP_MUTATIONS } from "../src/regions/mcpProtocol.ts";
+import { openHeadlessWorkspace } from "../src/headless.ts";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const transport = new StdioClientTransport({
@@ -15,49 +17,151 @@ const client = new Client({ name: "canvas-browser-test", version: "1" });
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 const errors = [];
+let sessionId;
+let replacementClient, replacementTransport;
 page.on("pageerror", (error) => errors.push(error.message));
-const raw = (name, args = {}) => client.callTool({ name, arguments: args });
+const raw = (name, args = {}) =>
+  client.callTool({
+    name,
+    arguments: {
+      ...(MCP_MUTATIONS.includes(name)
+        ? { operationId: crypto.randomUUID(), expectedSessionId: sessionId }
+        : {}),
+      ...args,
+    },
+  });
 const call = async (name, args = {}) => {
   const result = await raw(name, args);
   assert(!result.isError, result.content[0]?.text);
   return JSON.parse(result.content[0].text);
 };
+const errorCode = (result) => {
+  assert(result.isError);
+  const { error } = JSON.parse(result.content[0].text);
+  assert(error.recovery);
+  return error.code;
+};
+const disconnect = async () => {
+  await page
+    .getByRole("button", { name: "Disconnect agent", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Agent permissions", { exact: true }),
+  ).toBeEnabled();
+};
+const connect = async (scope) => {
+  await page
+    .getByLabel("Agent permissions", { exact: true })
+    .selectOption(scope);
+  const labels = {
+    "read-only": "Enable read-only access",
+    "proposal-only": "Enable proposals only",
+    edit: "Enable edit without compute",
+    "full-control": "Enable full control",
+  };
+  await page.getByRole("button", { name: labels[scope], exact: true }).click();
+  await expect(
+    page.getByText("External agent: connected", { exact: true }),
+  ).toBeVisible();
+  const connection = await call("connect_canvas");
+  sessionId = connection.sessionId;
+  assert.equal(connection.scope, scope);
+  await expect(
+    page.getByText(/Client-reported name:.*canvas-browser-test/),
+  ).toBeVisible();
+};
 try {
   await client.connect(transport);
   const { url } = await call("connect_canvas");
   await page.goto(url);
-  const enable = page.getByRole("button", {
-    name: "Enable full control",
-    exact: true,
-  });
-  await expect(enable).toBeVisible();
-  assert(
-    !page.url().includes("token"),
-    "private fragment is removed from browser address/history",
-  );
-  assert(
-    (await raw("inspect_workspace")).isError,
-    "opening the URL grants no authority",
-  );
-  await enable.click();
   await expect(
-    page.getByText("External agent: connected", { exact: true }),
+    page.getByRole("button", { name: "Enable read-only access", exact: true }),
   ).toBeVisible();
+  assert(!page.url().includes("token"));
+  assert.equal(
+    errorCode(await raw("inspect_workspace")),
+    "NO_CANVAS_CONNECTED",
+  );
+  await connect("read-only");
   const initial = await call("inspect_workspace");
-  await call("edit_canvas", {
+  assert.equal(
+    errorCode(await raw("edit_canvas", { batch: {} })),
+    "PERMISSION_DENIED",
+  );
+  assert.equal(
+    errorCode(
+      await raw("prepare_edit", {
+        explanation: "Not allowed",
+        batch: {
+          expectedDocumentId: initial.documentId,
+          edits: [{ operation: "createNote", text: "no" }],
+        },
+      }),
+    ),
+    "PERMISSION_DENIED",
+  );
+  await disconnect();
+  await connect("proposal-only");
+  const proposed = await call("prepare_edit", {
+    explanation: "A note for human review",
     batch: {
       expectedDocumentId: initial.documentId,
+      edits: [{ operation: "createNote", text: "Human-approved assumption" }],
+    },
+  });
+  assert.equal(
+    errorCode(
+      await raw("apply_proposal", {
+        id: proposed.id,
+        expectedDocumentId: initial.documentId,
+      }),
+    ),
+    "PERMISSION_DENIED",
+  );
+  assert.equal(
+    (await call("inspect_workspace")).documentId,
+    initial.documentId,
+  );
+  const review = page.getByRole("article", {
+    name: "External agent proposal",
+    exact: true,
+  });
+  await expect(review).toContainText("A note for human review");
+  await review
+    .getByText("Review changes and diagnostics", { exact: true })
+    .click();
+  await expect(review.locator("pre")).toContainText(
+    "Human-approved assumption",
+  );
+  await review
+    .getByRole("button", { name: "Apply agent proposal", exact: true })
+    .click();
+  assert.equal(
+    (await call("proposal_status", { id: proposed.id })).status,
+    "applied",
+  );
+  await disconnect();
+  await connect("edit");
+  const baseline = await call("inspect_workspace");
+  const args = {
+    operationId: crypto.randomUUID(),
+    expectedSessionId: sessionId,
+    batch: {
+      expectedDocumentId: baseline.documentId,
       edits: [
         {
           operation: "createEquation",
           text: "x := 2 mm",
+          as: "input",
           at: { x: 400, y: 150 },
         },
         {
-          operation: "createModel",
-          family: "spring",
-          as: "spring",
+          operation: "createEquation",
+          text: "F = (10 N/mm)*x",
+          as: "force",
+          at: { x: 400, y: 220 },
         },
+        { operation: "createModel", family: "spring", as: "spring" },
         {
           operation: "setModelInput",
           model: "$spring",
@@ -66,16 +170,71 @@ try {
         },
       ],
     },
-  });
+  };
+  const accepted = await call("edit_canvas", args);
   await expect(page.getByLabel("Spring model", { exact: true })).toBeVisible();
-  const state = await call("inspect_workspace");
-  assert.equal(state.models.length, 1);
-  const completion = await call("compute", {
-    expectedDocumentId: state.documentId,
-    target: state.models[0].requests[0].reference,
+  const model = (
+    await call("inspect_model", { id: accepted.result.aliases.spring })
+  ).model;
+  assert.equal(
+    errorCode(
+      await raw("start_compute", {
+        expectedDocumentId: accepted.documentId,
+        target: model.requests[0].reference,
+      }),
+    ),
+    "PERMISSION_DENIED",
+  );
+  assert(
+    (
+      await call("inspect_dependencies", { id: accepted.result.aliases.force })
+    ).nodes.some((node) => node.id === accepted.result.aliases.input),
+  );
+  assert.equal(
+    (await call("inspect_selection", { ids: [accepted.result.aliases.input] }))
+      .objects[0].region.text,
+    "x := 2 mm",
+  );
+  assert.equal(
+    errorCode(await raw("inspect_equation", { id: "missing" })),
+    "ITEM_NOT_FOUND",
+  );
+  await disconnect();
+  await connect("full-control");
+  assert.equal(sessionId, args.expectedSessionId);
+  assert.deepEqual(
+    await call("edit_canvas", args),
+    accepted,
+    "reconnection does not duplicate accepted work",
+  );
+  assert.equal(
+    (await call("operation_status", { operationId: args.operationId })).status,
+    "accepted",
+  );
+  assert.equal(
+    (await call("inspect_workspace", { compact: true })).models.length,
+    1,
+  );
+  assert.equal(
+    errorCode(
+      await raw("edit_canvas", { ...args, expectedSessionId: "another-tab" }),
+    ),
+    "RECOVERY_SESSION_CHANGED",
+  );
+  const started = await call("start_compute", {
+    expectedDocumentId: accepted.documentId,
+    target: model.requests[0].reference,
   });
+  await call("inspect_equation", { id: accepted.result.aliases.input });
+  await expect
+    .poll(
+      async () => (await call("job_status", { jobId: started.jobId })).state,
+    )
+    .toBe("completed");
+  const completion = await call("job_result", { jobId: started.jobId });
   assert.equal(completion.completion.status, "retained");
   assert.equal(completion.completion.receipt.outcome.status, "success");
+  await call("cancel_compute", { jobId: started.jobId }); // Already completed is a safe no-op.
   assert((await call("inspect_canvas")).attention.viewport.width > 0);
   const image = await raw("look_at_canvas");
   assert(!image.isError, image.content[0]?.text);
@@ -83,35 +242,145 @@ try {
   const latest = await call("inspect_workspace");
   await call("undo", { expectedDocumentId: latest.documentId });
   await expect(page.getByLabel("Spring model", { exact: true })).toHaveCount(0);
-  const undone = await call("inspect_workspace");
-  await call("redo", { expectedDocumentId: undone.documentId });
+  await call("redo", {
+    expectedDocumentId: (await call("inspect_workspace")).documentId,
+  });
   await expect(page.getByLabel("Spring model", { exact: true })).toBeVisible();
-  // Human drafts must not be overwritten by external control.
   await page.getByLabel("Write equation or note", { exact: true }).click();
   await page
     .getByLabel("Write an engineering region", { exact: true })
     .fill("unaccepted draft");
-  const blocked = await raw("edit_canvas", {
-    batch: {
-      expectedDocumentId: state.documentId,
-      edits: [{ operation: "createNote", text: "must be rejected" }],
-    },
-  });
-  assert(blocked.isError);
-  assert.match(blocked.content[0].text, /Finish or cancel/);
+  assert.equal(
+    errorCode(
+      await raw("edit_canvas", {
+        batch: {
+          expectedDocumentId: latest.documentId,
+          edits: [{ operation: "createNote", text: "must be rejected" }],
+        },
+      }),
+    ),
+    "HUMAN_DRAFT_ACTIVE",
+  );
+  assert.equal(
+    (await call("operation_status", { operationId: args.operationId })).status,
+    "accepted",
+  );
   await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Disconnect agent", exact: true })
-    .click();
-  await expect(enable).toBeVisible();
-  assert((await raw("inspect_workspace")).isError);
+  const snapshot = await call("export_workspace", {
+    expectedDocumentId: (await call("inspect_workspace")).documentId,
+  });
+  const chunks = [];
+  for (let index = 0; index < snapshot.chunkCount; index++)
+    chunks.push(
+      (await call("read_export", { snapshotId: snapshot.snapshotId, index }))
+        .text,
+    );
+  const native = chunks.join("");
+  assert.equal(new Blob([native]).size, snapshot.byteLength);
+  const restored = await openHeadlessWorkspace(native);
+  try {
+    assert.equal(restored.models().length, 1);
+    assert(
+      restored
+        .worksheet()
+        .regions.some((region) => region.text === "Human-approved assumption"),
+    );
+  } finally {
+    restored.dispose();
+  }
+  await page.getByText(/^Agent activity \(/).click();
+  await expect(
+    page.getByRole("region", { name: "External agent control", exact: true }),
+  ).toContainText("canvas-browser-test · edit_canvas · accepted");
+  assert(
+    (await call("agent_activity")).activity.some(
+      (entry) => entry.agent === "canvas-browser-test",
+    ),
+  );
+  await disconnect();
+  assert.equal(
+    errorCode(await raw("inspect_workspace")),
+    "NO_CANVAS_CONNECTED",
+  );
   await expect(page.getByLabel("Spring model", { exact: true })).toBeVisible();
+  // A replacement MCP process can attach to the same still-open tab without losing recovery.
+  replacementTransport = new StdioClientTransport({
+    command: process.execPath,
+    args: [
+      new URL("../../assistant/src/mcp-main.mjs", import.meta.url).pathname,
+    ],
+    env: { ...process.env, MANIFOLD_CANVAS_URL: base },
+    stderr: "pipe",
+  });
+  replacementClient = new Client({ name: "replacement-agent", version: "1" });
+  await replacementClient.connect(replacementTransport);
+  const replacementCall = async (name, args = {}) => {
+    const result = await replacementClient.callTool({ name, arguments: args });
+    assert(!result.isError, result.content[0]?.text);
+    return JSON.parse(result.content[0].text);
+  };
+  const replacementUrl = (await replacementCall("connect_canvas")).url;
+  await page.goto(replacementUrl);
+  await expect(
+    page.getByRole("button", { name: "Enable read-only access", exact: true }),
+  ).toBeVisible();
+  assert(!page.url().includes("token"));
+  await page
+    .getByRole("button", { name: "Enable read-only access", exact: true })
+    .click();
+  await expect(
+    page.getByText("External agent: connected", { exact: true }),
+  ).toBeVisible();
+  assert.equal((await replacementCall("connect_canvas")).sessionId, sessionId);
+  assert.equal(
+    (
+      await replacementCall("operation_status", {
+        operationId: args.operationId,
+      })
+    ).status,
+    "accepted",
+  );
+  // Reload starts a new recovery lifetime; old mutation guards must mechanically reject replay.
+  await page.reload();
+  await page.goto(replacementUrl);
+  await page
+    .getByLabel("Agent permissions", { exact: true })
+    .selectOption("full-control");
+  await page
+    .getByRole("button", { name: "Enable full control", exact: true })
+    .click();
+  await expect(
+    page.getByText("External agent: connected", { exact: true }),
+  ).toBeVisible();
+  assert.notEqual(
+    (await replacementCall("connect_canvas")).sessionId,
+    sessionId,
+  );
+  assert.equal(
+    (
+      await replacementCall("operation_status", {
+        operationId: args.operationId,
+      })
+    ).status,
+    "unknown",
+  );
+  assert.equal(
+    errorCode(
+      await replacementClient.callTool({
+        name: "edit_canvas",
+        arguments: args,
+      }),
+    ),
+    "RECOVERY_SESSION_CHANGED",
+  );
   assert.deepEqual(errors, []);
   console.log(
-    "canvas MCP browser: real stdio discovery, explicit opt-in, direct edit, computation, image, shared Undo/Redo, draft guards and revocation passed",
+    "canvas MCP browser: four scopes, human approval, focused reads, stable recovery across reconnect, async jobs, activity, native export, shared history and draft/revocation guards passed",
   );
 } finally {
   await browser.close();
   await client.close();
   await transport.close();
+  await replacementClient?.close();
+  await replacementTransport?.close();
 }
