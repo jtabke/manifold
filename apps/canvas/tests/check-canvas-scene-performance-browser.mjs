@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 /** Input/render/retention observations of the shipped application, with isolated browser processes. */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -30,7 +31,10 @@ for (const count of [1, 8, 24]) {
   const { session } = await sceneFixture(count, true);
   const source = archive(session.native());
   session.dispose();
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await chromium.launch({
+    ...browserOptions(),
+    headless: true,
+  });
   version = browser.version();
   try {
     const context = await browser.newContext({

@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 /** Correctness-only dense drawing workflow; timing/heap matrices are opt-in diagnostics. */
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
@@ -15,7 +16,7 @@ try {
 } finally {
   session.dispose();
 }
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const errors = [],
   requests = [];
 try {

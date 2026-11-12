@@ -9,6 +9,7 @@ import {
   type Statement,
   type Solved,
   type Quantity,
+  type MathVersion,
 } from "../notebook/math.ts";
 import { immutable, readMap } from "../notebook/immutable.ts";
 import { deeplyFrozen } from "./immutableJson.ts";
@@ -24,9 +25,9 @@ export type Projection = Readonly<{
   sources: Readonly<Record<string, readonly string[]>>;
   texts: Readonly<Record<string, string>>;
 }>;
-export const mathematical = (text: string) =>
+export const mathematical = (text: string, mathVersion: MathVersion = 2) =>
   /^\s*[A-Za-z_][A-Za-z_0-9]*\s*(?::=|<=|>=|<|>|=|≤|≥)/.test(text) ||
-  expressionBody(text) !== undefined;
+  expressionBody(text, mathVersion) !== undefined;
 const incompleteNumber = (text: string) =>
   /(?:^|[^A-Za-z_0-9.])(?:\d+\.(?!\d)|\d+(?:\.\d+)?[eE][+-]?(?![\dA-Za-z_]))(?=\s*(?:$|[)*/+^\-]|[A-Za-z]))/.test(
     text,
@@ -49,6 +50,7 @@ type Row = Readonly<{
   id: string;
   text: string;
   excluded: boolean;
+  mathVersion: MathVersion;
   kind: Projection["kinds"][string];
   semantic?: PreparedCalculation;
   calculation?: PreparedCalculation;
@@ -141,9 +143,15 @@ export function createWorksheetProjection() {
     text: string,
     excluded: boolean,
     prior?: Row,
+    mathVersion: MathVersion = 1,
   ): Row => {
-    if (prior?.text === text && prior.excluded === excluded) return prior;
-    const key = JSON.stringify([id, text, excluded]),
+    if (
+      prior?.text === text &&
+      prior.excluded === excluded &&
+      prior.mathVersion === mathVersion
+    )
+      return prior;
+    const key = JSON.stringify([id, text, excluded, mathVersion]),
       old = prepared.get(key);
     if (old) {
       prepared.delete(key);
@@ -154,6 +162,7 @@ export function createWorksheetProjection() {
       id: string;
       text: string;
       excluded: boolean;
+      mathVersion: MathVersion;
       kind: Row["kind"];
       semantic?: PreparedCalculation;
       calculation?: PreparedCalculation;
@@ -161,9 +170,9 @@ export function createWorksheetProjection() {
       error?: string;
       source?: string;
       incomplete: boolean;
-    } = { id, text, excluded, kind: "note", incomplete: false };
-    if (!excluded && mathematical(text)) {
-      row.semantic = prepareCalculation(id, text.trim());
+    } = { id, text, excluded, mathVersion, kind: "note", incomplete: false };
+    if (!excluded && mathematical(text, mathVersion)) {
+      row.semantic = prepareCalculation(id, text.trim(), mathVersion);
       row.incomplete = incompleteNumber(text);
       const s = row.semantic.statement;
       if (row.incomplete || !s) {
@@ -178,6 +187,7 @@ export function createWorksheetProjection() {
           row.calculation = prepareCalculation(
             id,
             text.replace(/(?::=|<=|>=|<|>|=|≤|≥).*/, "= __unfinished_value"),
+            mathVersion,
           );
       } else {
         row.statement = s;
@@ -245,6 +255,7 @@ export function createWorksheetProjection() {
       id: r.id,
       text: c.overrides[r.id] ?? c.base[r.id] ?? r.text,
       excluded: !!(r.data || r.external),
+      mathVersion: (r.mathVersion ?? 1) as MathVersion,
     }));
     scannedRows += selected.length;
     const key = JSON.stringify([selected, page.links || {}]),
@@ -263,7 +274,7 @@ export function createWorksheetProjection() {
     const before = [...snapshots.values()].at(-1),
       byId = new Map(before?.rows.map((r) => [r.id, r]));
     const rows = selected.map((r) =>
-        classify(r.id, r.text, r.excluded, byId.get(r.id)),
+        classify(r.id, r.text, r.excluded, byId.get(r.id), r.mathVersion),
       ),
       sources: Record<string, string[]> = Object.create(null),
       kinds: Record<string, Row["kind"]> = Object.create(null),
@@ -316,6 +327,8 @@ export function createWorksheetProjection() {
               `${s!.relation} (1/0)`,
             ),
             false,
+            undefined,
+            row.mathVersion,
           ).calculation!,
         );
       else if (row.calculation) calculations.push(row.calculation);
@@ -367,7 +380,7 @@ export function createWorksheetProjection() {
           .filter((r) => r.kind !== "note")
           .map((r) => {
             const s = r.semantic?.statement;
-            if (!s) return [r.id, r.text];
+            if (!s) return [r.id, r.text, ...(r.mathVersion === 2 ? [2] : [])];
             return [
               r.id,
               s.name,
@@ -382,6 +395,7 @@ export function createWorksheetProjection() {
                   ].includes(name),
                 )
                 .sort(([a], [b]) => a.localeCompare(b)),
+              ...(s.mathVersion === 2 ? [2] : []),
             ];
           })
           .sort(([a], [b]) => String(a).localeCompare(String(b))),

@@ -46,7 +46,12 @@ function result(session, time = new Date().toISOString()) {
       [a.high, a.high * 10000],
     ],
     code_sha256: createHash("sha256").update(job.code).digest("hex"),
-    runtime: { adapter: "bounded-python-sampler/1", python: "test" },
+    runtime: {
+      adapter: job.definitions.some((r) => r.mathVersion === 2)
+        ? "bounded-python-sampler/2"
+        : "bounded-python-sampler/1",
+      python: "test",
+    },
   };
   return { ...acceptData(session.state, a, job, data).receipt, time };
 }
@@ -139,7 +144,7 @@ for (const text of [
     native = archive(staged.native()),
     wire = JSON.parse(native),
     decoded = await decodeWorkspace(native);
-  assert.equal(wire.version, 7);
+  assert.equal(wire.version, 8);
   assert.equal(wire.artifacts, undefined);
   assert.equal(wire.page, undefined);
   assert.deepEqual(decoded.page, initial.page);

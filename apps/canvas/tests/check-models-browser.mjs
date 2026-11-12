@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
 import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import { readWorkspace } from "./browser-workspace.mjs";
@@ -32,7 +33,7 @@ const artifact = makeArtifact(
   "Plot temperature versus area from 0.05 to 0.5 m^2",
 );
 artifact.at = { x: 1210, y: 650 };
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const page = await browser.newPage({ viewport: { width: 1800, height: 1100 } }),
   errors = [];
 page.on("pageerror", (e) => errors.push(e.message));

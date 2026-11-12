@@ -1,4 +1,23 @@
 import { immutable, readMap } from "./immutable.ts";
+import {
+  scientificBinary,
+  scientificCall,
+  scientificUnit,
+  scientificFunctions,
+  scientificConstants,
+} from "./scientific.ts";
+import { parseScientific } from "./scientificParser.ts";
+export type MathVersion = 1 | 2;
+export type MathSource = { id: string; text: string; mathVersion?: 2 };
+export const mathSource = ({
+  id,
+  text,
+  mathVersion,
+}: MathSource): MathSource => ({
+  id,
+  text,
+  ...(mathVersion === 2 ? { mathVersion } : {}),
+});
 const work = { parses: 0, expressions: 0, assignments: 0, constraints: 0 };
 export function evaluationWork() {
   return { ...work };
@@ -7,7 +26,7 @@ export function resetEvaluationWork() {
   for (const key of Object.keys(work) as (keyof typeof work)[]) work[key] = 0;
 }
 /** Bounded arithmetic worksheet, not a symbolic algebra engine. No dynamic code execution. */
-export type Dimension = readonly [number, number, number, number]; // kg, m, s, K
+export type Dimension = readonly [number, number, number, number, ...number[]]; // kg, m, s, K, A, mol, cd, rad
 export type Quantity = Readonly<{
   value: number;
   dimension: Dimension;
@@ -16,6 +35,9 @@ export type Quantity = Readonly<{
 export type Expression = Readonly<
   | { kind: "number"; value: number }
   | { kind: "name"; name: string }
+  | { kind: "unit"; name: string }
+  | { kind: "constant"; name: string }
+  | { kind: "call"; name: string; args: readonly Expression[] }
   | { kind: "unary"; expression: Expression }
   | { kind: "binary"; op: string; left: Expression; right: Expression }
 >;
@@ -25,6 +47,7 @@ export type Statement = Readonly<{
   raw: string;
   relation: "=" | "<=" | ">=" | "<" | ">";
   anonymous?: boolean;
+  mathVersion?: 2;
 }>;
 const scalar: Dimension = [0, 0, 0, 0];
 const temperature: Dimension = [0, 0, 0, 1];
@@ -51,16 +74,28 @@ const mapDimension = (
   map: (value: number, index: number) => number,
 ): Dimension => [map(d[0], 0), map(d[1], 1), map(d[2], 2), map(d[3], 3)];
 export const same = (a: Dimension, b: Dimension) =>
-  a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
+  Array.from({ length: Math.max(a.length, b.length) }, (_, i) => i).every(
+    (i) => Math.abs((a[i] ?? 0) - (b[i] ?? 0)) < 1e-12,
+  );
 /** Recognize worksheet expressions without interpreting ordinary prose as math.
  * A trailing equals sign requests evaluation; a named, unfinished x = stays a draft. */
-export function expressionBody(text: string): string | undefined {
+export function expressionBody(
+  text: string,
+  mathVersion: MathVersion = 2,
+): string | undefined {
   const value = text.trim();
   if (/^[A-Za-z_][A-Za-z_0-9]*\s*(?::=|<=|>=|<|>|=|≤|≥)/.test(value)) return;
   const explicit = value.endsWith("="),
     body = (explicit ? value.slice(0, -1) : value).trim();
   if (!body || /[=:<>≤≥]/.test(body)) return;
   if (explicit) return body;
+  if (
+    mathVersion === 2 &&
+    new RegExp(
+      `^(?:${Object.keys(scientificFunctions).join("|")})\\s*\\(`,
+    ).test(body)
+  )
+    return body;
   if (!/^[\d.(+\-−]/.test(body)) return;
   if (!/^[A-Za-z_0-9\s.+*/^×·()−-]+$/.test(body)) return;
   // Adjacent prose words are not an implicit product. A trailing '=' can still
@@ -71,22 +106,33 @@ export function expressionBody(text: string): string | undefined {
     if (![pair[1], pair[2]].every((name) => Object.hasOwn(units, name))) return;
   if (/[+*/^×·()−-]/.test(body)) return body;
   try {
-    if (quantityLiteral(parseNamed(`value = ${body}`).expression)) return body;
+    if (
+      quantityLiteral(
+        (mathVersion === 2 ? parseScientific : parseNamed)(`value = ${body}`)
+          .expression,
+      )
+    )
+      return body;
   } catch {
     /* Unmarked prose remains a thought. */
   }
 }
-export function parse(text: string, expressionId?: string): Statement {
+export function parse(
+  text: string,
+  expressionId?: string,
+  mathVersion: MathVersion = 1,
+): Statement {
   work.parses++;
-  const body = expressionBody(text);
+  const named = mathVersion === 2 ? parseScientific : parseNamed;
+  const body = expressionBody(text, mathVersion);
   if (body !== undefined && expressionId !== undefined) {
     // Stable private identities allow several anonymous results to coexist.
     const name = `__expr_${Array.from(expressionId)
       .map((c) => c.codePointAt(0)!.toString(16))
       .join("_")}`;
-    return { ...parseNamed(`${name} = ${body}`), raw: text, anonymous: true };
+    return { ...named(`${name} = ${body}`), raw: text, anonymous: true };
   }
-  const statement = parseNamed(text);
+  const statement = named(text);
   if (statement.name.startsWith("__expr_"))
     throw Error("That name is reserved for an unnamed expression.");
   return statement;
@@ -186,8 +232,28 @@ function parseNamed(text: string): Statement {
 export function evaluate(
   expression: Expression,
   resolve: (name: string) => Quantity,
+  mathVersion: MathVersion = 1,
 ): Quantity {
   work.expressions++;
+  const child = (e: Expression) => evaluate(e, resolve, mathVersion);
+  if (expression.kind === "unit") {
+    if (mathVersion !== 2 || expression.name === "degC")
+      throw Error("Write an absolute temperature as a number followed by °C.");
+    return scientificUnit(expression.name);
+  }
+  if (expression.kind === "constant") {
+    if (
+      mathVersion !== 2 ||
+      !Object.hasOwn(scientificConstants, expression.name)
+    )
+      throw Error("Unsupported scientific constant.");
+    return { value: scientificConstants[expression.name], dimension: scalar };
+  }
+  if (expression.kind === "call") {
+    if (mathVersion !== 2)
+      throw Error("Scientific functions require mathematics version 2.");
+    return scientificCall(expression.name, expression.args.map(child));
+  }
   if (expression.kind === "number") {
     if (!Number.isFinite(expression.value))
       throw Error("The number is not finite.");
@@ -196,24 +262,35 @@ export function evaluate(
   if (expression.kind === "name") {
     if (expression.name === "degC")
       throw Error("Write an absolute temperature as a number followed by °C.");
-    return Object.hasOwn(units, expression.name)
-      ? units[expression.name]
+    const quantity = Object.hasOwn(units, expression.name)
+      ? mathVersion === 2
+        ? scientificUnit(expression.name)
+        : units[expression.name]
       : resolve(expression.name);
+    if (mathVersion === 1 && quantity.dimension.slice(4).some((n) => n !== 0))
+      throw Error(
+        "Enable scientific math for this equation to use angles or additional SI dimensions.",
+      );
+    return quantity;
   }
   if (expression.kind === "unary") {
-    const q = evaluate(expression.expression, resolve);
+    const q = child(expression.expression);
     if (q.absolute) throw Error("Negate the Celsius number before its unit.");
     return { ...q, value: -q.value };
   }
   const { left, right, op } = expression;
-  if (op === "*" && right.kind === "name" && right.name === "degC") {
-    const n = evaluate(left, resolve);
+  if (
+    op === "*" &&
+    (right.kind === "name" || right.kind === "unit") &&
+    right.name === "degC"
+  ) {
+    const n = child(left);
     if (!same(n.dimension, scalar) || n.absolute)
       throw Error("°C needs a plain numeric value.");
     return { value: n.value + 273.15, dimension: temperature, absolute: true };
   }
-  const a = evaluate(left, resolve),
-    b = evaluate(right, resolve);
+  const a = child(left),
+    b = child(right);
   let result: Quantity;
   if (op === "+" || op === "-") {
     if (!same(a.dimension, b.dimension))
@@ -227,7 +304,12 @@ export function evaluate(
         "Subtract an absolute temperature from another absolute temperature.",
       );
     result = {
-      value: op === "+" ? a.value + b.value : a.value - b.value,
+      value:
+        mathVersion === 2
+          ? scientificBinary(op, a, b).value
+          : op === "+"
+            ? a.value + b.value
+            : a.value - b.value,
       dimension: a.dimension,
       absolute:
         op === "+" ? a.absolute || b.absolute : a.absolute && !b.absolute,
@@ -237,6 +319,7 @@ export function evaluate(
       throw Error(
         "Use temperature differences in K in products and quotients.",
       );
+    if (mathVersion === 2) return scientificBinary(op, a, b);
     if (op === "^") {
       if (
         !same(b.dimension, scalar) ||
@@ -265,13 +348,20 @@ export function evaluate(
   if (!Number.isFinite(result.value)) throw Error("The result is not finite.");
   return result;
 }
-export type Calculation = { id: string; text: string; x: number; y: number };
+export type Calculation = {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  mathVersion?: 2;
+};
 /** Display assignments quietly; show the result of actual arithmetic, even
  * when it has no variable references (e.g. answer = 2 + 3). */
 export function quantityLiteral(expression: Expression): boolean {
   const number = (e: Expression): boolean =>
     e.kind === "number" || (e.kind === "unary" && number(e.expression));
   const unit = (e: Expression): boolean =>
+    e.kind === "unit" ||
     (e.kind === "name" &&
       (Object.hasOwn(units, e.name) || e.name === "degC")) ||
     (e.kind === "binary" &&
@@ -307,9 +397,10 @@ export type PreparedCalculation = Readonly<{
 export function prepareCalculation(
   id: string,
   text: string,
+  mathVersion: MathVersion = 1,
 ): PreparedCalculation {
   try {
-    const statement = parse(text, id);
+    const statement = parse(text, id, mathVersion);
     return immutable({
       id,
       text,
@@ -342,7 +433,7 @@ const equalQuantity = (a?: Quantity, b?: Quantity) =>
     !!b &&
     Object.is(a.value, b.value) &&
     a.absolute === b.absolute &&
-    a.dimension.every((v, i) => Object.is(v, b.dimension[i])));
+    same(a.dimension, b.dimension));
 /** One evaluator for cold calculations, incremental projections and sampled overrides. */
 export function solvePrepared(
   rows: readonly PreparedCalculation[],
@@ -436,7 +527,11 @@ export function solvePrepared(
     try {
       work.assignments++;
       const value = immutable(
-        evaluate(statements.get(id)!.expression, resolve),
+        evaluate(
+          statements.get(id)!.expression,
+          resolve,
+          statements.get(id)!.mathVersion ?? 1,
+        ),
       );
       values.set(name, value);
       return value;
@@ -457,7 +552,9 @@ export function solvePrepared(
         }
         work.constraints++;
         const actual = resolve(s.name),
-          bound = immutable(evaluate(s.expression, resolve));
+          bound = immutable(
+            evaluate(s.expression, resolve, s.mathVersion ?? 1),
+          );
         if (!same(actual.dimension, bound.dimension))
           throw Error(
             `The result ${s.name} has units ${unitLabel(actual) || "1"}, but its limit has units ${unitLabel(bound) || "1"}. Check the units of ${s.name} and its inputs.`,
@@ -505,7 +602,7 @@ export function calculate(
   overrides: Readonly<Record<string, Quantity>> = {},
 ): Solved {
   return solvePrepared(
-    regions.map((r) => prepareCalculation(r.id, r.text)),
+    regions.map((r) => prepareCalculation(r.id, r.text, r.mathVersion ?? 1)),
     overrides,
   ).solved;
 }
@@ -519,7 +616,9 @@ export function unitLabel(q: Quantity): string {
   if (same(q.dimension, [1, 0, -3, -1])) return "W/(m²·K)";
   return q.dimension
     .map((d, i) =>
-      d ? `${["kg", "m", "s", "K"][i]}${d !== 1 ? `^${d}` : ""}` : "",
+      d
+        ? `${["kg", "m", "s", "K", "A", "mol", "cd", "rad"][i]}${d !== 1 ? `^${d}` : ""}`
+        : "",
     )
     .filter(Boolean)
     .join("·");
@@ -534,6 +633,7 @@ export function display(q?: Quantity): string {
 export function references(e: Expression): string[] {
   if (e.kind === "name")
     return e.name in units || e.name === "degC" ? [] : [e.name];
+  if (e.kind === "call") return [...new Set(e.args.flatMap(references))];
   if (e.kind === "unary") return references(e.expression);
   if (e.kind === "binary")
     return [...new Set([...references(e.left), ...references(e.right)])];

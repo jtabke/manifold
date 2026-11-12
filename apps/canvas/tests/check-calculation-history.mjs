@@ -29,7 +29,15 @@ const output = s.create();
 s.write(output, "F := 10 N/mm*x");
 const initial = s.receipts.at(-1),
   before = s.document;
-assert.ok(initial.definitions.every((r) => Object.keys(r).length === 2));
+assert.equal(initial.version, 2);
+assert.equal(initial.method, "manifold-worksheet/2");
+assert.ok(
+  initial.definitions.every(
+    (r) =>
+      Object.keys(r).sort().join() === "id,mathVersion,text" &&
+      r.mathVersion === 2,
+  ),
+);
 assert.equal(initial.values.F.value, 10);
 validateWorksheetReceipt(initial);
 s.evaluate();
@@ -78,7 +86,7 @@ s.clearRecentCalculations();
 assert.equal(s.receipts.length, 0);
 assert.equal(s.isSaved, true);
 const round = await decodeWorkspace(archive(s.native()));
-assert.equal(JSON.parse(archive(s.native())).version, 7);
+assert.equal(JSON.parse(archive(s.native())).version, 8);
 const reopened = new RegionSession(
   round.page,
   () => [],

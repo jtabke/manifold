@@ -112,7 +112,7 @@ export function ModelDefinitionEditor({
         let name = `Equation ${index + 1}`,
           literal = false;
         try {
-          const s = parse(row.text);
+          const s = parse(row.text, undefined, row.mathVersion ?? 1);
           name = s.name;
           literal = quantityLiteral(s.expression);
         } catch {
@@ -121,6 +121,24 @@ export function ModelDefinitionEditor({
         return (
           <fieldset key={row.id}>
             <legend>{name}</legend>
+            {row.mathVersion !== 2 && (
+              <label>
+                <input
+                  type="checkbox"
+                  aria-label={`Use scientific math for equation ${index + 1}`}
+                  checked={false}
+                  onChange={() =>
+                    setSource((s) => ({
+                      ...s,
+                      rows: s.rows.map((r) =>
+                        r.id === row.id ? { ...r, mathVersion: 2 } : r,
+                      ),
+                    }))
+                  }
+                />
+                Use scientific math (changes function and constant name rules)
+              </label>
+            )}
             <label>
               Equation
               <input
@@ -177,7 +195,11 @@ export function ModelDefinitionEditor({
             ...s,
             rows: [
               ...s.rows,
-              { id: "equation-" + crypto.randomUUID(), text: "" },
+              {
+                id: "equation-" + crypto.randomUUID(),
+                text: "",
+                mathVersion: 2,
+              },
             ],
           }))
         }

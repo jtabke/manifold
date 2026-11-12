@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
 import { chromium, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -16,7 +17,7 @@ s.write(input, "x := 1 mm");
 const output = s.create({ x: 100, y: 370 });
 s.write(output, "F := k*x");
 const file = archive(s.native()),
-  browser = await chromium.launch({ channel: "chrome", headless: true }),
+  browser = await chromium.launch({ ...browserOptions(), headless: true }),
   errors = [];
 const command = async (page, label) => {
   await page
@@ -156,7 +157,7 @@ try {
   const download = await event,
     bytes = await readFile(await download.path(), "utf8"),
     decoded = await decodeWorkspace(bytes);
-  expect(JSON.parse(bytes).version).toBe(7);
+  expect(JSON.parse(bytes).version).toBe(8);
   expect(
     decoded.page.calculations
       .map((c) => c.snapshot.values.F.value)

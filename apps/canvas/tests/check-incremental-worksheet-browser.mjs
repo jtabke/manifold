@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
@@ -6,7 +7,7 @@ import { archive } from "../src/regions/artifacts.ts";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 import { canvasSourceDigest } from "../tools/canvas-source-digest.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const rows = [];
 try {
   for (const count of [64, 256]) {

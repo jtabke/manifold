@@ -2,21 +2,25 @@
 import { deeplyFrozen } from "./immutableJson.ts";
 import * as f from "@manifold/foundation";
 import { project, effective, type Page, type Projection } from "./document.ts";
-import { type Quantity } from "../notebook/math.ts";
+import {
+  mathSource,
+  type MathSource,
+  type Quantity,
+} from "../notebook/math.ts";
 import {
   validateSourceEvidence,
   type SourceEvidence,
 } from "./resultSnapshot.ts";
 export type WorksheetReceipt = Readonly<{
   id: string;
-  version: 1;
-  method: "manifold-worksheet/1";
+  version: 1 | 2;
+  method: "manifold-worksheet/1" | "manifold-worksheet/2";
   validation: "not-assessed";
   origin: { document: string; root: string };
   context: string;
   contextLabel: string;
   key: string;
-  definitions: { id: string; text: string }[];
+  definitions: MathSource[];
   links: Record<string, Record<string, string>>;
   sources: SourceEvidence[];
   unavailableSources: {
@@ -63,10 +67,10 @@ const key = (
     | "links"
     | "sources"
     | "unavailableSources"
-  >,
+  > & { version?: 1 | 2 },
 ) =>
   f.canonical([
-    1,
+    v.version ?? 1,
     v.origin.document,
     v.context,
     v.definitions,
@@ -81,7 +85,7 @@ export function captureWorksheet(
 ): WorksheetReceipt {
   const definitions = effective(page)
       .filter((r) => p.kinds[r.id] !== "note")
-      .map(({ id, text }) => ({ id, text })),
+      .map(mathSource),
     ids = new Set(definitions.map((r) => r.id)),
     links = Object.fromEntries(
       Object.entries(page.links ?? {}).filter(([id]) => ids.has(id)),
@@ -117,7 +121,9 @@ export function captureWorksheet(
     validateSourceEvidence(document, [evidence]);
     sources.push(evidence);
   }
+  const version: 1 | 2 = definitions.some((r) => r.mathVersion === 2) ? 2 : 1;
   const data = {
+    version,
     origin: { document: document.document, root: document.id },
     context: page.active,
     definitions,
@@ -127,8 +133,7 @@ export function captureWorksheet(
   };
   return f.retained({
     id: `calculation-${crypto.randomUUID()}`,
-    version: 1,
-    method: "manifold-worksheet/1",
+    method: version === 2 ? "manifold-worksheet/2" : "manifold-worksheet/1",
     validation: "not-assessed",
     ...data,
     contextLabel: page.contexts.find((c) => c.id === page.active)!.label,
@@ -169,8 +174,8 @@ export function validateWorksheetReceipt(
   f.identity(value.origin.document);
   f.identity(value.origin.root);
   f.assert(
-    value.version === 1 &&
-      value.method === "manifold-worksheet/1" &&
+    ((value.version === 1 && value.method === "manifold-worksheet/1") ||
+      (value.version === 2 && value.method === "manifold-worksheet/2")) &&
       value.validation === "not-assessed" &&
       typeof value.contextLabel === "string" &&
       value.contextLabel.length < 100 &&
@@ -183,9 +188,14 @@ export function validateWorksheetReceipt(
       value.definitions.length <= 256 &&
       value.definitions.every((v) => {
         f.assert(f.object(v), "Invalid calculation definition");
-        f.fields(v, ["id", "text"]);
+        f.fields(v, ["id", "text", "mathVersion"]);
         f.identity(v.id);
-        return typeof v.text === "string" && v.text.length <= 5000;
+        return (
+          typeof v.text === "string" &&
+          v.text.length <= 5000 &&
+          (v.mathVersion === undefined ||
+            (value.version === 2 && v.mathVersion === 2))
+        );
       }),
     "Invalid calculation definitions",
   );

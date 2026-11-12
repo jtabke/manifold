@@ -2736,6 +2736,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     const { target } = command;
     const id = target.id;
     switch (command.operation) {
+      case "mathematics.enable":
+        if (target.id) {
+          session.enableScientificMath(target.id);
+          setMessage(
+            "Scientific math enabled for this equation. Undo restores its earlier rules.",
+          );
+        }
+        break;
       case "definition.edit":
         if (id)
           begin(
@@ -2928,26 +2936,42 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           .flatMap((r) => {
             try {
               const text = project(session.state).texts[r.id] || r.text;
-              const statement = parse(text);
+              const statement = parse(text, undefined, r.mathVersion ?? 1);
               if (
                 statement.relation !== "=" ||
                 (session.state.links?.[r.id] &&
                   Object.keys(session.state.links[r.id]).length)
               )
                 return [];
-              return [{ id: r.id, text }];
+              return [
+                {
+                  id: r.id,
+                  text,
+                  ...(r.mathVersion === 2 ? { mathVersion: 2 as const } : {}),
+                },
+              ];
             } catch {
               return [];
             }
           });
         const inputs = rows
-          .filter((r) => quantityLiteral(parse(r.text).expression))
+          .filter((r) =>
+            quantityLiteral(
+              parse(r.text, undefined, r.mathVersion ?? 1).expression,
+            ),
+          )
           .map((r) => r.id);
         setAuthoringModel({
           source: {
             rows: rows.length
               ? rows
-              : [{ id: "equation-" + crypto.randomUUID(), text: "" }],
+              : [
+                  {
+                    id: "equation-" + crypto.randomUUID(),
+                    text: "",
+                    mathVersion: 2,
+                  },
+                ],
             inputs,
             outputs: rows
               .filter((r) => !inputs.includes(r.id))

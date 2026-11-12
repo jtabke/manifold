@@ -9,6 +9,11 @@ import {
 import type { HeadlessWorkspace } from "./headless.ts";
 import { HeadlessError } from "./headlessErrors.ts";
 import { modelFamilies } from "./regions/foundationModels.ts";
+import {
+  scientificFunctions,
+  scientificConstants,
+  scientificUnits,
+} from "./notebook/scientific.ts";
 
 export const AGENT_PROTOCOL_VERSION = 1;
 const string = { type: "string", minLength: 1 };
@@ -23,6 +28,7 @@ const position = {
 const operations = {
   createEquation: { text, as: alias, at: position },
   updateEquation: { region: string, text },
+  enableScientificMath: { region: string },
   createNote: { text, as: alias, at: position },
   updateNote: { region: string, text },
   createModel: { family: { enum: Object.keys(modelFamilies) }, as: alias },
@@ -35,6 +41,7 @@ const operations = {
 const required = {
   createEquation: ["text"],
   updateEquation: ["region", "text"],
+  enableScientificMath: ["region"],
   createNote: ["text"],
   updateNote: ["region", "text"],
   createModel: ["family"],
@@ -66,6 +73,16 @@ export function agentCapabilities() {
         "Omit --compact for full provenance, selectors and receipt keys; use model --model ID or worksheet --region ID to focus.",
     },
     execution: { explicit: true, sampling: false, arbitraryCode: false },
+    mathematics: {
+      defaultVersion: 2,
+      historicalVersion: 1,
+      functions: Object.keys(scientificFunctions),
+      constants: Object.keys(scientificConstants),
+      units: [...scientificUnits],
+      realScalarsOnly: true,
+      expressionTokens: 256,
+      nesting: 32,
+    },
     modelFamilies: Object.entries(modelFamilies).map(([id, family]) => ({
       id,
       label: family.label,
@@ -211,6 +228,9 @@ export function editWorkspace(workspace: HeadlessWorkspace, payload: unknown) {
             edit.text as string,
           );
           break;
+        case "enableScientificMath":
+          editor.enableScientificMath(target(edit.region as string));
+          break;
         case "updateNote":
           editor.updateNote(target(edit.region as string), edit.text as string);
           break;
@@ -305,6 +325,7 @@ export function summarizeWorksheet(workspace: HeadlessWorkspace) {
     regions: worksheet.regions.map((region) => ({
       id: region.id,
       text: region.text,
+      mathVersion: region.mathVersion,
       kind: region.kind,
       name: region.name,
       editable: region.editable,

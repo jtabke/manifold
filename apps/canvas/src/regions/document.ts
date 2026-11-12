@@ -69,6 +69,7 @@ export type Point = { x: number; y: number };
 export type Region = {
   id: string;
   text: string;
+  mathVersion?: 2;
   label?: string;
   provisional?: boolean;
   requirement?: boolean;
@@ -603,7 +604,7 @@ export class RegionSession {
       id = `region-${crypto.randomUUID()}`;
     if (!next.regions.length && at) next.origin = at;
     else if (at) edit.layout[id] = at;
-    next.regions = [...next.regions, { id, text: "" }];
+    next.regions = [...next.regions, { id, text: "", mathVersion: 2 }];
     if (scope) edit.model(scope)?.members.push(id);
     this.apply(next);
     return id;
@@ -663,6 +664,15 @@ export class RegionSession {
     this.apply(next);
     return id;
   }
+  enableScientificMath(id: string) {
+    const edit = new PageEdit(this.state),
+      region = edit.region(id);
+    if (!region || region.data || region.external || region.source)
+      throw Error("Choose a plain worksheet equation.");
+    if (region.mathVersion === 2) return;
+    region.mathVersion = 2;
+    this.apply(edit.page, true);
+  }
   quantityFromCell(
     dataset: string,
     row: number,
@@ -686,6 +696,7 @@ export class RegionSession {
       {
         id,
         text: value.text,
+        mathVersion: 2,
         source: { dataset, row, column, raw: value.raw, unit: value.unit },
       },
     ];
@@ -766,7 +777,7 @@ export class RegionSession {
       const p = project(next);
       const before = p.statements.get(id);
       try {
-        const after = parse(text.trim(), id),
+        const after = parse(text.trim(), id, region.mathVersion ?? 1),
           original = before && p.solved.values.get(before.name);
         const linkedBefore =
           before?.expression.kind === "name" &&
@@ -794,9 +805,15 @@ export class RegionSession {
           if (trial.errors.has(id)) throw Error(trial.errors.get(id));
           q = trial.solved.values.get(after.name);
         } else
-          q = calculate([{ id, text: text.trim(), x: 0, y: 0 }]).values.get(
-            after.name,
-          );
+          q = calculate([
+            {
+              id,
+              text: text.trim(),
+              x: 0,
+              y: 0,
+              ...(region.mathVersion === 2 ? { mathVersion: 2 as const } : {}),
+            },
+          ]).values.get(after.name);
         if (
           !q ||
           !original ||
@@ -821,7 +838,7 @@ export class RegionSession {
     }
     if (bindings) Object.assign(edit.links(id), clone(bindings));
     try {
-      const after = parse(text, id);
+      const after = parse(text, id, region.mathVersion ?? 1);
       const before = project(this.state).statements.get(id);
       if (
         context.id === "original" &&
@@ -883,7 +900,11 @@ export class RegionSession {
         nextId = next.regions[index + 1].id;
       else {
         nextId = `region-${crypto.randomUUID()}`;
-        next.regions.splice(index + 1, 0, { id: nextId, text: "" });
+        next.regions.splice(index + 1, 0, {
+          id: nextId,
+          text: "",
+          mathVersion: 2,
+        });
       }
       if (next.layout[id]) {
         const at = next.layout[id],
@@ -951,7 +972,11 @@ export class RegionSession {
         c = candidate.context(next.active)!;
       if (c.id === "original") candidate.region(edit.target)!.text = edit.text;
       else c.overrides[edit.target] = edit.text;
-      const parsed = parse(edit.text);
+      const parsed = parse(
+        edit.text,
+        undefined,
+        candidate.region(edit.target)!.mathVersion ?? 1,
+      );
       if (
         edit.alias !== source.name ||
         (parsed.relation === "=" && parsed.name !== target.name)

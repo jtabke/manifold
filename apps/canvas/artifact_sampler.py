@@ -31,8 +31,11 @@ def number(value: object) -> float:
 
 
 def validate(body: object) -> tuple[str, dict[str, float], tuple[float, float, int]]:
-    if not isinstance(body, dict) or set(body) != {"code", "inputs"}:
+    if not isinstance(body, dict) or set(body) not in ({"code", "inputs"}, {"code", "inputs", "mathVersion"}):
         raise ValueError("Provide code and scalar inputs only")
+    if "mathVersion" in body and body["mathVersion"] != 2:
+        raise ValueError("Unsupported mathematics version")
+    scientific = body.get("mathVersion") == 2
     code, inputs = body["code"], body["inputs"]
     if not isinstance(code, str) or len(code) > 4000:
         raise ValueError("Keep sampling code under 4000 characters")
@@ -88,7 +91,14 @@ def validate(body: object) -> tuple[str, dict[str, float], tuple[float, float, i
         raise ValueError("Use a single bounded comprehension: for a in x")
 
     def arithmetic(node: ast.AST) -> None:
-        if isinstance(node, ast.Constant):
+        if scientific and isinstance(node, ast.Call):
+            arities = {"sqrt": (1, 1), "abs": (1, 1), "sin": (1, 1), "cos": (1, 1), "tan": (1, 1), "exp": (1, 1), "log": (1, 1), "log10": (1, 1), "min": (2, 16), "max": (2, 16), "atan2": (2, 2)}
+            name = node.func.id if isinstance(node.func, ast.Name) else ""
+            if name not in arities or node.keywords or not arities[name][0] <= len(node.args) <= arities[name][1]:
+                raise ValueError("Use only supported scalar functions and argument counts")
+            for arg in node.args:
+                arithmetic(arg)
+        elif isinstance(node, ast.Constant):
             number(node.value)
         elif isinstance(node, ast.Name) and node.id in {*values, "a"}:
             return
@@ -120,7 +130,8 @@ def execute(body: object) -> dict:
         count = int(count)
         return [float(low + (high - low) * i / (count - 1)) for i in range(count)]
 
-    namespace: dict = {"__builtins__": {}, "linspace": linspace, **inputs}
+    functions = {"sqrt": math.sqrt, "abs": abs, "sin": math.sin, "cos": math.cos, "tan": math.tan, "exp": math.exp, "log": math.log, "log10": math.log10, "min": min, "max": max, "atan2": math.atan2} if body.get("mathVersion") == 2 else {}
+    namespace: dict = {"__builtins__": {}, "linspace": linspace, **functions, **inputs}
     try:
         tree = ast.parse(code)
 
@@ -140,7 +151,7 @@ def execute(body: object) -> dict:
         "points": points,
         "code_sha256": hashlib.sha256(code.encode()).hexdigest(),
         "runtime": {
-            "adapter": VERSION,
+            "adapter": "bounded-python-sampler/2" if body.get("mathVersion") == 2 else VERSION,
             "python": sys.version.split()[0],
             "adapter_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         },

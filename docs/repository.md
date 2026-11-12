@@ -75,7 +75,7 @@ make check-foundation-package-browser
 make verify
 ```
 
-CI installs the root lockfile and Chrome, then runs `make verify` on pushes and pull requests.
+CI installs the root lockfile and Playwright-managed Chromium, then runs `make verify` on pushes and pull requests.
 Build/browser phases run sequentially because they share output. Browser scripts use
 private temporary servers. No internal evaluation artifacts are uploaded.
 

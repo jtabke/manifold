@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { stageWorkspaceFile } from "../src/regions/app/workspaceFiles.ts";
@@ -6,7 +7,7 @@ import { drawings, MAX_LABEL_LENGTH } from "../src/regions/drawing.ts";
 import { drawingGeometry } from "../src/regions/drawingGeometry.ts";
 import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const errors = [];
 try {
   const context = await browser.newContext({

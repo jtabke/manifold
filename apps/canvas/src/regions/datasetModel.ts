@@ -128,7 +128,7 @@ export function evaluateDataset(
         `Specify units for ${table.headers[b.column]} (1 for dimensionless).`,
       );
     const text = measurementText(symbols[i], "1", b.unit),
-      check = calculate([{ id: "unit", text, x: 0, y: 0 }]);
+      check = calculate([{ id: "unit", text, x: 0, y: 0, mathVersion: 2 }]);
     const q = check.values.get(symbols[i]);
     if (!q || check.errors.size)
       throw Error(check.errors.get("unit") || "Unsupported units.");
@@ -210,7 +210,11 @@ export function evaluateDataset(
       .map((id) => p.texts[id]),
     key: JSON.stringify([
       source.csv,
-      definitions.map((r) => [r.id, r.text]),
+      definitions.map((r) => [
+        r.id,
+        r.text,
+        ...(r.mathVersion === 2 ? [2] : []),
+      ]),
       relation.dataset,
       relation.output,
       relation.bindings,

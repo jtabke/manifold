@@ -1,9 +1,10 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
 import { drawings } from "../src/regions/drawing.ts";
 import { REGULARIZE_HOLD_MS } from "../src/regions/drawingRegularization.ts";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const errors = [];
 let checks = 0;
 const paths = {

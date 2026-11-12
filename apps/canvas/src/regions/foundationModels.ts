@@ -12,7 +12,10 @@ import {
   MODEL_OUTPUT_REQUEST,
   modelOutputsRequest,
 } from "./modelResults.ts";
-import { samplingMethod } from "./samplingExecution.ts";
+import {
+  samplingMethod,
+  scientificSamplingMethod,
+} from "./samplingExecution.ts";
 import { readCsv, numericCell, type CsvData } from "./dataSources.ts";
 const spring = {
   id: "manifold.spring-force",
@@ -92,7 +95,12 @@ export const modelResultMethod = Object.freeze({
 export const modelAnalyses = createModelAnalyses(modelAdapter);
 export const canvasMethods = f.createMethods(
   [{ requirements: modelResultMethod, inputs: { value: "N" }, output: "N" }],
-  [samplingMethod, modelOutputsMethod, modelAnalyses.method],
+  [
+    samplingMethod,
+    scientificSamplingMethod,
+    modelOutputsMethod,
+    modelAnalyses.method,
+  ],
 );
 export const canvasExecutor: f.Executor = async (snapshot, signal) => {
   f.assert(

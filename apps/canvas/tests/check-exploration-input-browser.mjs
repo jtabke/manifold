@@ -1,10 +1,11 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium, expect } from "@playwright/test";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 try {
   for (const kind of ["number", "artifact"]) {
     await test(`${kind} exploration owns input until completion or cancellation`, async () => {

@@ -36,6 +36,7 @@ export type CommandTarget = {
 };
 type SimpleOperation =
   | "definition.edit"
+  | "mathematics.enable"
   | "quantity.vary"
   | "quantity.trace"
   | "context.compare"
@@ -353,6 +354,19 @@ export function resolveCommands(
             "Preview a bound value and its consequences; accept, keep an alternative or cancel without changing the baseline.",
           undo: editUndo,
         });
+      if (page.regions.find((r) => r.id === t.id)?.mathVersion !== 2)
+        add(
+          "mathematics.enable",
+          "Use scientific math (v2)",
+          "edit",
+          undefined,
+          {
+            preview:
+              "Explicitly change this equation’s function/constant rules. Existing saved calculations retain their original interpretation. Undo restores the old rules.",
+            undo: editUndo,
+            keywords: ["math", "functions", "scientific", "upgrade"],
+          },
+        );
       const choices = t.id ? plotChoices(page, t.id) : [];
       const first = choices[0];
       add(

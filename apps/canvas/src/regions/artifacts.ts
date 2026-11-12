@@ -37,6 +37,11 @@ import { workspaceStorage } from "./workspaceStorage.ts";
 /** One experiment protocol. Native Python lowering, never an AI-service impersonation. */
 import {
   calculate,
+  evaluate,
+  mathSource,
+  quantityLiteral,
+  references,
+  type MathSource,
   type Expression,
   type Quantity,
   unitLabel,
@@ -66,7 +71,7 @@ export type Job = {
   code: string;
   inputs: Record<string, number>;
   context: string;
-  definitions: { id: string; text: string }[];
+  definitions: MathSource[];
   bindings: Record<string, string>;
   snapshot: 2;
   dependencies: Record<string, Record<string, string>>;
@@ -120,7 +125,7 @@ export type Artifact = {
     context: string;
     code: string;
     inputs: Record<string, number>;
-    definitions: { id: string; text: string }[];
+    definitions: MathSource[];
     time: string;
     bindings: Record<string, string>;
     snapshot?: 2;
@@ -178,7 +183,13 @@ export function makeArtifact(
   const range = [match[3], match[4]].map((value) => {
     if (!match[5]) return Number(value) + (q.absolute ? 273.15 : 0);
     const sample = calculate([
-      { id: "range", text: `range_value := ${value} ${match[5]}`, x: 0, y: 0 },
+      {
+        id: "range",
+        text: `range_value := ${value} ${match[5]}`,
+        x: 0,
+        y: 0,
+        mathVersion: 2,
+      },
     ]).values.get("range_value");
     if (
       !sample ||
@@ -222,6 +233,34 @@ export function prepare(
     if (depth > 40)
       throw Error("This expression exceeds the sampling adapter's scope.");
     if (node.kind === "number") return String(node.value);
+    // Lower complete v2 literals in canonical units, including affine Celsius offsets.
+    // Keep historical emitted code and checked captures byte-for-byte unchanged.
+    if (
+      p.statements.get(owner)?.mathVersion === 2 &&
+      (quantityLiteral(node) ||
+        (node.kind === "name" && references(node).length === 0))
+    )
+      return String(
+        evaluate(
+          node,
+          () => {
+            throw Error("Unresolved literal");
+          },
+          2,
+        ).value,
+      );
+    if (node.kind === "unit" || node.kind === "constant")
+      return String(
+        evaluate(
+          node,
+          () => {
+            throw Error("Unresolved constant");
+          },
+          2,
+        ).value,
+      );
+    if (node.kind === "call")
+      return `${node.name === "ln" ? "log" : node.name}(${node.args.map((arg) => lower(arg, owner, depth + 1)).join(", ")})`;
     if (node.kind === "unary")
       return `(-${lower(node.expression, owner, depth + 1)})`;
     if (node.kind === "binary")
@@ -262,7 +301,7 @@ export function prepare(
     effectiveDefinitions = effective(page),
     definitions = effectiveDefinitions
       .filter((r) => required.has(r.id))
-      .map(({ id, text }) => ({ id, text })),
+      .map(mathSource),
     dependencies = Object.fromEntries(
       definitions.map((r) => [r.id, p.bindings[r.id] || {}]),
     ),
@@ -413,7 +452,10 @@ export function acceptCapturedData(
     data.points.length < 2 ||
     data.points.length > 501 ||
     !/^[a-f0-9]{64}$/.test(data.code_sha256) ||
-    data.runtime?.adapter !== "bounded-python-sampler/1" ||
+    data.runtime?.adapter !==
+      (job.definitions.some((r) => r.mathVersion === 2)
+        ? "bounded-python-sampler/2"
+        : "bounded-python-sampler/1") ||
     typeof data.runtime.python !== "string"
   )
     throw Error("Unsupported Python result.");
@@ -520,10 +562,13 @@ async function readWorkspace(
   const value: unknown = JSON.parse(text);
   let foundation: import("@manifold/foundation").Loaded,
     results: ArtifactResult[] = [];
-  if (object(value) && (value.version === 6 || value.version === 7)) {
+  if (
+    object(value) &&
+    (value.version === 6 || value.version === 7 || value.version === 8)
+  ) {
     fields(
       value,
-      value.version === 7
+      value.version !== 6
         ? ["format", "version", "foundation"]
         : ["format", "version", "foundation", "results"],
     );
@@ -722,6 +767,7 @@ export function validateWorkspaceData(
         id(r.id) &&
         typeof r.text === "string" &&
         r.text.length <= 5000 &&
+        (r.mathVersion === undefined || r.mathVersion === 2) &&
         (r.label === undefined ||
           (typeof r.label === "string" && r.label.length <= 160)) &&
         (r.provisional === undefined || typeof r.provisional === "boolean") &&

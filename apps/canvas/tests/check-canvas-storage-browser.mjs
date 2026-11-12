@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { chromium, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -10,7 +11,7 @@ const fixture = readFileSync(
 );
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310",
   key = "manifold.artifact-experiment.v1";
-const browser = await chromium.launch({ channel: "chrome", headless: true }),
+const browser = await chromium.launch({ ...browserOptions(), headless: true }),
   errors = [];
 try {
   const context = await browser.newContext({

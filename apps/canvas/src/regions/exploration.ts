@@ -51,7 +51,7 @@ export function proposeValue(
   const text =
     value === q.value
       ? p.texts[input]
-      : `${s.name} := ${Number(shown.toPrecision(7))} ${unitLabel(q)}`.trim();
+      : `${s.name} := ${s.mathVersion === 2 ? String(shown) : Number(shown.toPrecision(7))} ${unitLabel(q)}`.trim();
   return { input, context: page.active, key: semanticKey(page), text, value };
 }
 /** Layout changes preserve proposals; scenario or semantic changes make them stale. */

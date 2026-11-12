@@ -43,6 +43,7 @@ export function engineeringValue(page: Page, id: string): string {
         {
           id: "display-unit",
           text: `display_unit := 1 ${preferredUnit}`,
+          ...(s?.mathVersion === 2 ? { mathVersion: 2 as const } : {}),
           x: 0,
           y: 0,
         },

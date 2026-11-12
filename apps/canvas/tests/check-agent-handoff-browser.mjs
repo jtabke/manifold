@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -241,8 +242,7 @@ try {
   );
 
   browser = await chromium.launch({
-    channel: "chrome",
-    executablePath: process.env.MANIFOLD_BROWSER_EXECUTABLE,
+    ...browserOptions(),
     headless: true,
   });
   const row = (page, id) => page.locator(`[data-region-id="${id}"]`);

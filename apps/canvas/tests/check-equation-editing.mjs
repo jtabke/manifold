@@ -1,9 +1,10 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence, evidenceEnabled } from "./browser-evidence.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 import { REGION_STEP } from "../src/regions/pageLayout.ts";
 import { chromium, expect } from "@playwright/test";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const errors = [];
 let checks = 0;
 try {

@@ -24,7 +24,12 @@ async function output(job) {
       [Number(high), gain * Number(high)],
     ],
     code_sha256: await sourceHash(job.code),
-    runtime: { adapter: "bounded-python-sampler/1", python: "test" },
+    runtime: {
+      adapter: job.definitions.some((r) => r.mathVersion === 2)
+        ? "bounded-python-sampler/2"
+        : "bounded-python-sampler/1",
+      python: "test",
+    },
   };
 }
 async function session(
@@ -79,7 +84,7 @@ const native = (s) => {
   assert.equal(s.foundation.evidence().size, 2);
   const bytes = native(s),
     envelope = JSON.parse(bytes);
-  assert.equal(envelope.version, 7);
+  assert.equal(envelope.version, 8);
   assert.equal("results" in envelope, false);
   const recipient = await session(null, bytes);
   assert.equal(recipient.executionDiagnostics.running, 0);
@@ -171,7 +176,7 @@ const native = (s) => {
     true,
   );
   const modern = JSON.parse(native(migrated));
-  assert.equal(modern.version, 7);
+  assert.equal(modern.version, 8);
   assert.equal("results" in modern, false);
   // Change current range while preserving the legacy observation's original request and output.
   const authored = old.foundation.document,

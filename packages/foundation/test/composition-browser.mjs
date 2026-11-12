@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "../../../apps/canvas/tests/browser-evidence.mjs";
 /** Repository Chrome workflow: exercise real controls, native files and IndexedDB; no debug globals. */
 import { chromium, expect } from "@playwright/test";
@@ -43,7 +44,7 @@ try {
     await new Promise((r) => setTimeout(r, 100));
   }
   assert(ready, log);
-  browser = await chromium.launch({ channel: "chrome", headless: true });
+  browser = await chromium.launch({ ...browserOptions(), headless: true });
   const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
     }),

@@ -1,9 +1,10 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence, evidenceEnabled } from "./browser-evidence.mjs";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
 import { project } from "../src/regions/document.ts";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const page = await browser.newPage({ viewport: { width: 1870, height: 1080 } });
 page.setDefaultTimeout(10000);
 const errors = [];
@@ -55,8 +56,15 @@ try {
   await expect(dialog).toContainText("1 record → P");
   await expect(dialog).not.toContainText("60 W");
   await dialog.getByRole("radio", { name: "All 2 rows (vector)" }).check();
+  const beforeInvalidUnits = await model();
   await dialog.getByLabel("Units for speed [m/s]", { exact: true }).fill("kg");
-  await expect(dialog).toContainText("matching units");
+  await expect(dialog).toContainText(
+    /result P has units .+, but its limit has units W/,
+  );
+  await expect(
+    dialog.getByRole("button", { name: "Connect & calculate" }),
+  ).toBeDisabled();
+  expect(await model()).toEqual(beforeInvalidUnits);
   await dialog.getByLabel("Units for speed [m/s]", { exact: true }).fill("m/s");
   await dialog.getByRole("checkbox").check();
   await dialog.getByRole("button", { name: "Connect & calculate" }).click();

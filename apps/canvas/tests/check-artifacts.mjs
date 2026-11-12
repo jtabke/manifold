@@ -60,7 +60,12 @@ const data = {
     return [x, 25 + 800 / (60 * x)];
   }),
   code_sha256: "f".repeat(64),
-  runtime: { adapter: "bounded-python-sampler/1", python: "test" },
+  runtime: {
+    adapter: job.definitions.some((r) => r.mathVersion === 2)
+      ? "bounded-python-sampler/2"
+      : "bounded-python-sampler/1",
+    python: "test",
+  },
 };
 artifact = acceptData(session.state, artifact, job, data);
 assert.equal(artifact.receipt.points.length, 201);

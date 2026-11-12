@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
@@ -24,7 +25,7 @@ const source = {
   outputs: ["power"],
 };
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const open = (page, text) =>
   page.getByLabel("Open workspace file", { exact: true }).setInputFiles({
     name: "analysis.manifold",

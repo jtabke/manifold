@@ -103,7 +103,7 @@ export function csvQuantity(
     throw Error("Use a quantity name and supported units.");
   const text = measurementText(name, raw, unit);
   parse(text);
-  const result = calculate([{ id: "cell", text, x: 0, y: 0 }]);
+  const result = calculate([{ id: "cell", text, x: 0, y: 0, mathVersion: 2 }]);
   if (result.errors.has("cell")) throw Error(result.errors.get("cell"));
   return { text, raw, unit: unit.trim() };
 }

@@ -18,7 +18,7 @@ build:
 check: check-repo check-docs check-python check-canvas check-foundation-package
 
 check-repo:
-	node_modules/.bin/prettier --check package.json scripts/check_repo.mjs scripts/repo_policy.test.mjs .github/workflows/ci.yml
+	node_modules/.bin/prettier --check package.json scripts/check_repo.mjs scripts/repo_policy.test.mjs scripts/browser.mjs .github/workflows/ci.yml
 	node --test scripts/repo_policy.test.mjs
 	node scripts/check_repo.mjs
 
@@ -36,7 +36,7 @@ check-canvas:
 	npm --prefix apps/canvas run build
 	npm --prefix apps/canvas test
 
-# Uses a temporary server on port 58312. Requires installed Chrome.
+# Uses a temporary server on port 58312. Requires installed Chromium.
 check-browser:
 	npm --prefix apps/canvas run build
 	npm --prefix apps/canvas run test:all-browser

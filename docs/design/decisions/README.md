@@ -88,6 +88,8 @@ contexts require retained identity, and a reliable Keep/Undo requires one owner.
 | [0036: Model-backed analysis requests](0036-model-backed-analysis-requests.md) | Bounded scalar sweeps over exact instance/source captures, shared typed execution, table/curve representations and portable kept analyses. | Accepted for single-input self-contained model analysis, 2026-10-28. |
 | [0037: Bounded incremental worksheet derivation](0037-bounded-incremental-worksheet-derivation.md) | Shared prepared expression evaluation, bounded disposable projections/curves, immutable results and current-handler mathematical subtree reuse. | Accepted for the existing 256-region application, 2026-10-28. |
 
+| [0038: Versioned scientific scalar math](0038-versioned-scientific-scalar-math.md) | Restricted Math.js numerical/unit operations, explicit source versions and plain quantities across worksheets, models, sampling and native V8. | Accepted for the bounded scientific scalar slice. |
+
 ## Record lifecycle and template
 
 Create `NNNN-short-title.md` using the structure below. Begin as proposed. Record

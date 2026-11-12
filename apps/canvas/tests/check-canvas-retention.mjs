@@ -41,7 +41,12 @@ async function result(s) {
       [a.high, a.high * 10000],
     ],
     code_sha256: createHash("sha256").update(job.code).digest("hex"),
-    runtime: { adapter: "bounded-python-sampler/1", python: "test" },
+    runtime: {
+      adapter: job.definitions.some((r) => r.mathVersion === 2)
+        ? "bounded-python-sampler/2"
+        : "bounded-python-sampler/1",
+      python: "test",
+    },
   }).receipt;
   assert.equal(await deliver(s, a.id, receipt), true);
   return receipt;

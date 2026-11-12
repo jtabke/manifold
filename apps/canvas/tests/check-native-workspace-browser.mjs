@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import { chromium, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -36,7 +37,7 @@ const artifact = makeArtifact(
 );
 artifact.at = { x: 700, y: 120 };
 const legacy = legacyWorkspace(s.state, [artifact]);
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const errors = [];
 try {
   const context = await browser.newContext({
@@ -116,7 +117,7 @@ try {
   const download = await downloadEvent;
   expect(download.suggestedFilename()).toBe("manifold-workspace.manifold");
   const bytes = await readFile(await download.path(), "utf8");
-  expect(JSON.parse(bytes).version).toBe(7);
+  expect(JSON.parse(bytes).version).toBe(8);
   expect((await decodeWorkspace(bytes)).document.document).toBe(
     opened.document.document,
   );

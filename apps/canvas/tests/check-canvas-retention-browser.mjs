@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
 import { chromium, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
@@ -31,7 +32,7 @@ const snapshot = await backend.snapshot(),
   search = `?canvas=${crypto.randomUUID()}`,
   key = workspaceStorage("manifold.artifact-experiment.v1", search),
   name = await canvasDatabaseName(key);
-const browser = await chromium.launch({ channel: "chrome", headless: true }),
+const browser = await chromium.launch({ ...browserOptions(), headless: true }),
   errors = [];
 try {
   const context = await browser.newContext({

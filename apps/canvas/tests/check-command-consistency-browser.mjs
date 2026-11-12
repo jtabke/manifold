@@ -1,9 +1,10 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const errors = [];
 try {
   for (const surface of ["toolbar", "marking", "search"]) {
@@ -246,8 +247,20 @@ try {
       await expect(blocked).toBeDisabled();
       if (surface === "search") {
         await expect(blocked).toContainText("Resolve the calculation");
+        // New sampling is blocked, but existing (possibly stale) response views
+        // remain navigable. Enter activates the first enabled search result.
+        const beforeOpen = (await saved()).artifacts;
+        const existing = page
+          .getByRole("button", { name: /^Open existing response plot / })
+          .first();
+        await expect(existing).toHaveAttribute(
+          "data-command-id",
+          "response.open",
+        );
+        await expect(existing).toBeEnabled();
         await search.press("Enter");
-        await expect(search).toBeFocused();
+        await expect(search).toHaveCount(0);
+        expect((await saved()).artifacts).toEqual(beforeOpen);
       } else {
         await expect(blocked).toHaveAttribute(
           "title",

@@ -50,7 +50,12 @@ const raw = {
       [a.high, 10000 * a.high],
     ],
     code_sha256: createHash("sha256").update(job.code).digest("hex"),
-    runtime: { adapter: "bounded-python-sampler/1", python: "test" },
+    runtime: {
+      adapter: job.definitions.some((r) => r.mathVersion === 2)
+        ? "bounded-python-sampler/2"
+        : "bounded-python-sampler/1",
+      python: "test",
+    },
   },
   receipt = acceptData(s.state, a, job, raw, s.document).receipt;
 assert.equal(JSON.stringify(receipt).includes("zzzzzzzzzz"), false);
@@ -144,7 +149,7 @@ const pin = receipt.sources[0].reference;
 assert.equal(f.resolve(owner.document, pin).status, "resolved");
 assert.throws(() => prepare(owner.page, a, owner.document), /source revision/);
 const wire = archive(owner.native());
-assert.equal(JSON.parse(wire).version, 7);
+assert.equal(JSON.parse(wire).version, 8);
 assert.equal((wire.match(/zzzzzzzzzz/g) || []).length > 0, true);
 const portable = await decodeWorkspace(wire),
   reopened = testSession(

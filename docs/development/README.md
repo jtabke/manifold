@@ -40,7 +40,8 @@ make check          # Repository policy, docs, Python, formatting, types, local 
 make verify         # All of the above, plus foundation and canvas browser workflows
 ```
 
-Browser workflows require installed Chrome. Build/browser phases share output, so run them
+Browser workflows use Playwright-managed Chromium (`npx --no-install playwright install chromium`)
+or an explicit `MANIFOLD_BROWSER_EXECUTABLE=/absolute/path/to/chromium`. Build/browser phases share output, so run them
 sequentially. `make verify` builds the canvas once and reuses that output for its browser
 phase; standalone `make check-browser` still builds first. `make verify-application-foundation`
 is an alias for `make verify`. Large drawing profiling is opt-in, not part of either gate.
@@ -129,9 +130,10 @@ npm --prefix apps/canvas run build
 npm --prefix apps/canvas run test:all-browser -- check-agent-handoff-browser
 ```
 
-Chrome is the default browser, as in the existing browser suite. This new check also accepts
-`MANIFOLD_BROWSER_EXECUTABLE=/absolute/path/to/chromium` for explicit local Chromium verification;
-that override applies only to this check and is not a passing Chrome gate for the full suite.
+Browser selection is shared across all application and foundation browser checks:
+Playwright-managed Chromium by default, or
+`MANIFOLD_BROWSER_EXECUTABLE=/absolute/path/to/chromium` for an installed executable.
+Both are supported configurations for the full verification gate.
 
 ### Skill acceptance scenarios
 

@@ -151,7 +151,10 @@ export function validArtifactReceipt(
         r.definitions.every(
           (v) =>
             object(v) &&
-            Object.keys(v).every((k) => ["id", "text"].includes(k)),
+            Object.keys(v).every((k) =>
+              ["id", "text", "mathVersion"].includes(k),
+            ) &&
+            (v.mathVersion === undefined || v.mathVersion === 2),
         ))) &&
     (r.snapshot !== 2 ||
       (Array.isArray(r.definitions) &&
@@ -182,7 +185,9 @@ export function validArtifactReceipt(
     typeof r.code_sha256 === "string" &&
     /^[a-f0-9]{64}$/.test(r.code_sha256) &&
     object(r.runtime) &&
-    r.runtime.adapter === "bounded-python-sampler/1" &&
+    ["bounded-python-sampler/1", "bounded-python-sampler/2"].includes(
+      r.runtime.adapter as string,
+    ) &&
     typeof r.runtime.python === "string" &&
     r.runtime.python.length <= 200 &&
     object(r.inputs) &&

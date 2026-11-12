@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 /** Diagnostic workload of the shipped UI, not a hardware or latency acceptance claim. */
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
@@ -145,7 +146,7 @@ for (let replicate = 0; replicate < replicates; replicate++)
     session.dispose();
     console.log(`Drawing profile ${count}/${replicate + 1}: opening browser`);
     const browser = await chromium.launch({
-      channel: "chrome",
+      ...browserOptions(),
       headless: true,
     });
     version = browser.version();

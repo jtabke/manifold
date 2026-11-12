@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "../../../apps/canvas/tests/browser-evidence.mjs";
 import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
@@ -40,7 +41,7 @@ try {
     await new Promise((r) => setTimeout(r, 100));
   }
   assert.ok(ready, log);
-  browser = await chromium.launch({ channel: "chrome", headless: true });
+  browser = await chromium.launch({ ...browserOptions(), headless: true });
   const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
     }),

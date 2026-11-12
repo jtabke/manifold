@@ -15,7 +15,13 @@ const byteLength = f.byteLength;
 const MAX_TRANSPORT_BYTES = 64 * 1024;
 /** The transport receives only code/scalar inputs, never the workspace or source files. */
 export const samplerExecutor: ArtifactExecutor = async (job, signal) => {
-  const body = JSON.stringify({ code: job.code, inputs: job.inputs });
+  const body = JSON.stringify({
+    code: job.code,
+    inputs: job.inputs,
+    ...(job.definitions.some((r) => r.mathVersion === 2)
+      ? { mathVersion: 2 }
+      : {}),
+  });
   if (byteLength(body) > MAX_TRANSPORT_BYTES)
     throw Error("Sampler input budget exceeded");
   const response = await fetch("/api/artifact-sample", {
@@ -73,6 +79,15 @@ export const samplingMethodRef = Object.freeze({
   version: "1",
   runtime: "bounded-python-sampler/1",
 });
+export const scientificSamplingMethodRef = Object.freeze({
+  id: samplingMethodRef.id,
+  version: "2",
+  runtime: "manifold-scientific-sampler@2",
+});
+const isSamplingMethod = (method: Parameters<typeof f.methodKey>[0]) =>
+  [samplingMethodRef, scientificSamplingMethodRef].some(
+    (ref) => f.methodKey(method) === f.methodKey(ref),
+  );
 const json = (value: unknown) => value as f.Json;
 const jobs = new WeakMap<object, ArtifactJob>(),
   receipts = new WeakMap<object, NonNullable<Artifact["receipt"]>>();
@@ -130,7 +145,9 @@ export function jobFromSamplingInput(value: SamplingInput): ArtifactJob {
 }
 export function samplingInvocation(input: SamplingInput): f.TypedRequest {
   return {
-    method: samplingMethodRef,
+    method: input.capture.definitions.some((r) => r.mathVersion === 2)
+      ? scientificSamplingMethodRef
+      : samplingMethodRef,
     input: { schema: "canvas-sampling-input@1", body: json(input) },
     output: "canvas-sampled-points@1",
   };
@@ -156,7 +173,7 @@ export function outputFromSamplingData(
     },
   };
 }
-export const samplingMethod: f.TypedMethod = {
+const baseSamplingMethod: f.TypedMethod = {
   requirements: samplingMethodRef,
   input: "canvas-sampling-input@1",
   output: "canvas-sampled-points@1",
@@ -202,15 +219,32 @@ export const samplingMethod: f.TypedMethod = {
     );
   },
 };
+function versionedSamplingMethod(scientific: boolean): f.TypedMethod {
+  const validate = (input: f.Json) => {
+    samplingInput(input);
+    f.assert(
+      input.capture.definitions.some((r) => r.mathVersion === 2) === scientific,
+      "Sampler mathematics version differs from its method",
+    );
+  };
+  return {
+    ...baseSamplingMethod,
+    requirements: scientific ? scientificSamplingMethodRef : samplingMethodRef,
+    validateInput: validate,
+    validateOutput(input, raw) {
+      validate(input);
+      return baseSamplingMethod.validateOutput(input, raw);
+    },
+  };
+}
+export const samplingMethod = versionedSamplingMethod(false);
+export const scientificSamplingMethod = versionedSamplingMethod(true);
 export function samplingExecutor(
   execute: ArtifactExecutor | null = samplerExecutor,
 ): f.TypedExecutor | undefined {
   if (!execute) return undefined;
   return async (snapshot, signal, io) => {
-    f.assert(
-      f.methodKey(snapshot.method) === f.methodKey(samplingMethodRef),
-      "Unsupported sampler method",
-    );
+    f.assert(isSamplingMethod(snapshot.method), "Unsupported sampler method");
     samplingInput(snapshot.input.body);
     const input = snapshot.input.body,
       result = outputFromSamplingData(
@@ -226,7 +260,7 @@ export function samplingReceipt(
 ): NonNullable<Artifact["receipt"]> | undefined {
   if (
     receipt.kind !== "typed@1" ||
-    f.methodKey(receipt.snapshot.method) !== f.methodKey(samplingMethodRef) ||
+    !isSamplingMethod(receipt.snapshot.method) ||
     receipt.outcome.status !== "success"
   )
     return undefined;
@@ -248,8 +282,7 @@ export function samplingReceipt(
   return value;
 }
 export function samplingArtifact(receipt: f.Receipt) {
-  return receipt.kind === "typed@1" &&
-    f.methodKey(receipt.snapshot.method) === f.methodKey(samplingMethodRef)
+  return receipt.kind === "typed@1" && isSamplingMethod(receipt.snapshot.method)
     ? (receipt.snapshot.input.body as unknown as SamplingInput).artifact
     : undefined;
 }

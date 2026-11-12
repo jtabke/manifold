@@ -1,9 +1,10 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
 import { readWorkspace } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const page = await browser.newPage({ viewport: { width: 1500, height: 1100 } });
 page.setDefaultTimeout(8000);
 const errors = [],

@@ -35,11 +35,16 @@ make check-foundation-package-browser
 make verify
 ```
 
-Browser checks require installed Chrome:
+Browser checks use Playwright-managed Chromium by default:
 
 ```sh
-npx --no-install playwright install chrome
+npx --no-install playwright install chromium
 ```
+
+To use an existing Chromium executable instead, set
+`MANIFOLD_BROWSER_EXECUTABLE=/absolute/path/to/chromium`. This selection applies to
+both application and foundation browser checks, including `make verify`; no launcher
+preload or Chrome installation is required.
 
 `make verify` runs product checks and both browser suites sequentially. CI runs the
 same target. Set `PYTHON` to choose another Python executable. Documentation checks

@@ -4,11 +4,12 @@ import { prepare, type Artifact, type Job } from "./artifacts.ts";
 import { samplingInvocation } from "./samplingExecution.ts";
 import { canvasSchemas } from "./app/canvasDocument.ts";
 import type { Page, Region } from "./document.ts";
+import { mathSource, type MathSource } from "../notebook/math.ts";
 import type { SourceEvidence, SourceSelection } from "./resultSnapshot.ts";
 export type SamplingJob = Omit<Job, "legacy">;
 type Definition =
   | Readonly<{ reference: f.Reference }>
-  | Readonly<{ value: { id: string; text: string } }>;
+  | Readonly<{ value: MathSource }>;
 export type SamplingPlan = Readonly<{
   document: string;
   artifact: string;
@@ -146,11 +147,13 @@ export const samplingPlanSchema: f.Schema = {
             f.object(definition.value),
             "Invalid frozen sampling definition",
           );
-          f.fields(definition.value, ["id", "text"]);
+          f.fields(definition.value, ["id", "text", "mathVersion"]);
           f.identity(definition.value.id);
           f.assert(
             typeof definition.value.text === "string" &&
-              definition.value.text.length <= 5000,
+              definition.value.text.length <= 5000 &&
+              (definition.value.mathVersion === undefined ||
+                definition.value.mathVersion === 2),
             "Invalid sampling text",
           );
         } else {
@@ -267,7 +270,7 @@ export const samplingPlanSchema: f.Schema = {
         "value" in definition
           ? definition.value
           : (read(definition.reference).value as unknown as Region);
-      regions.push({ id: value.id, text: value.text });
+      regions.push(mathSource(value as unknown as MathSource));
     }
     for (const source of plan.sources) {
       const projection = read(source.reference),

@@ -280,7 +280,12 @@ for (const change of ["draft", "evidence"]) {
           [a.high, 10000 * a.high],
         ],
         code_sha256: createHash("sha256").update(job.code).digest("hex"),
-        runtime: { adapter: "bounded-python-sampler/1", python: "test" },
+        runtime: {
+          adapter: job.definitions.some((r) => r.mathVersion === 2)
+            ? "bounded-python-sampler/2"
+            : "bounded-python-sampler/1",
+          python: "test",
+        },
       }).receipt;
     assert.equal(await deliver(h.session, a.id, receipt), true);
   }

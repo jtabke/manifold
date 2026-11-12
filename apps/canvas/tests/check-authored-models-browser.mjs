@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -6,7 +7,7 @@ import { RegionSession } from "../src/regions/document.ts";
 import { archive } from "../src/regions/artifacts.ts";
 import { stageWorkspaceFile } from "../src/regions/app/workspaceFiles.ts";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ ...browserOptions(), headless: true });
 try {
   const context = await browser.newContext({
     viewport: { width: 1700, height: 1100 },

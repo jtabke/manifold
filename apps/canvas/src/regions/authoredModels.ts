@@ -9,10 +9,17 @@ import {
   unitLabel,
   type Expression,
   type Quantity,
+  type MathSource,
+  type MathVersion,
 } from "../notebook/math.ts";
+import {
+  scientificQuantity,
+  scientificCall,
+  scientificFunctions,
+} from "../notebook/scientific.ts";
 export const AUTHORED_MODEL = "canvas-authored-model@1";
 export type ModelSource = Readonly<{
-  rows: readonly Readonly<{ id: string; text: string }>[];
+  rows: readonly Readonly<MathSource>[];
   inputs: readonly string[];
   outputs: readonly string[];
 }>;
@@ -34,15 +41,23 @@ function unit(q: Quantity) {
       .replaceAll("·", "*") || "1"
   );
 }
-function quantity(value: { value: number; unit: string }): Quantity {
+function quantity(
+  value: { value: number; unit: string },
+  version: MathVersion,
+): Quantity {
+  if (version === 2) return scientificQuantity(value.value, value.unit);
   return value.unit === "1"
     ? { value: value.value, dimension: [0, 0, 0, 0] }
-    : evaluate(parse(`q = ${value.value} * (${value.unit})`).expression, () => {
-        throw Error("Unknown model unit");
-      });
+    : evaluate(
+        parse(`q = ${value.value} * (${value.unit})`, undefined, 1).expression,
+        () => {
+          throw Error("Unknown model unit");
+        },
+        1,
+      );
 }
 const operators = ["+", "-", "*", "/", "^", "negate", "identity"] as const;
-const method = (op: string) => ({
+const method = (op: string, version: MathVersion = 1) => ({
   id:
     "manifold.equation." +
     ({
@@ -54,33 +69,69 @@ const method = (op: string) => ({
       negate: "negate",
       identity: "identity",
     }[op] || "unknown"),
-  version: "1",
-  runtime: "manifold-equations@1",
+  version: String(version),
+  runtime:
+    version === 1 ? "manifold-equations@1" : "manifold-equations-mathjs@15.2.0",
 });
-export const equationMethods: readonly f.NativeModelMethod[] = operators.map(
-  (op): f.NativeModelMethod => ({
-    requirements: method(op),
-    inputs: ["negate", "identity"].includes(op)
-      ? { value: "*" }
-      : { left: "*", right: "*" },
-    output: "*",
-    evaluateScalar(inputs) {
-      if (op === "identity")
-        return { value: inputs.value!.value, unit: inputs.value!.unit };
-      const expression: Expression =
-        op === "negate"
-          ? { kind: "unary", expression: { kind: "name", name: "value" } }
-          : {
-              kind: "binary",
-              op,
-              left: { kind: "name", name: "left" },
-              right: { kind: "name", name: "right" },
-            };
-      const result = evaluate(expression, (name) => quantity(inputs[name]!));
-      return { value: result.value, unit: unit(result) };
-    },
-  }),
-);
+const functionMethod = (name: string, count: number) => ({
+  id: `manifold.equation.${name}.${count}`,
+  version: "2",
+  runtime: "manifold-equations-mathjs@15.2.0",
+});
+export const equationMethods: readonly f.NativeModelMethod[] = [1, 2]
+  .flatMap((v) =>
+    operators.map(
+      (op): f.NativeModelMethod => ({
+        requirements: method(op, v as MathVersion),
+        inputs: ["negate", "identity"].includes(op)
+          ? { value: "*" }
+          : { left: "*", right: "*" },
+        output: "*",
+        evaluateScalar(inputs) {
+          if (op === "identity")
+            return { value: inputs.value!.value, unit: inputs.value!.unit };
+          const expression: Expression =
+            op === "negate"
+              ? { kind: "unary", expression: { kind: "name", name: "value" } }
+              : {
+                  kind: "binary",
+                  op,
+                  left: { kind: "name", name: "left" },
+                  right: { kind: "name", name: "right" },
+                };
+          const result = evaluate(
+            expression,
+            (name) => quantity(inputs[name]!, v as MathVersion),
+            v as MathVersion,
+          );
+          return { value: result.value, unit: unit(result) };
+        },
+      }),
+    ),
+  )
+  .concat(
+    Object.entries(scientificFunctions).flatMap(([name, [low, high]]) =>
+      Array.from({ length: high - low + 1 }, (_, i): f.NativeModelMethod => {
+        const count = low + i;
+        return {
+          requirements: functionMethod(name, count),
+          inputs: Object.fromEntries(
+            Array.from({ length: count }, (_, n) => [`arg${n}`, "*"]),
+          ),
+          output: "*",
+          evaluateScalar(inputs) {
+            const result = scientificCall(
+              name,
+              Array.from({ length: count }, (_, n) =>
+                quantity(inputs[`arg${n}`]!, 2),
+              ),
+            );
+            return { value: result.value, unit: unit(result) };
+          },
+        };
+      }),
+    ),
+  );
 export function compileModel(source: ModelSource): f.ModelDefinition {
   f.assert(f.object(source), "Invalid model source");
   f.fields(source, ["rows", "inputs", "outputs"]);
@@ -94,7 +145,11 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
     names = new Map<string, string>();
   for (const row of source.rows) {
     f.assert(f.object(row), "Invalid model equation");
-    f.fields(row, ["id", "text"]);
+    f.fields(row, ["id", "text", "mathVersion"]);
+    f.assert(
+      row.mathVersion === undefined || row.mathVersion === 2,
+      "Unsupported mathematics version",
+    );
     f.assert(
       typeof row.id === "string" &&
         /^[A-Za-z][A-Za-z0-9_-]{0,60}$/.test(row.id) &&
@@ -105,7 +160,7 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
       typeof row.text === "string" && row.text.length <= 1200,
       "Use a bounded equation",
     );
-    const statement = parse(row.text);
+    const statement = parse(row.text, undefined, row.mathVersion ?? 1);
     f.assert(
       statement.relation === "=" && !names.has(statement.name),
       "Publish distinct named equality equations",
@@ -143,11 +198,16 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
   function expression(
     e: Expression,
     id = `expression-${++serial}`,
+    version: MathVersion = 1,
   ): f.ModelTarget {
-    if (quantityLiteral(e)) {
-      const q = evaluate(e, () => {
-        throw Error("Unresolved literal");
-      });
+    if (quantityLiteral(e) || e.kind === "constant" || e.kind === "unit") {
+      const q = evaluate(
+        e,
+        () => {
+          throw Error("Unresolved literal");
+        },
+        version,
+      );
       return put(id, {
         kind: "constant",
         label: "Constant",
@@ -161,19 +221,34 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
       build(row);
       return { node: local(row) };
     }
+    if (e.kind === "call")
+      return put(id, {
+        kind: "method",
+        label: e.name,
+        method: functionMethod(e.name, e.args.length),
+        inputs: Object.fromEntries(
+          e.args.map((arg, i) => [
+            `arg${i}`,
+            expression(arg, undefined, version),
+          ]),
+        ),
+      });
     if (e.kind === "unary")
       return put(id, {
         kind: "method",
         label: "Negation",
-        method: method("negate"),
-        inputs: { value: expression(e.expression) },
+        method: method("negate", version),
+        inputs: { value: expression(e.expression, undefined, version) },
       });
     f.assert(e.kind === "binary", "Unsupported equation expression");
     return put(id, {
       kind: "method",
       label: "Arithmetic",
-      method: method(e.op),
-      inputs: { left: expression(e.left), right: expression(e.right) },
+      method: method(e.op, version),
+      inputs: {
+        left: expression(e.left, undefined, version),
+        right: expression(e.right, undefined, version),
+      },
     });
   }
   function build(id: string) {
@@ -188,9 +263,13 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
         quantityLiteral(s.expression),
         "An exposed input needs a literal value and units",
       );
-      const q = evaluate(s.expression, () => {
-        throw Error("Unresolved input");
-      });
+      const q = evaluate(
+        s.expression,
+        () => {
+          throw Error("Unresolved input");
+        },
+        s.mathVersion ?? 1,
+      );
       f.assert(
         Math.abs(q.value) <= 1e12,
         "Use model inputs within ±1e12 in canonical units",
@@ -203,13 +282,13 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
       });
       inputs[id] = { label: s.name, node: local(id) };
     } else {
-      const target = expression(s.expression, local(id));
+      const target = expression(s.expression, local(id), s.mathVersion ?? 1);
       // A direct alias needs an identity operation to retain its stable node identity.
       if ("node" in target && target.node !== local(id))
         put(local(id), {
           kind: "method",
           label: s.name,
-          method: method("identity"),
+          method: method("identity", s.mathVersion ?? 1),
           inputs: { value: target },
         });
     }

@@ -38,7 +38,12 @@ export async function sampleOutput(job) {
   return {
     points,
     code_sha256: await sourceHash(job.code),
-    runtime: { adapter: "bounded-python-sampler/1", python: "test" },
+    runtime: {
+      adapter: job.definitions.some((r) => r.mathVersion === 2)
+        ? "bounded-python-sampler/2"
+        : "bounded-python-sampler/1",
+      python: "test",
+    },
   };
 }
 export function testSession(...args) {

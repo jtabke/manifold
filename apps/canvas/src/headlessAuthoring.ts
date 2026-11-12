@@ -46,6 +46,7 @@ export function worksheetSnapshot(session: RegionSession) {
       return {
         id: region.id,
         text: region.text,
+        mathVersion: region.mathVersion ?? 1,
         kind: projection.kinds[region.id],
         position: layout[region.id],
         name: statement?.anonymous ? null : (statement?.name ?? null),
@@ -133,6 +134,11 @@ export function createHeadlessEdits(
     },
     updateEquation(item: string, text: string) {
       return run("updateEquation", () => write(item, text, "equation"));
+    },
+    enableScientificMath(item: string) {
+      return run("enableScientificMath", () =>
+        session.enableScientificMath(item),
+      );
     },
     createNote(text: string, at?: WorksheetPosition) {
       return run("createNote", () => create(text, "note", at));

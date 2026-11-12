@@ -6,6 +6,16 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { checks, selectChecks, runChecks } from "../tools/run-checks.mjs";
+import { browserOptions } from "../../../scripts/browser.mjs";
+
+assert.deepEqual(browserOptions({}), { channel: "chromium" });
+assert.deepEqual(browserOptions({ MANIFOLD_BROWSER_EXECUTABLE: "" }), {
+  channel: "chromium",
+});
+assert.deepEqual(
+  browserOptions({ MANIFOLD_BROWSER_EXECUTABLE: "/usr/bin/chromium" }),
+  { executablePath: "/usr/bin/chromium" },
+);
 
 const directory = await mkdtemp(join(tmpdir(), "manifold-runner-contract-"));
 const logs = [];

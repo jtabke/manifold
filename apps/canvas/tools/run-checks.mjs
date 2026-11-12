@@ -57,6 +57,8 @@ const names = [
   "check-infinite-viewport.mjs",
   "check-linking.mjs",
   "check-math.mjs",
+  "check-scientific-math.mjs",
+  "check-scientific-math-browser.mjs",
   "check-incremental-worksheet.mjs",
   "check-models.mjs",
   "check-progressive-links.mjs",

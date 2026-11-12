@@ -1,3 +1,4 @@
+import { browserOptions } from "../../../scripts/browser.mjs";
 import { chromium, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { readFile as readAsync } from "node:fs/promises";
@@ -12,7 +13,7 @@ const fixture = readFileSync(
   new URL("./canvas-v2.fixture.json", import.meta.url),
   "utf8",
 );
-const browser = await chromium.launch({ channel: "chrome", headless: true }),
+const browser = await chromium.launch({ ...browserOptions(), headless: true }),
   errors = [];
 try {
   const context = await browser.newContext({

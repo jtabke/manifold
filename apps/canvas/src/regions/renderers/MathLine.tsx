@@ -383,6 +383,26 @@ function MathLineContent({
       );
     }
     if (e.kind === "name") return symbol(e.name, true, mapped.span);
+    if (e.kind === "unit" || e.kind === "constant")
+      return m(
+        "mi",
+        e.name === "degC" ? "°C" : e.name === "pi" ? "π" : e.name,
+        { mathvariant: "normal", ...sourceProps(mapped.span) },
+      );
+    if (e.kind === "call")
+      return m("mrow", [
+        m("mi", e.name, {
+          key: "fn",
+          mathvariant: "normal",
+          ...sourceProps(mapped.span),
+        }),
+        m("mo", "(", { key: "open" }),
+        ...e.args.flatMap((arg, i) => [
+          ...(i ? [m("mo", ",", { key: `comma-${i}` })] : []),
+          m("mrow", expression(arg), { key: `arg-${i}` }),
+        ]),
+        m("mo", ")", { key: "close" }),
+      ]);
     if (e.kind === "unary")
       return m("mrow", [
         m("mo", "−", { key: "o", ...sourceProps(mapped.operator) }),

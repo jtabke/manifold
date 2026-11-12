@@ -47,8 +47,23 @@ export function mathSource(statement: Statement, text: string) {
   const walk = (e: Expression): SourceSpan => {
     let span: SourceSpan, operator: SourceSpan | undefined;
     if (e.kind === "number") span = take(String(e.value), true);
-    else if (e.kind === "name") span = take(e.name);
-    else if (e.kind === "unary") {
+    else if (e.kind === "name" || e.kind === "unit" || e.kind === "constant")
+      span = take(e.name);
+    else if (e.kind === "call") {
+      const name = take(e.name);
+      const args = e.args.map(walk);
+      let end = args.at(-1)?.end ?? name.end;
+      const opening = text.indexOf("(", name.end);
+      let depth = 0;
+      for (let i = opening; opening >= 0 && i < text.length; i++) {
+        if (text[i] === "(") depth++;
+        if (text[i] === ")" && --depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+      span = { start: name.start, end };
+    } else if (e.kind === "unary") {
       operator = take("-");
       span = { start: operator.start, end: walk(e.expression).end };
     } else {
