@@ -86,7 +86,9 @@ async function assertDead(pid) {
           await readFile(`/proc/${pid}/stat`, "utf8"),
         );
       } catch (error) {
-        if (error.code === "ENOENT") dead = true;
+        // The process can disappear after opening /proc/<pid>/stat but before
+        // reading it: Linux reports ESRCH for that race, ENOENT before open.
+        if (["ENOENT", "ESRCH"].includes(error.code)) dead = true;
         else throw error;
       }
       if (dead) break;

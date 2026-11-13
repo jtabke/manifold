@@ -86,6 +86,9 @@ try {
   await csvInput.setInputFiles(importFile);
   await expect(page.locator(".er-data")).toBeVisible();
   await expect(csvInput).toHaveValue("");
+  // Input reset confirms reading, not durable saving. Wait for the real store
+  // before navigating away; slower CI can otherwise reload the pre-import head.
+  expect((await saved()).page.regions.find((r) => r.data)?.data.csv).toBe(csv);
   await page.reload();
   await expect(page.locator(".er-data")).toBeVisible();
 

@@ -107,7 +107,10 @@ async function processesStopped(log) {
       // Linux can briefly retain a killed orphan as a zombie until init reaps it.
       if (process.platform === "linux") {
         const status = await readFile(`/proc/${pid}/stat`, "utf8").catch(
-          () => "",
+          (error) => {
+            if (["ENOENT", "ESRCH"].includes(error.code)) return "";
+            throw error;
+          },
         );
         if (!status || /^\d+ \(.*\) Z /.test(status)) continue;
       }
