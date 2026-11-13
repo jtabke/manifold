@@ -120,6 +120,7 @@ function main() {
     "apps/canvas",
     "apps/assistant",
     "packages/foundation",
+    "packages/cli",
   ]);
   assert.equal(canvas.dependencies[foundation.name], foundation.version);
   for (const path of pkg.workspaces)
@@ -135,6 +136,7 @@ function main() {
     ...files("apps/canvas"),
     ...files("apps/assistant"),
     ...files("packages/foundation"),
+    ...files("packages/cli"),
     ...files("scripts"),
   ].filter((p) => /\.(?:mjs|tsx?)$/.test(p))) {
     for (const specifier of imports(

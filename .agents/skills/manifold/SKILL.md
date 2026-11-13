@@ -2,19 +2,21 @@
 name: manifold
 description: Inspect, author, and compute Manifold engineering workspaces using the local CLI. Use for units-aware worksheet or scalar-model changes, constraint checks, and reviewable candidate files; not for arbitrary code execution or general CAD/solver tasks.
 license: Apache-2.0
-compatibility: Requires a Manifold repository checkout with npm dependencies installed and Node 22.18+. Python is only needed for browser/sampling workflows, not this local CLI.
+compatibility: Requires Node 22.18+ and either the installed Manifold tools or a repository checkout with npm dependencies installed. Python is only needed for browser/sampling workflows, not this local CLI.
 ---
 
 # Manifold engineering workspaces
 
 Use the existing CLI, not a second mutation engine or edits to the archive's JSON internals.
-The interface is experimental and repository-local. It supports plain worksheet authoring
+The interface is experimental. It supports plain worksheet authoring
 and scalar models; discover other limits rather than assuming a general solver or live canvas bridge.
 
 ## Locate the tool and its contracts
 
-Resolve paths relative to this skill's directory. The repository root is `../../..`.
-Run `node <root>/apps/canvas/tools/manifold.mjs --help` and `capabilities` first.
+Resolve paths relative to this skill's directory. In an installed package, `main.mjs`
+is beside this skill: run `node <skill-directory>/main.mjs --help` and `capabilities`.
+In the source checkout, the repository root is `../../..`; run
+`node <root>/apps/canvas/tools/manifold.mjs --help` and `capabilities` first.
 Commands can run from another directory; use absolute workspace/output paths when practical.
 If Node or repository dependencies are missing, report the prerequisite; do not silently
 install globally, fetch a similarly named package, or start a server.

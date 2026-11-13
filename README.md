@@ -92,6 +92,9 @@ For browser-free document inspection, editing and explicit computation, see the
 For external-agent control of an open canvas, see the [local MCP server](docs/reference/mcp.md)
 with human-selected permissions, focused inspection, replay-safe live editing, asynchronous
 computation and portable native snapshots.
+For installable CLI/MCP tooling and a first successful workflow, start with the
+[agent tools installation guide](docs/guides/agent-tools.md). The package runs outside a
+source checkout; the canvas application still starts separately.
 For agent workflows with JSON discovery, atomic edits, validation, comparison and explicit
 computation, see the [agent guide](docs/guides/agents.md) and [CLI reference](docs/reference/cli.md).
 A [bundled Manifold skill](.agents/skills/manifold/SKILL.md) teaches agents that workflow;

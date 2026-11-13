@@ -2,8 +2,10 @@
 
 This page defines Manifold's local CLI contract. For the discover → edit → check → compute
 workflow and a complete edit example, start with the [agent guide](../guides/agents.md).
-The interface is experimental and repository-local, not a published stable package.
-Requires Node 22.18+ and `npm ci` at the repository root.
+The interface is experimental, not a stable protocol guarantee. Requires Node 22.18+.
+The [installation guide](../guides/agent-tools.md) covers the standalone built package;
+source-checkout use requires `npm ci` at the repository root. Registry publication is a
+separate maintainer action.
 
 ## Run
 
@@ -14,10 +16,21 @@ node apps/canvas/tools/manifold.mjs --help
 node apps/canvas/tools/manifold.mjs capabilities --json
 ```
 
-After npm installation, the same executable is available as `node_modules/.bin/manifold`.
-Examples use that shorter path. No global installation is required.
+The installed package provides `manifold`. Checkout-only examples below invoke
+`node apps/canvas/tools/manifold.mjs` directly; no global installation or generated
+package build is required. The old private canvas package no longer owns a competing
+`manifold` binary.
 
-All command results are JSON on stdout, one response per invocation. `--json` is accepted
+The installed package additionally provides `manifold --version`, `doctor`,
+`mcp-config`, `mcp` and the `manifold-mcp` executable. These launcher commands do not
+change file-command protocol versions. `mcp-config` prints absolute installation paths;
+`doctor [--canvas-url URL]` returns a JSON prerequisite report (exit 0 ready, 1 unavailable,
+2 invalid arguments). Doctor's bounded, no-redirect local HTTP/title check does not
+authenticate a server, connect a tab or grant authority. `mcp` takes no flags; configure
+the target with `MANIFOLD_CANVAS_URL`. See the [MCP reference](mcp.md).
+`--version` prints the package version as plain text. No command installs updates.
+
+All file-command results are JSON on stdout, one response per invocation. `--json` is accepted
 but unnecessary. Errors are JSON on stderr. Help is human-readable. No command prompts.
 Every response has `protocolVersion: 1`; discovery and mutation responses expose the
 reviewed/current `documentId`. Separate invocations do not share session history.

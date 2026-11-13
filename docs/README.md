@@ -5,6 +5,7 @@
 | Task | Start here |
 | --- | --- |
 | Use the engineering canvas | [Canvas guide](guides/canvas.md): authoring, drawing, models, saved work and sharing. |
+| Install CLI or MCP tools | [Agent tools installation](guides/agent-tools.md): tarball install, first file workflow, diagnostics and client setup. |
 | Automate work with an agent | [Agent guide](guides/agents.md) and [bundled skill](../.agents/skills/manifold/SKILL.md): discover, inspect, edit, check, compute and hand back a candidate. |
 | Connect an external agent to a live canvas | [MCP reference](reference/mcp.md): scoped access, focused reads, replay-safe editing, asynchronous jobs and portable native export. |
 | Understand portable `.manifold` files | [File format reference](reference/manifold-format.md): envelopes, compatibility, assets, limits and trust boundaries. |
