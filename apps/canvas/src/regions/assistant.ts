@@ -8,6 +8,7 @@ import {
 } from "../agent.ts";
 import { RegionSession } from "./document.ts";
 import { assistantObjectReference } from "./assistantReferences.ts";
+import type { AssistantPermission } from "./assistantSettings.ts";
 import {
   assistantCapabilities,
   canvasChanges,
@@ -33,6 +34,7 @@ export function createCanvasAssistant(session: RegionSession) {
   const workspace = bindLiveWorkspace(session);
   let closed = false;
   let request: string | undefined;
+  let permissions: AssistantPermission = "reviewed-edits";
   const proposals = new Map<
     string,
     {
@@ -42,6 +44,18 @@ export function createCanvasAssistant(session: RegionSession) {
   >();
   const check = () => {
     if (closed) throw Error("Assistant session is closed");
+  };
+  const setPermissions = (next: AssistantPermission) => {
+    check();
+    if (next !== "read-only" && next !== "reviewed-edits")
+      throw Error("Choose read-only or reviewed-edit assistant access");
+    if (request && permissions === "read-only" && next === "reviewed-edits")
+      throw Error("Finish the current read-only request before allowing edits");
+    permissions = next;
+    if (permissions === "read-only")
+      for (const entry of proposals.values())
+        if (entry.proposal.status === "pending")
+          entry.proposal = freeze({ ...entry.proposal, status: "dismissed" });
   };
   const view = (
     entry: typeof proposals extends Map<string, infer T> ? T : never,
@@ -55,20 +69,24 @@ export function createCanvasAssistant(session: RegionSession) {
           : entry.proposal.status,
     });
   return Object.freeze({
-    begin(requestId: string) {
+    setPermissions,
+    begin(requestId: string, access: AssistantPermission = permissions) {
       check();
+      if (typeof requestId !== "string" || !requestId || requestId.length > 100)
+        throw Error("Use a nonempty assistant request ID under 101 characters");
       if (request) throw Error("An assistant request is already running");
+      setPermissions(access);
       request = requestId;
     },
     active(requestId: string) {
-      return !closed && request === requestId;
+      return !closed && !!request && request === requestId;
     },
     end(requestId: string) {
       if (request === requestId) request = undefined;
     },
     tool(requestId: string, name: string, args: unknown) {
       check();
-      if (request !== requestId)
+      if (!request || request !== requestId)
         throw Error("Assistant request is no longer active");
       if (name === "inspect_workspace") {
         const snapshot = summarizeWorkspace(workspace);
@@ -141,6 +159,8 @@ export function createCanvasAssistant(session: RegionSession) {
       }
       if (name === "capabilities") return assistantCapabilities();
       if (name !== "prepare_edit") throw Error("Unsupported assistant tool");
+      if (permissions === "read-only")
+        throw Error("Read-only assistant access does not allow edit proposals");
       if (!args || typeof args !== "object" || Array.isArray(args))
         throw Error("Expected an edit proposal");
       const { explanation, batch, ...extra } = args as Record<string, unknown>;
@@ -215,6 +235,8 @@ export function createCanvasAssistant(session: RegionSession) {
     },
     apply(id: string) {
       check();
+      if (permissions === "read-only")
+        throw Error("Read-only assistant access does not allow applying edits");
       const entry = proposals.get(id);
       if (!entry || view(entry).status !== "pending")
         throw Error(

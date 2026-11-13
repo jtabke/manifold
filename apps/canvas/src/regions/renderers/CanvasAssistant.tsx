@@ -1,6 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "../styles/assistant.css";
-import { AssistantConnection, useAssistantSetup } from "./AssistantConnection";
+import {
+  AssistantConnection,
+  AssistantPreferences,
+  useAssistantSetup,
+} from "./AssistantConnection";
 import {
   ArrowDown,
   ArrowUp,
@@ -159,17 +163,28 @@ export function CanvasAssistant({
     if (!minimized) requestInput.current?.focus();
     if (connection === "ready") setSettingsOpen(false);
   }, [connection, minimized]);
-  const setup = useAssistantSetup(connection, connect);
+  const setup = useAssistantSetup(connection, connect, {
+    busy: busy || submitting,
+    permissions: assistant.permissions,
+    setPermissions: assistant.setPermissions,
+    activeSettings: assistant.settings,
+  });
+  const readOnly = setup.permissions === "read-only";
   const send = async () => {
     if (setup.loading || submitting || busy || !prompt.trim()) return;
     const text = prompt;
     followLatest.current = true;
     setAwayFromLatest(false);
-    const sent = await assistant.send(text, attached, async () => {
-      const ready = await setup.start();
-      if (!ready) setSettingsOpen(true);
-      return ready;
-    });
+    const sent = await assistant.send(
+      text,
+      attached,
+      async () => {
+        const ready = await setup.start();
+        if (!ready) setSettingsOpen(true);
+        return ready;
+      },
+      setup.preferences,
+    );
     if (sent) setPrompt((draft) => (draft === text ? "" : draft));
   };
   const pendingCount = proposals.filter(
@@ -456,7 +471,10 @@ export function CanvasAssistant({
                 ? `${attached.length} selected object(s) will be attached. `
                 : "Worksheet context. "}
               The whole worksheet remains inspectable. Context and requested
-              images go to your model; edits need approval.
+              images go to your model.{" "}
+              {readOnly
+                ? "Read-only access; editing tools are disabled."
+                : "Every edit needs your approval."}
             </span>
             {
               <p
@@ -467,13 +485,17 @@ export function CanvasAssistant({
                 Selection is a focus hint, not an access restriction. The
                 assistant can inspect the worksheet and request canvas images.
                 Inspected content goes to your model provider. Credentials are
-                excluded from images. No shell access or automatic computation;
-                every edit requires approval.
+                excluded from images. No shell access or automatic computation.{" "}
+                {readOnly
+                  ? "Read-only access; editing tools are disabled."
+                  : "Every edit requires approval."}
               </p>
             }
             <label className="assistant-composer">
               <span className="assistant-visually-hidden">
-                Ask about or edit the canvas
+                {readOnly
+                  ? "Ask about the canvas"
+                  : "Ask about or edit the canvas"}
               </span>
               <textarea
                 ref={requestInput}
@@ -484,7 +506,9 @@ export function CanvasAssistant({
                 placeholder={
                   busy
                     ? "Draft your next question…"
-                    : "Ask about or edit the canvas…"
+                    : readOnly
+                      ? "Ask about the canvas…"
+                      : "Ask about or edit the canvas…"
                 }
                 onKeyDown={(event) => {
                   if (
@@ -499,6 +523,7 @@ export function CanvasAssistant({
                 rows={2}
               />
             </label>
+            <AssistantPreferences setup={setup} compact />
             <div className="assistant-composer-toolbar">
               <span className="assistant-keyboard-hint">
                 Enter to send · Shift+Enter for newline
@@ -544,7 +569,8 @@ export function CanvasAssistant({
           </form>
           <p className="assistant-safety">
             <ShieldCheck size={13} aria-hidden="true" />
-            You review every edit. Check engineering results independently.
+            {readOnly ? "Read-only access." : "You review every edit."} Check
+            engineering results independently.
           </p>
         </footer>
         {floating && (

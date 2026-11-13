@@ -2,6 +2,7 @@
 import { randomBytes } from "node:crypto";
 import { assistantConfiguration, createPiFactory } from "./pi.mjs";
 import { startCompanion } from "./server.mjs";
+import { canvasSettings, CanvasSettingsError } from "./canvas-settings.mjs";
 
 function reply(res, status, body) {
   res.writeHead(status, {
@@ -43,7 +44,12 @@ export async function startManagedCompanion({
         throw Error("Connection expired. Click Connect again in the canvas.");
       grants.delete(ticket);
       clearTimeout(grant.timer);
-      return grant.factory(call);
+      const session = await grant.factory(call);
+      if (!session.canvasSettings)
+        Object.defineProperty(session, "canvasSettings", {
+          value: grant.settings,
+        });
+      return session;
     },
     handleRequest: async (req, res, url) => {
       try {
@@ -61,7 +67,14 @@ export async function startManagedCompanion({
           typeof input !== "object" ||
           Array.isArray(input) ||
           Object.keys(input).some(
-            (key) => !["provider", "model", "apiKey"].includes(key),
+            (key) =>
+              ![
+                "provider",
+                "model",
+                "thinking",
+                "permissions",
+                "apiKey",
+              ].includes(key),
           ) ||
           typeof input.provider !== "string" ||
           !input.provider ||
@@ -75,6 +88,15 @@ export async function startManagedCompanion({
           throw Error(
             "Choose a provider and model, and optionally supply an API key",
           );
+        const settings = canvasSettings({
+          provider: input.provider,
+          model: input.model,
+          thinking: input.thinking === undefined ? "off" : input.thinking,
+          permissions:
+            input.permissions === undefined
+              ? "reviewed-edits"
+              : input.permissions,
+        });
         if (grants.size + configuring >= 4)
           throw Error("Too many pending connections. Wait a minute and retry.");
         // A separate runtime per connection keeps a supplied key scoped to this conversation.
@@ -88,6 +110,7 @@ export async function startManagedCompanion({
             input.provider,
             input.model,
             input.apiKey || undefined,
+            { thinking: settings.thinking, permissions: settings.permissions },
           );
         } finally {
           configuring--;
@@ -95,17 +118,19 @@ export async function startManagedCompanion({
         const ticket = randomBytes(32).toString("hex");
         const timer = setTimeout(() => grants.delete(ticket), grantTimeoutMs);
         timer.unref();
-        grants.set(ticket, { factory: createSession, timer });
+        grants.set(ticket, { factory: createSession, settings, timer });
         const endpoint = new URL(companion.url);
         endpoint.searchParams.set("ticket", ticket);
-        reply(res, 200, { url: endpoint.href });
+        reply(res, 200, { url: endpoint.href, settings });
       } catch (error) {
         // SDK/provider errors can contain credential material. Only return actionable local errors.
         reply(res, 400, {
           error:
-            url.pathname === "/configuration"
-              ? "Could not read Pi configuration. Check your local Pi setup and retry."
-              : "Could not configure the assistant. Check the provider/model and API key, then retry.",
+            error instanceof CanvasSettingsError
+              ? error.message
+              : url.pathname === "/configuration"
+                ? "Could not read Pi configuration. Check your local Pi setup and retry."
+                : "Could not configure the assistant. Check the provider/model and API key, then retry.",
         });
       }
     },

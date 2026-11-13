@@ -377,8 +377,62 @@ try {
   } finally {
     canvasAssistant.close();
   }
+  const restricted = createCanvasAssistant(session);
+  try {
+    const baseline = session.native();
+    for (const requestId of [undefined, null, "", "x".repeat(101)]) {
+      assert.throws(() => restricted.begin(requestId), /request ID/);
+      assert.equal(restricted.active(requestId), false);
+      for (const tool of ["inspect_workspace", "prepare_edit"])
+        assert.throws(
+          () => restricted.tool(requestId, tool, {}),
+          /no longer active/,
+          "unsolicited tools cannot acquire authority while the chat is idle",
+        );
+    }
+    restricted.begin("read-only", "read-only");
+    assert.equal(
+      restricted.tool("read-only", "inspect_workspace", {}).documentId,
+      session.document.id,
+    );
+    assert.throws(
+      () => restricted.tool("read-only", "prepare_edit", {}),
+      /Read-only/,
+      "an untrusted companion cannot create a proposal in read-only mode",
+    );
+    assert.throws(
+      () => restricted.setPermissions("reviewed-edits"),
+      /Finish the current read-only request/,
+      "a running read-only request cannot be promoted to edit access",
+    );
+    assert.equal(restricted.proposals().length, 0);
+    assert.deepEqual(session.native(), baseline);
+    restricted.end("read-only");
+    restricted.begin("review", "reviewed-edits");
+    const pending = restricted.tool("review", "prepare_edit", {
+      explanation: "A note requiring explicit review",
+      batch: {
+        expectedDocumentId: session.document.id,
+        edits: [{ operation: "createNote", text: "Pending restricted note" }],
+      },
+    });
+    restricted.end("review");
+    restricted.setPermissions("read-only");
+    assert.equal(restricted.proposals()[0].status, "dismissed");
+    assert.throws(() => restricted.apply(pending.id), /Read-only/);
+    assert.deepEqual(session.native(), baseline);
+    restricted.setPermissions("reviewed-edits");
+    assert.throws(
+      () => restricted.apply(pending.id),
+      /stale or already resolved/,
+      "restoring edit access never revives a proposal revoked by read-only",
+    );
+    assert.deepEqual(session.native(), baseline);
+  } finally {
+    restricted.close();
+  }
   console.log(
-    "Canvas assistant: live inspection, staged drawing/connector/group/layout/plot/analysis edits, derived and checked plot reads, no implicit execution, exact commands, atomic Apply/Undo/Redo, stale/dismissed/duplicate rejection and cancellation authority pass.",
+    "Canvas assistant: live inspection, staged drawing/connector/group/layout/plot/analysis edits, derived and checked plot reads, no implicit execution, exact commands, atomic Apply/Undo/Redo, stale/dismissed/duplicate rejection, cancellation authority and enforced read-only proposal/application revocation pass.",
   );
 } finally {
   assistant.close();

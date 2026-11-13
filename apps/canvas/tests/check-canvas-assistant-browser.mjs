@@ -47,6 +47,9 @@ const companion = await startCompanion({
   createSession: async (call) => {
     let listener, aborted;
     return {
+      configureCanvas(settings) {
+        return settings;
+      },
       subscribe(fn) {
         listener = fn;
       },
@@ -497,7 +500,12 @@ try {
   };
   await ask("Set displacement to 3 mm");
   expect(configurations).toEqual([
-    { provider: "test", model: "configured-default" },
+    {
+      provider: "test",
+      model: "configured-default",
+      thinking: "off",
+      permissions: "reviewed-edits",
+    },
   ]);
   await expect(settings).toHaveAttribute("aria-expanded", "false");
   await expect(panel.getByText("Connected", { exact: true })).toBeVisible();
@@ -772,6 +780,8 @@ try {
   expect(configurations[2]).toEqual({
     provider: "key-only",
     model: "small",
+    thinking: "off",
+    permissions: "reviewed-edits",
     apiKey: "test-only-browser-key",
   });
   expect(

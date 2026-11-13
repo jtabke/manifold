@@ -248,7 +248,20 @@ export function AssistantConversation({
             </h3>
             <p>{turn.prompt}</p>
           </div>
-          <h3>Assistant</h3>
+          <h3>
+            Assistant
+            {turn.settings && (
+              <small
+                className="assistant-turn-settings"
+                aria-label="Effective request settings"
+              >
+                {turn.settings.model} · Thinking {turn.settings.thinking} ·{" "}
+                {turn.settings.permissions === "read-only"
+                  ? "Read-only"
+                  : "Review edits"}
+              </small>
+            )}
+          </h3>
           {turn.answer ? (
             <Suspense
               fallback={<p className="assistant-answer">{turn.answer}</p>}

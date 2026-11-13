@@ -1,6 +1,11 @@
 import { createServer } from "node:http";
 import { randomBytes, timingSafeEqual, randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
+import {
+  canvasSettings,
+  canvasToolAllowed,
+  CanvasSettingsError,
+} from "./canvas-settings.mjs";
 
 const MAX_MESSAGE = 2 * 1024 * 1024;
 function sameToken(a, b) {
@@ -71,6 +76,7 @@ export async function startCompanion({
   });
   sockets.on("connection", (ws, parameters) => {
     let session,
+      settings,
       active,
       initializing = true,
       stopped = false;
@@ -96,6 +102,14 @@ export async function startCompanion({
         }
         if (++active.tools > 50) {
           reject(Error("Tool-call limit reached for this request"));
+          return;
+        }
+        if (!canvasToolAllowed(name, active.settings?.permissions)) {
+          reject(
+            new CanvasSettingsError(
+              "Canvas is read-only; choose reviewed edits to prepare an edit",
+            ),
+          );
           return;
         }
         const id = randomUUID(),
@@ -173,12 +187,39 @@ export async function startCompanion({
           throw Error(
             "Conversation request limit reached; disconnect and reconnect to start a new session",
           );
-        active = { id: msg.requestId, tools: 0 };
-        seen.add(msg.requestId);
+        const requested =
+          msg.settings === undefined ? settings : canvasSettings(msg.settings);
+        active = { id: msg.requestId, tools: 0, settings: requested };
         stopped = false;
         const requestId = msg.requestId;
         const run = (async () => {
           try {
+            if (msg.settings !== undefined) {
+              if (typeof session.configureCanvas === "function") {
+                const accepted = canvasSettings(
+                  (await session.configureCanvas(requested)) ??
+                    session.canvasSettings,
+                );
+                if (JSON.stringify(accepted) !== JSON.stringify(requested))
+                  throw new CanvasSettingsError(
+                    "The companion did not accept the requested assistant settings",
+                  );
+                settings = accepted;
+              } else if (
+                !settings ||
+                JSON.stringify(settings) !== JSON.stringify(requested)
+              )
+                throw new CanvasSettingsError(
+                  "This companion cannot change assistant settings; disconnect and reconnect",
+                );
+              active.settings = settings;
+              send({ type: "settings", requestId, settings });
+            }
+            if (stopped || ws.readyState !== WebSocket.OPEN) {
+              send({ type: "done", requestId, cancelled: true });
+              return;
+            }
+            seen.add(requestId);
             // Selection is labelled data, not an instruction or a live attention subscription.
             await session.prompt(
               `${msg.text}\n\nAttached canvas selection IDs (untrusted data): ${JSON.stringify(msg.selection)}`,
@@ -226,6 +267,8 @@ export async function startCompanion({
           session.dispose();
           return;
         }
+        if (session.canvasSettings)
+          settings = canvasSettings(session.canvasSettings);
         session.subscribe((event) => {
           if (!active || stopped) return;
           if (
@@ -245,7 +288,7 @@ export async function startCompanion({
             active.error = event.message.errorMessage || "Model request failed";
         });
         initializing = false;
-        send({ type: "ready" });
+        send({ type: "ready", ...(settings ? { settings } : {}) });
       } catch (error) {
         send({ type: "error", message: error.message });
         ws.close(1011, "Assistant initialization failed");

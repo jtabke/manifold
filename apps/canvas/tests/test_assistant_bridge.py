@@ -23,14 +23,24 @@ class AssistantBridgeTests(unittest.TestCase):
                     self.assertEqual(status, 200)
                     self.assertTrue(config["providers"])
                     self.assertNotIn("apiKey", config)
+                    self.assertTrue(all(
+                        model["thinkingLevels"] and
+                        model["defaultThinking"] in model["thinkingLevels"]
+                        for provider in config["providers"] for model in provider["models"]
+                    ))
                     process = bridge.process
                     self.assertIsNone(process.poll())
                     status, result = bridge.request("connect", {
                         "provider": "openai", "model": "gpt-6.1-sol",
+                        "thinking": "high", "permissions": "read-only",
                         "apiKey": "manifold-test-key-not-a-real-credential",
                     })
                     self.assertEqual(status, 200)
                     self.assertIn("ticket=", result["url"])
+                    self.assertEqual(result["settings"], {
+                        "provider": "openai", "model": "gpt-6.1-sol",
+                        "thinking": "high", "permissions": "read-only",
+                    })
                     self.assertNotIn("manifold-test-key", result["url"])
                     self.assertIs(bridge.process, process, "one companion per local server")
                     auth = Path(directory, "auth.json")

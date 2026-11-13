@@ -1,9 +1,16 @@
+import { CANVAS_PERMISSIONS, canvasToolAllowed } from "./canvas-settings.mjs";
+
 const emptyParameters = {
   type: "object",
   properties: {},
   additionalProperties: false,
 };
-export function canvasTools(call, { images = true } = {}) {
+export function canvasTools(
+  call,
+  { images = true, permissions = "reviewed-edits" } = {},
+) {
+  if (!CANVAS_PERMISSIONS.includes(permissions))
+    throw Error("Unknown canvas permission mode");
   return [
     {
       name: "inspect_workspace",
@@ -86,6 +93,7 @@ export function canvasTools(call, { images = true } = {}) {
     },
   ]
     .filter((tool) => images || tool.name !== "look_at_canvas")
+    .filter((tool) => canvasToolAllowed(tool.name, permissions))
     .map((tool) => ({
       ...tool,
       async execute(_id, args, signal) {

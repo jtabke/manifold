@@ -83,7 +83,8 @@ Neither a push nor ordinary CI publishes a package or deploys a service.
 
 The optional companion is the `apps/assistant` npm workspace. The normal Python canvas server
 starts it lazily when the assistant opens. The first submitted request connects using detected
-Pi defaults; the gear reveals provider/model settings and manual Connect. No separate launch
+Pi defaults; the composer exposes searchable model/thinking selection and read-only or reviewed-edit
+access. The gear reveals provider/credential settings and manual Connect. No separate launch
 command is needed. Standalone `npm run assistant -- --provider PROVIDER --model MODEL`
 remains an advanced/testing option; see the
 [canvas assistant guide](../guides/canvas.md#ask-the-canvas-assistant-experimental) for connection,
@@ -95,6 +96,8 @@ make check-assistant
 npm --prefix apps/canvas test -- check-canvas-assistant
 npm --prefix apps/canvas run build
 npm --prefix apps/canvas run test:all-browser -- check-canvas-assistant-browser
+npm --prefix apps/canvas run test:all-browser -- check-assistant-settings-browser
+npm --prefix apps/canvas run test:all-browser -- check-assistant-rendering-browser
 ```
 
 The companion checks create a restricted real SDK session without prompting a model. Transport
@@ -104,6 +107,21 @@ drafts, Stop, disconnect cleanup, in-canvas configuration/key clearing and norma
 Python integration tests exercise the real managed Node process and assert startup/shutdown and
 that a supplied test key never reaches Pi's auth file. Setup and connection do not prompt a model. No provider calls or credentials
 are required; real-model quality and unfamiliar-user usability remain manual validation gaps.
+
+Assistant settings are credential-free, per-request snapshots. The companion validates model
+capabilities and acknowledges the exact model/thinking/access settings before inference; model
+switches retain the same ephemeral SDK session. Read-only denies edit tools in the companion and
+the live canvas owner, and revokes pending proposals. Choosing preferences makes no model call,
+changes no Pi defaults, and writes no workspace state. The browser settings check covers these
+boundaries, history continuity, capability-dependent thinking, keyboard/mobile controls and explicit
+Apply/Undo through the real authenticated bridge with deterministic sessions.
+
+`check-assistant-diagrams` validates bounded diagram source and rejected embedded content before
+loading Mermaid. The rendering browser check exercises flowcharts, sequences, streaming replacement,
+source/copy fallback and unchanged KaTeX/code responses. Adversarial configuration, encoded labels,
+image/link forms and CSS resource syntax must neither execute scripts nor make external requests.
+Both Mermaid's temporary render and final sanitized SVG display have network-denying policies;
+the final frame enables no sandbox permissions. The pinned renderer is lazy-loaded only for diagrams.
 
 ## Agent-to-canvas browser handoff
 

@@ -8,6 +8,10 @@ import type { RegionSession } from "../document";
 import type { WorkspaceEdits } from "./workspaceFiles";
 import type { AssistantCanvasPort } from "../assistantCanvas";
 import type { AssistantObjectReference } from "../assistantReferences";
+import type {
+  AssistantPermission,
+  AssistantSettings,
+} from "../assistantSettings";
 
 export type AssistantConnectionState = "offline" | "connecting" | "ready";
 export type AssistantTurn = {
@@ -16,11 +20,13 @@ export type AssistantTurn = {
   selection: string[];
   answer: string;
   references: AssistantObjectReference[];
+  settings?: AssistantSettings;
 };
 type Bridge = {
   socket: WebSocket;
   assistant: CanvasAssistant;
   active?: string;
+  requestedSettings?: AssistantSettings;
   resolveConnection?: (ready: boolean) => void;
 };
 
@@ -28,6 +34,32 @@ function disposeBridge(current: Bridge | undefined) {
   current?.resolveConnection?.(false);
   current?.assistant.close();
   current?.socket.close();
+}
+
+function connectionSettings(value: unknown): AssistantSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw Error("Invalid assistant settings");
+  const fields = value as Record<string, unknown>;
+  if (
+    typeof fields.provider !== "string" ||
+    !fields.provider ||
+    fields.provider.length > 150 ||
+    typeof fields.model !== "string" ||
+    !fields.model ||
+    fields.model.length > 300 ||
+    typeof fields.thinking !== "string" ||
+    !["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+      fields.thinking,
+    ) ||
+    !["read-only", "reviewed-edits"].includes(String(fields.permissions))
+  )
+    throw Error("Invalid assistant settings");
+  return {
+    provider: fields.provider,
+    model: fields.model,
+    thinking: fields.thinking,
+    permissions: fields.permissions as AssistantPermission,
+  };
 }
 
 /** Owns transient transport and review state; accepted edits stay in RegionSession. */
@@ -47,8 +79,24 @@ export function useCanvasAssistant(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [activity, setActivity] = useState("");
+  const [permissions, changePermissions] =
+    useState<AssistantPermission>("reviewed-edits");
+  const permission = useRef<AssistantPermission>("reviewed-edits");
+  const [settings, setSettings] = useState<AssistantSettings>();
   const bridge = useRef<Bridge | undefined>(undefined);
   const sync = () => setProposals(bridge.current?.assistant.proposals() ?? []);
+  const setPermissions = (next: AssistantPermission) => {
+    try {
+      if (next !== "read-only" && next !== "reviewed-edits")
+        throw Error("Choose read-only or reviewed-edit assistant access");
+      bridge.current?.assistant.setPermissions(next);
+      permission.current = next;
+      changePermissions(next);
+      sync();
+    } catch (failure) {
+      setError((failure as Error).message);
+    }
+  };
   const disconnect = () => {
     const current = bridge.current;
     bridge.current = undefined;
@@ -57,6 +105,7 @@ export function useCanvasAssistant(
     setBusy(false);
     setActivity("");
     setProposals([]);
+    setSettings(undefined);
   };
   useEffect(() => {
     const detach = session.subscribe(() => {
@@ -93,6 +142,7 @@ export function useCanvasAssistant(
         socket,
         assistant: createCanvasAssistant(session),
       };
+      current.assistant.setPermissions(permission.current);
       const connected = new Promise<boolean>((resolve) => {
         current.resolveConnection = resolve;
       });
@@ -102,6 +152,14 @@ export function useCanvasAssistant(
         try {
           const message = JSON.parse(event.data);
           if (message.type === "ready") {
+            if (message.settings !== undefined) {
+              const accepted = connectionSettings(message.settings);
+              // A companion may restrict access, but cannot promote the user's
+              // read-only choice while the connection is being established.
+              if (accepted.permissions === "read-only")
+                setPermissions("read-only");
+              setSettings({ ...accepted, permissions: permission.current });
+            }
             setConnection("ready");
             current.resolveConnection?.(true);
             current.resolveConnection = undefined;
@@ -111,8 +169,28 @@ export function useCanvasAssistant(
             setError(message.message);
             return;
           }
-          if (message.requestId !== current.active) return;
-          if (message.type === "text") {
+          if (!current.active || message.requestId !== current.active) return;
+          if (message.type === "settings") {
+            const accepted = connectionSettings(message.settings),
+              requested = current.requestedSettings;
+            if (
+              !requested ||
+              Object.keys(accepted).some(
+                (key) =>
+                  accepted[key as keyof AssistantSettings] !==
+                  requested[key as keyof AssistantSettings],
+              )
+            )
+              throw Error("Companion settings do not match this request");
+            setSettings(accepted);
+            setTurns((previous) =>
+              previous.map((turn) =>
+                turn.id === message.requestId
+                  ? { ...turn, settings: accepted }
+                  : turn,
+              ),
+            );
+          } else if (message.type === "text") {
             setActivity("Writing a response…");
             setTurns((previous) =>
               previous.map((turn) =>
@@ -224,6 +302,7 @@ export function useCanvasAssistant(
           } else if (message.type === "done" || message.type === "error") {
             current.assistant.end(message.requestId);
             current.active = undefined;
+            current.requestedSettings = undefined;
             setBusy(false);
             setActivity(
               message.cancelled
@@ -262,6 +341,7 @@ export function useCanvasAssistant(
     text: string,
     selection: string[],
     ensureConnection: () => Promise<boolean>,
+    preferences?: AssistantSettings,
   ): Promise<boolean> => {
     if (submission.current || busy || !text.trim()) return false;
     const attached = [...new Set(selection)];
@@ -289,8 +369,15 @@ export function useCanvasAssistant(
         return false;
       }
       const id = crypto.randomUUID();
-      current.assistant.begin(id);
+      const requested = preferences
+        ? connectionSettings({
+            ...preferences,
+            permissions: permission.current,
+          })
+        : undefined;
+      current.assistant.begin(id, requested?.permissions ?? permission.current);
       current.active = id;
+      current.requestedSettings = requested;
       setTurns((previous) => [
         ...previous,
         {
@@ -299,6 +386,7 @@ export function useCanvasAssistant(
           selection: attached,
           answer: "",
           references: [],
+          ...(requested ? { settings: requested } : {}),
         },
       ]);
       setBusy(true);
@@ -310,9 +398,24 @@ export function useCanvasAssistant(
           requestId: id,
           text: text.trim(),
           selection: attached,
+          ...(requested ? { settings: requested } : {}),
         }),
       );
       return true;
+    } catch (failure) {
+      const current = bridge.current;
+      if (current?.active) {
+        current.assistant.end(current.active);
+        current.active = undefined;
+        current.requestedSettings = undefined;
+      }
+      setBusy(false);
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Could not send the request",
+      );
+      return false;
     } finally {
       submission.current = false;
       setSubmitting(false);
@@ -352,6 +455,9 @@ export function useCanvasAssistant(
     submitting,
     error,
     activity,
+    settings,
+    permissions,
+    setPermissions,
     connect,
     disconnect,
     send,

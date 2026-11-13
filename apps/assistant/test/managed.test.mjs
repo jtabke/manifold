@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { once } from "node:events";
 import { WebSocket } from "ws";
 import { startManagedCompanion } from "../src/managed.mjs";
+import { CanvasSettingsError } from "../src/canvas-settings.mjs";
 
 const origin = "http://127.0.0.1:58310";
 const configuration = {
@@ -13,7 +14,14 @@ const configuration = {
       id: "test",
       name: "Test",
       configured: true,
-      models: [{ id: "small", name: "Small" }],
+      models: [
+        {
+          id: "small",
+          name: "Small",
+          thinkingLevels: ["off", "high"],
+          defaultThinking: "off",
+        },
+      ],
     },
   ],
 };
@@ -179,6 +187,98 @@ test(
       releaseFactory();
       socket?.terminate();
       await Promise.allSettled(pending);
+      await companion.close();
+    }
+  },
+);
+
+test(
+  "managed thinking/access settings reach the factory and ready metadata; unsupported choices never prompt",
+  { timeout: 10000 },
+  async () => {
+    const received = [];
+    let prompted = 0;
+    const companion = await startManagedCompanion({
+      origins: [origin],
+      configuration: async () => configuration,
+      factory: async (provider, model, key, settings) => {
+        if (!["off", "high"].includes(settings.thinking))
+          throw new CanvasSettingsError(
+            "This model supports off or high thinking",
+          );
+        received.push({ provider, model, key, ...settings });
+        return async () => ({
+          subscribe() {},
+          async prompt() {
+            prompted++;
+          },
+          dispose() {},
+        });
+      },
+    });
+    const clients = [];
+    try {
+      for (const invalid of [
+        { thinking: null },
+        { permissions: null },
+        { thinking: "unknown" },
+        { thinking: "max" },
+        { permissions: "full-control" },
+      ]) {
+        const response = await request(companion, "/connect", {
+          provider: "test",
+          model: "small",
+          ...invalid,
+        });
+        assert.equal(response.status, 400);
+      }
+      assert.equal(received.length, 0);
+      for (const input of [
+        { provider: "test", model: "small" },
+        {
+          provider: "test",
+          model: "small",
+          thinking: "high",
+          permissions: "read-only",
+        },
+      ]) {
+        const response = await request(companion, "/connect", input);
+        assert.equal(response.status, 200);
+        const result = await response.json();
+        const expected = {
+          thinking: "off",
+          permissions: "reviewed-edits",
+          ...input,
+        };
+        assert.deepEqual(result.settings, expected);
+        const socket = new WebSocket(result.url, { origin });
+        clients.push(socket);
+        const ready = JSON.parse((await once(socket, "message"))[0].toString());
+        assert.deepEqual(ready, { type: "ready", settings: expected });
+      }
+      assert.deepEqual(received, [
+        {
+          provider: "test",
+          model: "small",
+          key: undefined,
+          thinking: "off",
+          permissions: "reviewed-edits",
+        },
+        {
+          provider: "test",
+          model: "small",
+          key: undefined,
+          thinking: "high",
+          permissions: "read-only",
+        },
+      ]);
+      assert.equal(
+        prompted,
+        0,
+        "configuration and connection never run inference",
+      );
+    } finally {
+      for (const socket of clients) socket.terminate();
       await companion.close();
     }
   },

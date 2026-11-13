@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { Copy } from "lucide-react";
+import { AssistantDiagram } from "./AssistantDiagram";
 import "katex/dist/katex.min.css";
 import {
   ASSISTANT_OBJECT_LINK,
@@ -163,12 +164,30 @@ export const AssistantMessage = memo(function AssistantMessage({
           <table>{children}</table>
         </div>
       ),
-      pre: ({ children }) => (
-        <div className="assistant-code-block">
-          <CopyButton text={textContent(children)} label="Copy code" />
-          <pre>{children}</pre>
-        </div>
-      ),
+      pre: ({ node, children }) => {
+        const code = node?.children[0];
+        if (
+          code?.type === "element" &&
+          code.tagName === "code" &&
+          String(code.properties.className)
+            .split(/[\s,]+/)
+            .includes("language-mermaid")
+        ) {
+          const source = textContent(children).replace(/\n$/, "");
+          return (
+            <AssistantDiagram
+              source={source}
+              copy={<CopyButton text={source} label="Copy diagram source" />}
+            />
+          );
+        }
+        return (
+          <div className="assistant-code-block">
+            <CopyButton text={textContent(children)} label="Copy code" />
+            <pre>{children}</pre>
+          </div>
+        );
+      },
     }),
     [prefix, references, openReference],
   );

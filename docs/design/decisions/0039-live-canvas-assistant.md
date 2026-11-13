@@ -33,6 +33,19 @@ only credential presence and model metadata, not credential values. Setup/Connec
 request; model calls occur only after a user sends a request. The UI discloses that requests and
 inspected engineering content reach the provider.
 
+The composer exposes model, supported thinking level and access choices. Each request captures
+one credential-free settings snapshot; the companion validates and acknowledges that exact snapshot
+before inference. Model/thinking changes retain the same ephemeral Pi session and use nonpersisting
+SDK mutations. Read-only is a restriction of the existing approval-only tool set: both the companion
+and browser owner deny edit proposals/application, and entering read-only dismisses pending proposals.
+No option enables automatic application, shell tools or computation. Provider credentials remain
+connection-scoped. Settings, responses and per-turn attribution remain transient.
+
+Rich replies use Markdown and KaTeX. Mermaid fences are bounded, rendered lazily with no network
+resource access, and displayed in a script-disabled sandbox after sanitization; diagram source is
+always available. Rendering carries no canvas mutation or tool authority and is not checked
+engineering evidence. Unsupported or incomplete content falls back to readable source.
+
 A nonmodal assistant popup opens at the canvas invocation point, with viewport-edge clamping.
 Its initial surface is a compact single-line composer with send, gear and close controls, not a
 sidebar or chat header. Right-click actions, model-card actions and the toolbar share this owner.

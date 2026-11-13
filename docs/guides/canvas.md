@@ -109,8 +109,11 @@ can still inspect the worksheet. **What the assistant can access** explains prov
 approval boundaries. Suggestions fill a draft without sending it or replacing existing text.
 Multiline drafts grow as needed; conversation and edit reviews scroll independently above the
 composer. New responses follow the latest text unless you scroll back; **Latest response** returns
-to the bottom. Responses support headings, lists, tables, code and LaTeX mathematics, with copy
-controls for code and the original response. Raw HTML, remote images and executable links are
+to the bottom. Responses support headings, lists, tables, code, LaTeX mathematics and Mermaid
+diagrams, with copy controls for code and the original response. Use `$F = k x$` for inline math,
+`$$...$$` for display math, and a fenced `mermaid` block for a diagram. Diagram source remains
+available to inspect or copy; incomplete or unsupported diagrams keep their source readable.
+Raw HTML, remote images and executable links are
 not enabled. Follow source footnotes within the conversation without opening another canvas.
 Settings, messages, diagnostics and source diffs use the workspace palette, including its dark theme.
 
@@ -141,9 +144,20 @@ after approval; unavailable targets are reported rather than silently accepted.
 Tool progress distinguishes worksheet inspection, plot reads, canvas images and preparing an edit.
 The **Stop request** control remains available while a request is running.
 
-Provider/model configuration is behind the **Assistant settings** gear button. Existing Pi
+Use the model/thinking control beside the composer to search available models and choose a
+supported thinking level. Choices apply to the next request; switching models within the current
+provider preserves the conversation. Each response identifies its model, thinking level and access
+mode. Controls are locked during a request so its settings cannot change underneath it.
+
+The adjacent permissions control offers **Read-only** for inspection and explanation, or
+**Review edits** for proposed changes that you approve individually. Switching to read-only
+immediately dismisses pending edit proposals; switching back does not revive them. Neither mode
+permits shell access, automatic computation or unreviewed application of edits.
+
+Provider and credential configuration is behind the **Assistant settings** gear button. Existing Pi
 configuration is read from `~/.pi/agent` (or `PI_CODING_AGENT_DIR` set when starting Manifold).
-Use settings to choose another provider/model, refresh Pi configuration or disconnect. If setup
+Disconnect before changing providers or supplying a different API key. Use settings to refresh Pi
+configuration or disconnect. If setup
 is missing or connection fails, submitting opens settings and preserves your text instead of
 sending or discarding it. Toggling settings never clears the request draft.
 
@@ -200,7 +214,8 @@ multiplayer service. Node.js and the repository's npm dependencies are required;
 leave normal canvas authoring intact.
 
 **Advanced:** a separately started companion is still supported with
-`npm run assistant -- --provider PROVIDER --model MODEL`. Open **Advanced: connect a separate
+`npm run assistant -- --provider PROVIDER --model MODEL`. Optional `--thinking high` and
+`--permissions read-only` select supported initial thinking and access. Open **Advanced: connect a separate
 companion** to paste its private URL. For that standalone mode, repeated `--origin` flags
 replace its default allowed origins and `--port` selects the port; stop it with Ctrl+C.
 
