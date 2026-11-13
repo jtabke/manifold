@@ -1,7 +1,11 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
-import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  readWorkspaceBytes,
+  chooseDrawingTool,
+} from "./browser-workspace.mjs";
 import { drawings } from "../src/regions/drawing.ts";
 import { REGULARIZE_HOLD_MS } from "../src/regions/drawingRegularization.ts";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
@@ -46,7 +50,7 @@ async function run(test) {
       page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
     const box = await page.locator(".er-canvas").boundingBox();
     const start = async (points, tool = "Pen") => {
-      await toolbar.getByRole("button", { name: tool, exact: true }).click();
+      await chooseDrawingTool(page, tool);
       await pause();
       await page.mouse.move(box.x + points[0][0], box.y + points[0][1]);
       await page.mouse.down();

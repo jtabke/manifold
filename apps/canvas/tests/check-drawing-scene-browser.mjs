@@ -3,7 +3,7 @@ import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { drawingFixture } from "./drawing-fixture.mjs";
-import { readWorkspace } from "./browser-workspace.mjs";
+import { readWorkspace, chooseDrawingTool } from "./browser-workspace.mjs";
 import { drawings } from "../src/regions/drawing.ts";
 import { drawingGeometry } from "../src/regions/drawingGeometry.ts";
 import { archive } from "../src/regions/artifacts.ts";
@@ -79,9 +79,7 @@ try {
     name: "Drawing and diagram tools",
     exact: true,
   });
-  await toolbar
-    .getByRole("button", { name: "Lasso drawings", exact: true })
-    .click();
+  await chooseDrawingTool(page, "Lasso drawings");
   const corner = await screen({ x: bounds.x, y: bounds.y });
   const far = await screen({
     x: bounds.x + bounds.width,

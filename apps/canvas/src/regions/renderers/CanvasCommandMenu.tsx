@@ -14,11 +14,15 @@ export function CanvasCommandMenu({
   icon,
   children,
   align = "left",
+  active = false,
+  description,
 }: {
   label: string;
   icon?: ReactNode;
   children: ReactNode;
   align?: "left" | "right";
+  active?: boolean;
+  description?: string;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -76,6 +80,7 @@ export function CanvasCommandMenu({
     <div
       ref={root}
       className={`er-command-menu is-${align}`}
+      data-canvas-controls={open ? "" : undefined}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null))
           setOpen(false);
@@ -84,7 +89,8 @@ export function CanvasCommandMenu({
       <button
         ref={trigger}
         type="button"
-        title={label}
+        title={description ?? label}
+        data-active={active}
         aria-label={label}
         aria-expanded={open}
         aria-controls={id}

@@ -180,7 +180,7 @@
   padding: 5px;
 }
 .drawing-toolbar-host {
-  flex: 1 1 420px;
+  flex: 1 1 320px;
   min-width: 0;
 }
 .er-view-tools {
@@ -2194,7 +2194,7 @@
 .er-save-status[data-saved="true"]::before {
   background: var(--canvas-success);
 }
-@media (max-width: 1200px) {
+@media (max-width: 850px) {
   .drawing-toolbar-host {
     order: 1;
     flex-basis: 100%;

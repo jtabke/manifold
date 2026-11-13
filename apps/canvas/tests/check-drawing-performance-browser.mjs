@@ -21,7 +21,7 @@ import {
   previewDrawings,
 } from "../src/regions/drawingGeometry.ts";
 import { archive } from "../src/regions/artifacts.ts";
-import { readWorkspace } from "./browser-workspace.mjs";
+import { readWorkspace, chooseDrawingTool } from "./browser-workspace.mjs";
 import { canvasSourceDigest } from "../tools/canvas-source-digest.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const stats = (values) => {
@@ -364,8 +364,7 @@ for (let replicate = 0; replicate < replicates; replicate++)
       const toolbar = page.getByRole("toolbar", {
         name: "Drawing and diagram tools",
       });
-      const tool = (name) =>
-        toolbar.getByRole("button", { name, exact: true }).click();
+      const tool = (name) => chooseDrawingTool(page, name);
       const screen = (p) =>
         page.locator(".er-canvas").evaluate((node, p) => {
           const rect = node.getBoundingClientRect(),

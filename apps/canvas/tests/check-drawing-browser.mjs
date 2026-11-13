@@ -5,7 +5,11 @@ import { stageWorkspaceFile } from "../src/regions/app/workspaceFiles.ts";
 import { chromium, expect } from "@playwright/test";
 import { drawings, MAX_LABEL_LENGTH } from "../src/regions/drawing.ts";
 import { drawingGeometry } from "../src/regions/drawingGeometry.ts";
-import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  readWorkspaceBytes,
+  chooseDrawingTool,
+} from "./browser-workspace.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const errors = [];
@@ -25,8 +29,7 @@ try {
   const toolbar = page.getByRole("toolbar", {
     name: "Drawing and diagram tools",
   });
-  const tool = (name) =>
-    toolbar.getByRole("button", { name, exact: true }).click();
+  const tool = (name) => chooseDrawingTool(page, name);
   const drag = async (a, b) => {
     await page.mouse.move(box.x + a.x, box.y + a.y);
     await page.mouse.down();
@@ -74,10 +77,10 @@ try {
   await expect(page.locator(".drawing-selection")).toHaveCount(0);
   await expect(
     toolbar.getByRole("button", { name: "Duplicate drawings", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await expect(
     toolbar.getByRole("button", { name: "Delete drawings", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   const firstDrawing = page.getByRole("button", {
     name: /^rectangle drawing \d+$/,
     exact: true,
@@ -132,7 +135,7 @@ try {
   const writer = page.getByLabel("Write an engineering region", {
     exact: true,
   });
-  await expect(writer).toHaveCount(0);
+  await expect(writer).toBeFocused();
   await page.keyboard.type("mass = 2 kg");
   await expect(writer).toHaveValue("mass = 2 kg");
   await writer.press("Enter");
@@ -662,9 +665,7 @@ try {
   });
   const desktopPage = await desktop.newPage();
   await desktopPage.goto(base);
-  await desktopPage
-    .getByRole("button", { name: "Rectangle", exact: true })
-    .click();
+  await chooseDrawingTool(desktopPage, "Rectangle");
   const desktopCanvas = await desktopPage.locator(".er-canvas").boundingBox();
   await desktopPage.mouse.move(desktopCanvas.x + 120, desktopCanvas.y + 120);
   await desktopPage.mouse.down();

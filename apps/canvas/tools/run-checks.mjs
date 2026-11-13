@@ -72,6 +72,7 @@ const names = [
   "check-workspace-polish.mjs",
   "check-blank-canvas-browser.mjs",
   "check-canvas-chrome-browser.mjs",
+  "check-pointer-workflow-browser.mjs",
   "check-native-workspace-browser.mjs",
   "check-agent-handoff-browser.mjs",
   "check-canvas-assistant-browser.mjs",

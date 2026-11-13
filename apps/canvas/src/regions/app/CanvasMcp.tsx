@@ -275,6 +275,14 @@ export function CanvasMcp({
             className="er-mcp-indicator"
             aria-label="External agent connection"
             aria-expanded={expanded}
+            data-canvas-controls={expanded ? "" : undefined}
+            onKeyDown={(event) => {
+              if (expanded && event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closePanel();
+              }
+            }}
             aria-controls={panelId}
             data-status={status}
             data-scope={scope}
@@ -317,6 +325,7 @@ export function CanvasMcp({
           tabIndex={-1}
           aria-label="External agent control"
           className="er-mcp-control"
+          data-canvas-controls=""
           role="region"
           onKeyDown={(event) => {
             if (event.key === "Escape") {

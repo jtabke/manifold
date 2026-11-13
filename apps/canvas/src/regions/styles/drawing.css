@@ -9,28 +9,26 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  flex-wrap: wrap;
   min-width: 0;
   position: relative;
 }
-.drawing-tool-palette {
+.drawing-primary-tools {
   display: flex;
   align-items: center;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  flex: 1;
-  padding: 3px;
+  flex-wrap: wrap;
+  gap: 4px;
 }
-.drawing-tool-group {
-  display: flex;
+.drawing-primary-tools > button {
+  font-size: 12px;
+}
+.drawing-icon-menu {
   flex-shrink: 0;
-  align-items: center;
-  gap: 2px;
 }
-.drawing-tool-group + .drawing-tool-group {
-  border-left: 1px solid var(--canvas-border);
-  padding-left: 6px;
-  margin-left: 6px;
+.drawing-mode-status {
+  padding: 5px 8px;
+  color: var(--canvas-accent);
+  font-size: 12px;
 }
 .drawing-toolbar button {
   min-width: 32px;
@@ -40,15 +38,16 @@
 .drawing-toolbar button:focus-visible {
   outline-offset: -2px;
 }
-.drawing-toolbar button[aria-pressed="true"] {
+.drawing-toolbar button[aria-pressed="true"],
+.drawing-toolbar button[data-active="true"] {
   background: var(--canvas-accent-tint);
   color: var(--canvas-accent);
   border-color: var(--canvas-border);
 }
-.drawing-toolbar .er-command-menu > button > span {
+.drawing-icon-menu .er-command-menu > button > span {
   display: none;
 }
-.drawing-toolbar .er-command-menu > button > svg:last-child {
+.drawing-icon-menu .er-command-menu > button > svg:last-child {
   display: none;
 }
 .drawing-toolbar input[type="color"] {
@@ -189,6 +188,11 @@
 .drawing-label-editor button {
   border-color: var(--canvas-border);
   background: var(--canvas-surface-soft);
+}
+@media (max-width: 600px) {
+  .drawing-primary-tools > button > span {
+    display: none;
+  }
 }
 @media (max-width: 900px) {
   .drawing-hint {

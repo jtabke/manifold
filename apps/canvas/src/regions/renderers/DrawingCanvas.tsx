@@ -1,5 +1,5 @@
 import { useShortcutMatcher } from "../app/useShortcutPreferences";
-import { isDialogEvent } from "../interaction/modalInput";
+import { isCanvasControlEvent } from "../interaction/modalInput";
 import {
   memo,
   useEffect,
@@ -29,6 +29,8 @@ import {
   Trash2,
   Palette,
   WandSparkles,
+  Shapes,
+  MoreHorizontal,
 } from "lucide-react";
 import type { RegionSession, Point } from "../document";
 import {
@@ -150,6 +152,7 @@ function useDrawingCanvas(
     duplicate: () => void;
     remove: () => void;
   },
+  hand: boolean,
 ) {
   const matchShortcut = useShortcutMatcher();
   const [tool, setTool] = useState<Tool>("select");
@@ -323,7 +326,7 @@ function useDrawingCanvas(
     if (activate() && choose("select")) setSelection(new Set([id]));
   };
   const drawingKey = (e: ReactKeyboardEvent<SVGGElement>, id: string) => {
-    if (e.ctrlKey || e.metaKey || gesture.current) return;
+    if (e.ctrlKey || e.metaKey || gesture.current || hand) return;
     if (
       (e.altKey && e.key.startsWith("Arrow")) ||
       e.key === "Home" ||
@@ -372,10 +375,11 @@ function useDrawingCanvas(
   const duplicate = shared.duplicate;
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (isDialogEvent(e)) return;
+      if (isCanvasControlEvent(e)) return;
       const target = e.target as Element;
       if (
         !visible ||
+        hand ||
         (tool === "select" && !selected.size && !gesture.current) ||
         target.closest("input,textarea,select,[contenteditable=true]")
       )
@@ -398,10 +402,12 @@ function useDrawingCanvas(
       const command = e.ctrlKey || e.metaKey;
       let handled = true;
       if (e.key === "Escape") {
-        cancel();
-        setLabel(undefined);
-        setSelection(new Set());
-        setTool("select");
+        if (gesture.current) cancel();
+        else {
+          setLabel(undefined);
+          setSelection(new Set());
+          setTool("select");
+        }
       } else if (command && e.key.toLowerCase() === "d") {
         if (!gesture.current) duplicate();
       } else if (["Delete", "Backspace"].includes(e.key)) {
@@ -642,95 +648,128 @@ type Controller = ReturnType<typeof useDrawingCanvas>;
 function DrawingToolbar({
   drawing: d,
   onChooseTool,
+  hand,
 }: {
   drawing: Controller;
   onChooseTool: () => void;
+  hand: boolean;
 }) {
+  const shapeTools = tools.filter(([tool]) =>
+    ["line", "arrow", "rectangle", "ellipse", "connector"].includes(tool),
+  );
+  const extraTools = tools.filter(([tool]) =>
+    ["highlighter", "eraser", "lasso"].includes(tool),
+  );
+  const activeShape = shapeTools.find(([tool]) => tool === d.tool);
+  const activeExtra = extraTools.find(([tool]) => tool === d.tool);
+  const ShapeIcon = activeShape?.[2] ?? Shapes;
+  const styleVisible = !hand && !["select", "lasso", "eraser"].includes(d.tool);
+  const guidance = hand
+    ? "Pan active · Drag to move the canvas · Escape returns to the previous tool"
+    : d.guidance;
+  const button = (
+    [tool, name, Icon]: (typeof tools)[number],
+    label: string = name,
+  ) => (
+    <button
+      key={tool}
+      aria-label={name}
+      title={
+        tool === "text"
+          ? "Text label for diagrams · Equations and notes use the default pointer"
+          : name
+      }
+      aria-pressed={!hand && d.tool === tool}
+      onClick={() => {
+        if (d.choose(tool)) onChooseTool();
+      }}
+    >
+      <Icon size={17} />
+      <span>{label}</span>
+    </button>
+  );
   return (
     <div
       className="drawing-toolbar"
       role="toolbar"
       aria-label="Drawing and diagram tools"
     >
-      <div className="drawing-tool-palette">
-        {(
-          [
-            [
-              "Selection tools",
-              tools.filter(([tool]) => tool === "select" || tool === "lasso"),
-            ],
-            [
-              "Ink tools",
-              tools.filter(([tool]) =>
-                ["pen", "highlighter", "eraser"].includes(tool),
-              ),
-            ],
-            [
-              "Shape and label tools",
-              tools.filter(
-                ([tool]) =>
-                  !["select", "lasso", "pen", "highlighter", "eraser"].includes(
-                    tool,
-                  ),
-              ),
-            ],
-          ] as const
-        ).map(([label, entries]) => (
-          <div
-            className="drawing-tool-group"
-            role="group"
-            aria-label={label}
-            key={label}
-          >
-            {entries.map(([tool, name, Icon]) => (
-              <button
-                key={tool}
-                aria-label={name}
-                title={name}
-                aria-pressed={d.tool === tool}
-                onClick={() => {
-                  if (d.choose(tool)) onChooseTool();
-                }}
-              >
-                <Icon size={17} />
-              </button>
-            ))}
-          </div>
-        ))}
-      </div>
-      <CanvasCommandMenu
-        label="Drawing style"
-        icon={<Palette size={17} />}
-        align="right"
+      <div
+        className="drawing-primary-tools"
+        role="group"
+        aria-label="Authoring tools"
       >
-        <label className="drawing-style-color">
-          Color
-          <input
-            aria-label="Stroke color"
-            title="Stroke color"
-            type="color"
-            value={d.style.color}
-            onChange={(e) => d.setStyle({ ...d.style, color: e.target.value })}
-          />
-        </label>
-        <label className="drawing-width">
-          Width{" "}
-          <input
-            aria-label="Stroke width"
-            type="range"
-            min="1"
-            max="10"
-            value={d.style.width}
-            onChange={(e) =>
-              d.setStyle({ ...d.style, width: Number(e.target.value) })
+        {button(tools[0], "Select")}
+        {button(tools[1])}
+        <CanvasCommandMenu
+          label="Shapes"
+          icon={<ShapeIcon size={17} />}
+          active={!hand && !!activeShape}
+          description={
+            activeShape && !hand
+              ? `Shapes · ${activeShape[1]} active`
+              : "Shapes and visual connectors"
+          }
+        >
+          {shapeTools.map((entry) => button(entry))}
+        </CanvasCommandMenu>
+        {button(tools.find(([tool]) => tool === "text")!, "Text")}
+        <div className="drawing-icon-menu">
+          <CanvasCommandMenu
+            label="More drawing tools"
+            icon={<MoreHorizontal size={17} />}
+            active={!hand && !!activeExtra}
+            description={
+              activeExtra && !hand
+                ? `More drawing tools · ${activeExtra[1]} active`
+                : "Highlighter, eraser and drawing lasso"
             }
-          />
-        </label>
-      </CanvasCommandMenu>
+          >
+            {extraTools.map((entry) => button(entry))}
+          </CanvasCommandMenu>
+        </div>
+      </div>
+      {styleVisible && (
+        <div className="drawing-icon-menu">
+          <CanvasCommandMenu
+            label="Drawing style"
+            icon={<Palette size={17} />}
+            align="right"
+            description="Drawing style · Applies to new drawings"
+          >
+            <label className="drawing-style-color">
+              Color
+              <input
+                aria-label="Stroke color"
+                title="Stroke color for new drawings"
+                type="color"
+                value={d.style.color}
+                onChange={(e) =>
+                  d.setStyle({ ...d.style, color: e.target.value })
+                }
+              />
+            </label>
+            <label className="drawing-width">
+              Width
+              <input
+                aria-label="Stroke width"
+                type="range"
+                min="1"
+                max="10"
+                value={d.style.width}
+                onChange={(e) =>
+                  d.setStyle({ ...d.style, width: Number(e.target.value) })
+                }
+              />
+            </label>
+          </CanvasCommandMenu>
+        </div>
+      )}
       <div
         className="drawing-selection-actions"
         role="group"
         aria-label="Drawing selection actions"
+        hidden={hand || !d.selection.size}
       >
         {(
           [
@@ -759,19 +798,25 @@ function DrawingToolbar({
           <span>Regularize</span>
         </button>
       </div>
+      {hand && (
+        <span className="drawing-mode-status" aria-hidden="true">
+          Pan
+        </span>
+      )}
       <span
         className="drawing-hint"
         aria-hidden="true"
-        hidden={d.tool === "select" && !d.selection.size && !d.preview}
+        hidden={!d.preview && (hand || d.tool === "select")}
       >
-        {d.guidance}
+        {guidance}
       </span>
       <span
         className="drawing-announcement"
         aria-live="polite"
         aria-atomic="true"
       >
-        {d.guidance}{" "}
+        {!hand && `${tools.find(([tool]) => tool === d.tool)?.[1]} active. `}
+        {guidance}{" "}
         {d.selection.size
           ? `${d.selection.size} drawing${d.selection.size === 1 ? "" : "s"} selected.`
           : "No drawings selected."}
@@ -955,6 +1000,7 @@ export function DrawingCanvas({
   report,
   toolbar,
   onChooseTool,
+  hand,
   visible,
   zoom,
   point,
@@ -968,6 +1014,7 @@ export function DrawingCanvas({
   report: (message: string) => void;
   toolbar: HTMLElement | null;
   onChooseTool: () => void;
+  hand: boolean;
   visible: boolean;
   zoom: number;
   point: (x: number, y: number) => Point;
@@ -984,6 +1031,7 @@ export function DrawingCanvas({
     zoom,
     activate,
     shared,
+    hand,
   );
   if (!visible) return null;
   const originalGeometry = drawingGeometry(d.entries);
@@ -1009,7 +1057,7 @@ export function DrawingCanvas({
   ).filter((e) => !hidden.has(e.id));
   const geometry = drawingGeometry(entries),
     b = geometry.selectionBounds(d.selection),
-    active = d.tool !== "select";
+    active = !hand && d.tool !== "select";
   const coordinates = (e: DrawingPointer): InkPoint => ({
     ...point(e.clientX, e.clientY),
     pressure: e.pointerType === "pen" ? Math.max(0.05, e.pressure) : 0.75,
@@ -1020,7 +1068,11 @@ export function DrawingCanvas({
     <>
       {toolbar &&
         createPortal(
-          <DrawingToolbar drawing={d} onChooseTool={onChooseTool} />,
+          <DrawingToolbar
+            drawing={d}
+            onChooseTool={onChooseTool}
+            hand={hand}
+          />,
           toolbar,
         )}
       <svg
@@ -1040,6 +1092,7 @@ export function DrawingCanvas({
         onClick={stop}
         onDoubleClick={(e) => {
           stop(e);
+          if (hand) return;
           const entry = geometry.pick(point(e.clientX, e.clientY), 5 / zoom);
           if (entry?.mark.kind === "text") d.editLabel(entry);
         }}

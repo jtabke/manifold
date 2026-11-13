@@ -97,6 +97,31 @@ export async function readWorkspaceBytes(
     ? JSON.stringify(captured)
     : page.evaluate((key) => localStorage.getItem(key), key);
 }
+/** Choose through the visible primary controls or the labelled secondary pickers. */
+export async function chooseDrawingTool(page, name) {
+  const toolbar = page.getByRole("toolbar", {
+    name: "Drawing and diagram tools",
+    exact: true,
+  });
+  const tool = toolbar.getByRole("button", { name, exact: true });
+  if (!(await tool.isVisible())) {
+    const shapes = [
+      "Line",
+      "Arrow",
+      "Rectangle",
+      "Ellipse",
+      "Visual connector",
+    ];
+    await toolbar
+      .getByRole("button", {
+        name: shapes.includes(name) ? "Shapes" : "More drawing tools",
+        exact: true,
+      })
+      .click();
+  }
+  await tool.click();
+}
+
 /** Insert through the command palette when a workflow needs an explicit new region. */
 export async function startWriting(page) {
   await page

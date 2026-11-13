@@ -1,4 +1,4 @@
-import { isDialogEvent } from "./modalInput";
+import { isCanvasControlEvent } from "./modalInput";
 import {
   useCallback,
   useEffect,
@@ -179,7 +179,7 @@ export function useCanvasNavigation(
       end();
     };
     const keydown = (e: KeyboardEvent) => {
-      if (isDialogEvent(e)) return;
+      if (isCanvasControlEvent(e)) return;
       if ((e.target as Element).closest(editable)) return;
       // Shift+Space belongs to the pie menu; unmodified Space still pans.
       if (e.shiftKey && e.code === "Space") return;
@@ -205,7 +205,7 @@ export function useCanvasNavigation(
       }
     };
     const keyup = (e: KeyboardEvent) => {
-      if (isDialogEvent(e)) {
+      if (isCanvasControlEvent(e)) {
         held.current = false;
         spaceConsumed.current = false;
         setSpace(false);

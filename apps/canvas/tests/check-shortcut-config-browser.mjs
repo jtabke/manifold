@@ -5,7 +5,11 @@ import { readFile } from "node:fs/promises";
 import { chromium, expect } from "@playwright/test";
 import { sceneFixture } from "./scene-fixture.mjs";
 import { archive } from "../src/regions/artifacts.ts";
-import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  readWorkspaceBytes,
+  chooseDrawingTool,
+} from "./browser-workspace.mjs";
 import { drawings } from "../src/regions/drawing.ts";
 import {
   parseShortcutConfiguration,
@@ -343,7 +347,7 @@ try {
   const toolbar = page.getByRole("toolbar", {
     name: "Drawing and diagram tools",
   });
-  await toolbar.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await chooseDrawingTool(page, "Rectangle");
   const canvas = await page.locator(".er-canvas").boundingBox();
   await page.mouse.move(canvas.x + 1100, canvas.y + 450);
   await page.mouse.down();

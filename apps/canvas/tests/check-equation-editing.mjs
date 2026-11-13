@@ -344,8 +344,7 @@ try {
     // Independently placed equations continue from their own position, at zoom.
     await page.getByLabel("Zoom out", { exact: true }).click();
     await page.mouse.click(20, 950);
-    await expect(editor()).toHaveCount(0);
-    await page.mouse.click(20, 950);
+    await expect(editor()).toBeFocused();
     await editor().fill("x := 3");
     await editor().press("Escape");
     const x = page.getByRole("button", { name: "Edit x", exact: true });

@@ -6,10 +6,12 @@ export function CanvasSelectionToolbar({
   bounds,
   zoom,
   children,
+  onEscape,
 }: {
   bounds: CanvasRect;
   zoom: number;
   children: ReactNode;
+  onEscape: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -66,6 +68,23 @@ export function CanvasSelectionToolbar({
     <div
       ref={ref}
       className="er-selection-tools"
+      data-canvas-controls=""
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        const details =
+          ref.current?.querySelector<HTMLDetailsElement>("details[open]");
+        if (details) {
+          details.open = false;
+          details.querySelector("summary")?.focus();
+        } else {
+          onEscape();
+          ref.current
+            ?.closest<HTMLElement>(".er-canvas")
+            ?.focus({ preventScroll: true });
+        }
+      }}
       role="toolbar"
       aria-label="Canvas selection"
       style={{

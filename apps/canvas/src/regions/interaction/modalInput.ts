@@ -4,3 +4,12 @@ export function isDialogEvent(event: Event) {
     event.target instanceof Element && !!event.target.closest("dialog[open]")
   );
 }
+
+/** Disclosures own keyboard input without becoming modal or trapping focus. */
+export function isCanvasControlEvent(event: Event) {
+  return (
+    isDialogEvent(event) ||
+    (event.target instanceof Element &&
+      !!event.target.closest("[data-canvas-controls]"))
+  );
+}

@@ -96,7 +96,7 @@ try {
     }));
     expect(layout.scroll).toBeLessThanOrEqual(layout.width);
     expect(layout.canvas).toBeGreaterThan(600);
-    for (const name of ["File", "View", "Drawing style"]) {
+    for (const name of ["File", "View", "Shapes", "More drawing tools"]) {
       await button(name).click();
       await expect(button(name)).toHaveAttribute("aria-expanded", "true");
       const panel = page.getByRole("group", {

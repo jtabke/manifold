@@ -10,7 +10,7 @@ import { KeyboardShortcuts } from "../renderers/KeyboardShortcuts";
 import { CanvasAssistant } from "../renderers/CanvasAssistant";
 import { captureAssistantCanvas } from "../renderers/assistantCapture";
 import { CanvasMcp } from "./CanvasMcp";
-import { isDialogEvent } from "../interaction/modalInput";
+import { isCanvasControlEvent, isDialogEvent } from "../interaction/modalInput";
 import {
   useCanvasOverlaps,
   canvasObjectId,
@@ -1697,7 +1697,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   });
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if (isDialogEvent(event)) return;
+      if (isCanvasControlEvent(event)) return;
       const active = (event.target as HTMLElement).closest(
         "input,textarea,select,[role=separator],[contenteditable=true]",
       );
@@ -1757,7 +1757,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         paletteOpen("search");
         return;
       }
-      if (active) return;
+      if (active || navigation.hand) return;
       if (canvasSelection.length && !event.altKey && !event.defaultPrevented) {
         if (
           (event.ctrlKey || event.metaKey) &&
@@ -3881,7 +3881,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               )}
               visible={!artifactMode || areaCanvasVisible}
               hand={navigation.hand}
-              setHand={navigation.setHand}
+              setHand={(value) => {
+                if (!value || workspaceEdits.finish())
+                  navigation.setHand(value);
+              }}
               zoom={zoom}
               zoomBy={navigation.zoomBy}
               fit={fit}
@@ -4005,6 +4008,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             }}
             onAuxClickCapture={navigation.click}
             onPointerDownCapture={(e) => {
+              // Portalled toolbars are React descendants, not canvas gestures.
+              if (!e.currentTarget.contains(e.target as Node)) return;
               // Connection input is idle or owned by exactly one pointer, across both kinds.
               if (dataGesture.current || linkGesture.current) {
                 e.preventDefault();
@@ -4326,11 +4331,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 relationshipNav.restore();
                 return;
               }
-              if (canvasSelection.length) {
-                setCanvasSelection([]);
-                setSelected(undefined);
-                return;
-              }
               if (systemActive) return;
               const rect = e.currentTarget.getBoundingClientRect();
               fresh({
@@ -4431,6 +4431,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     report={setMessage}
                     toolbar={drawingToolbar}
                     onChooseTool={() => navigation.setHand(false)}
+                    hand={navigation.hand}
                     visible={!systemActive}
                     zoom={zoom}
                     point={canvasPoint}
@@ -5168,6 +5169,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       <CanvasSelectionToolbar
                         bounds={selectionBounds}
                         zoom={zoom}
+                        onEscape={() => {
+                          setCanvasSelection([]);
+                          setSelected(undefined);
+                        }}
                       >
                         {canvasSelection.length > 1 && (
                           <button

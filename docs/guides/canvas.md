@@ -274,9 +274,13 @@ The document header groups **File**, the editable document name, local-save stat
 Search, Ask agent and **Download**. The row beneath groups Undo/Redo and canvas actions,
 selection/ink/shape tools, and View/Pan/Zoom/Help. **View** contains Reveal,
 named viewpoints and System overview. Scenario controls appear in a separate labelled
-strip when alternatives exist. **Drawing style** holds stroke color and width; the
-shape palette scrolls horizontally on narrow screens without hiding the document name.
-File, View and style disclosures support Tab, Escape and outside-click dismissal.
+strip when alternatives exist. The compact authoring toolbar keeps **Select**, **Pen**,
+**Shapes** and **Text** prominent. Shape variants live in the Shapes picker; highlighter,
+eraser and lasso are in **More drawing tools**. **Drawing style** appears for drawing
+creation and affects new drawings, not the selected worksheet content. Drawing selection
+actions appear only with selected drawings. Controls wrap on narrow screens without
+hiding the document name. File, View and tool disclosures support Tab, Escape and
+outside-click dismissal; closing a picker preserves the active tool and selection.
 
 Accepted work and navigation state save in this browser on this device.
 **File → New document** creates an independent URL. Keep that URL to reopen it.
@@ -316,9 +320,9 @@ starts computation. Current native captures use V9; older V1–V8 files are supp
 ## Drawing and diagrams
 
 Use the drawing toolbar below the header to sketch beside calculations. **Pen** and
-**Highlighter** accept mouse or pen input; Pen retains stylus pressure where supported.
-Choose **Line**, **Arrow**, **Rectangle**, **Ellipse**, or **Drawing label** for editable
-diagrams. Shift snaps line angles or constrains shapes to squares/circles. Drag a
+**More drawing tools → Highlighter** accept mouse or pen input; Pen retains stylus
+pressure where supported. Open **Shapes** for Line, Arrow, Rectangle, Ellipse and Visual
+connector. **Text** creates a drawing label, not an equation or worksheet note. Shift snaps line angles or constrains shapes to squares/circles. Drag a
 **Visual connector** between rectangles/ellipses: it stays attached as they move or
 resize, without creating a computational relationship.
 
@@ -337,9 +341,9 @@ interpretation; it creates no dimensions, constraints or computational dependenc
 **Select / Edit** is the default pointer for both worksheet authoring and drawing
 selection; there is no separate Write mode. Click a drawing to select it, Shift-click
 for multiple, or use **Lasso drawings**, then drag to move, drag the corner handle to
-resize, or use Duplicate/Delete. Clicking blank space clears the selection; typing or
-Enter starts a worksheet region, and clicking blank space with nothing selected still
-starts writing there. Shift-click adds worksheet objects and drawings to the same
+resize, or use Duplicate/Delete. One click on blank canvas clears object selection and
+places the writer there; it does not require a second click. Typing or Enter on an
+unselected, focused canvas also starts a worksheet region. Shift-click adds worksheet objects and drawings to the same
 selection; blank-space box selection can include both. Drag a selected object or the
 selection's move handle to move them together. Mathematical text/control gestures are
 reserved for their editing and inspection actions; use the move handle there.
@@ -357,8 +361,13 @@ Each accepted mixed edit is one Undo step, and native files retain mixed groups.
 Drawings use one Tab stop rather than one per mark. Alt+Arrow browses the collection;
 Home/End focuses its first/last drawing. Enter/Space selects. Arrow keys move selected
 objects by 5 units, or 20 with Shift. Escape cancels the current action or clears selection;
-from a drawing tool it returns to **Select / Edit**. The eraser removes whole marks.
-Finger-drag pans and two fingers pinch-zoom; Space-drag and middle-drag also pan.
+from a drawing tool it returns to **Select / Edit**. Escape first dismisses an open
+picker or cancels an active gesture without discarding the selection beneath it.
+The eraser removes whole marks. **Pan** finishes valid editor drafts and suspends
+authoring: drawing tools are not highlighted, and typing/Delete/arrows do not alter
+objects. Escape leaves Pan and restores the previous tool; choosing an authoring tool
+also exits Pan. Finger-drag pans and two fingers pinch-zoom; Space-drag and middle-drag
+also pan.
 
 Ordinary drawing gestures save on release as one Undo step. A held regularization saves
 the original ink first, then replaces it through a second normal history operation:
