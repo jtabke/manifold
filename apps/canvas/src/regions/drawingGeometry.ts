@@ -1,5 +1,6 @@
 /** Geometry is derived from immutable entries; visual references never imply computation. */
 import * as f from "@manifold/foundation";
+import { curveHull, flattenCurve, isCurve } from "./drawingCurves.ts";
 import type { Point } from "./document.ts";
 import { frameBounds } from "./selection.ts";
 import { withAreaMembers } from "./drawingScale.ts";
@@ -103,6 +104,9 @@ const scenes = new WeakMap<readonly DrawingEntry[], DrawingGeometry>();
 // Bounds-only entries upgrade to full geometry without changing bounds identity.
 // Non-connector geometry survives unrelated edits and selection previews.
 const fixed = new WeakMap<PositionedMark, CachedGeometry>();
+const flattened = new WeakMap<PositionedMark, Point[]>();
+const boundsPoints = (mark: Mark) =>
+  isCurve(mark.kind) ? curveHull(mark.kind, mark.points) : mark.points;
 /** Match bounds of translated points exactly, without allocating/freeze-walking those points. */
 function translatedBounds(points: readonly Point[], offset: Point): Bounds {
   let left = Infinity,
@@ -163,7 +167,14 @@ class DrawingGeometry {
           pressure: 0.5,
         };
       });
-      result = { points, bounds: bounds ?? pointBounds(points) };
+      result = {
+        points,
+        bounds:
+          bounds ??
+          (isCurve(e.mark.kind)
+            ? translatedBounds(boundsPoints(e.mark), e.view)
+            : pointBounds(points)),
+      };
       f.freeze(result);
       cache.set(e, result);
     }
@@ -193,7 +204,7 @@ class DrawingGeometry {
     if (!result) {
       result = {
         points: undefined,
-        bounds: f.freeze(translatedBounds(e.mark.points, e.view)),
+        bounds: f.freeze(translatedBounds(boundsPoints(e.mark), e.view)),
       };
       fixed.set(e, result);
     }
@@ -225,13 +236,23 @@ class DrawingGeometry {
       });
       return distance({ x: 0, y: 0 }, normalize(from), normalize(to)) <= 1;
     }
-    const points = this.points(e),
+    let points: readonly Point[] = this.points(e);
+    if (isCurve(e.mark.kind)) {
+      let cached = flattened.get(e);
+      if (!cached) {
+        cached = flattenCurve(e.mark.kind, points);
+        flattened.set(e, cached);
+      }
+      points = cached;
+      tolerance += 0.25;
+    }
+    const hitMargin = tolerance + e.mark.width / 2,
       stationary = from.x === to.x && from.y === to.y;
     return points.some(
       (a, i) =>
         (stationary
           ? distance(from, a, points[i + 1] || a)
-          : segmentDistance(from, to, a, points[i + 1] || a)) <= margin,
+          : segmentDistance(from, to, a, points[i + 1] || a)) <= hitMargin,
     );
   }
   pick(p: Point, tolerance: number, shapesOnly = false) {

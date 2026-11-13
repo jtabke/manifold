@@ -1,5 +1,6 @@
 /** Portable visual marks. References preserve connector identity, not computation. */
 import * as f from "@manifold/foundation";
+import { isCurve, MAX_SPLINE_POINTS } from "./drawingCurves.ts";
 import type { RegionSession, Point } from "./document.ts";
 import { drawingGeometry } from "./drawingGeometry.ts";
 import { detachMember } from "./canvasScene.ts";
@@ -15,6 +16,7 @@ import {
 } from "./drawingDimensions.ts";
 export const DRAWING = "canvas-drawing@1";
 export const SCALED_DRAWING = "canvas-drawing@2";
+export const CURVED_DRAWING = "canvas-drawing@3";
 export const DRAWING_RENDERER = "canvas-drawing-view@1";
 export const MAX_DRAWINGS = 2000;
 export const MAX_STROKE_POINTS = 8192;
@@ -43,6 +45,8 @@ const kinds = [
   "pen",
   "highlighter",
   "line",
+  "curve",
+  "spline",
   "arrow",
   "rectangle",
   "ellipse",
@@ -130,7 +134,17 @@ export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
     typeof raw.text === "string" && raw.text.length <= MAX_LABEL_LENGTH,
     `Drawing labels support up to ${MAX_LABEL_LENGTH} characters`,
   );
-  if (!isInk(raw.kind))
+  if (raw.kind === "curve")
+    f.assert(
+      raw.points.length === 3,
+      "Curves require start, control and end points",
+    );
+  else if (raw.kind === "spline")
+    f.assert(
+      raw.points.length >= 2 && raw.points.length <= MAX_SPLINE_POINTS,
+      `Splines support 2–${MAX_SPLINE_POINTS} knots`,
+    );
+  else if (!isInk(raw.kind))
     f.assert(raw.points.length === 2, "Shapes require two corners");
   if (raw.kind !== "text")
     f.assert(raw.text === "", "Only labels contain text");
@@ -157,8 +171,8 @@ export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
   }
   if (f.deeplyFrozen(raw)) checked.add(raw);
 }
-export const scaledDrawingSchema: f.Schema = {
-  id: SCALED_DRAWING,
+export const curvedDrawingSchema: f.Schema = {
+  id: CURVED_DRAWING,
   validate: validateMark,
   references(body) {
     validateMark(body);
@@ -170,6 +184,18 @@ export const scaledDrawingSchema: f.Schema = {
   assets: () => [],
   project(body) {
     validateMark(body);
+    return { type: CURVED_DRAWING, value: body };
+  },
+};
+export const scaledDrawingSchema: f.Schema = {
+  ...curvedDrawingSchema,
+  id: SCALED_DRAWING,
+  validate(body) {
+    validateMark(body);
+    f.assert(!isCurve(body.kind), "Curves require canvas-drawing@3");
+  },
+  project(body) {
+    this.validate(body);
     return { type: SCALED_DRAWING, value: body };
   },
 };
@@ -177,7 +203,7 @@ export const scaledDrawingSchema: f.Schema = {
 function validateLegacyMark(body: f.Json) {
   f.assert(f.object(body), "Invalid drawing");
   f.fields(body, ["kind", "color", "width", "points", "text", "start", "end"]);
-  validateMark(body);
+  scaledDrawingSchema.validate(body);
 }
 export const drawingSchema: f.Schema = {
   ...scaledDrawingSchema,
@@ -200,7 +226,9 @@ export function drawings(document: f.Document): DrawingEntry[] {
     if (view.renderer !== DRAWING_RENDERER) continue;
     const revision = f.current(document, view.reference.item);
     f.assert(
-      revision?.schema === DRAWING || revision?.schema === SCALED_DRAWING,
+      revision?.schema === DRAWING ||
+        revision?.schema === SCALED_DRAWING ||
+        revision?.schema === CURVED_DRAWING,
       "Missing drawing",
     );
     validateMark(revision.body);
@@ -256,7 +284,11 @@ const uid = () => "drawing-" + crypto.randomUUID();
 const revision = (item: string, mark: Mark): f.Revision => ({
   item,
   id: uid(),
-  schema: mark.kind === "area" || mark.area ? SCALED_DRAWING : DRAWING,
+  schema: isCurve(mark.kind)
+    ? CURVED_DRAWING
+    : mark.kind === "area" || mark.area
+      ? SCALED_DRAWING
+      : DRAWING,
   required: true,
   body: mark as unknown as f.Json,
 });

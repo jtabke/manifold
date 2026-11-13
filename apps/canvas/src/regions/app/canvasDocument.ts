@@ -2,6 +2,7 @@
 import {
   drawingSchema,
   scaledDrawingSchema,
+  curvedDrawingSchema,
   validateDrawingDocument,
 } from "../drawing.ts";
 import { analysisMethodRef } from "../modelAnalysis.ts";
@@ -257,6 +258,7 @@ function validateCalculationSources(document: f.Document) {
 export const canvasSchemas = f.createSchemas([
   drawingSchema,
   scaledDrawingSchema,
+  curvedDrawingSchema,
   ...sceneSchemas,
   samplingPlanSchema,
   samplingHistorySchema,

@@ -22,6 +22,8 @@ const names = [
   "check-agent-conduction.mjs",
   "check-agent-recovery.mjs",
   "check-drawing.mjs",
+  "check-drawing-curves.mjs",
+  "check-drawing-curves-browser.mjs",
   "check-drawing-scale.mjs",
   "check-drawing-dimensions.mjs",
   "check-drawing-scale-browser.mjs",

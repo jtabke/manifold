@@ -106,6 +106,8 @@ export async function chooseDrawingTool(page, name) {
   const tool = toolbar.getByRole("button", { name, exact: true });
   if (!(await tool.isVisible())) {
     const shapes = [
+      "Curve",
+      "Spline",
       "Line",
       "Arrow",
       "Rectangle",

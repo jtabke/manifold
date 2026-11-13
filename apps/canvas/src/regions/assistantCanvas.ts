@@ -72,6 +72,8 @@ const mark = {
         "pen",
         "highlighter",
         "line",
+        "curve",
+        "spline",
         "arrow",
         "rectangle",
         "ellipse",
@@ -167,7 +169,7 @@ export function assistantCapabilities() {
     ...base,
     canvas: {
       coordinates:
-        "Canvas/world pixels, not screen pixels. Use inspect_canvas for representation IDs, geometry, invocation point, viewport and scene. placeObjects uses representation IDs; drawing operations use drawing object IDs. New drawings use local points relative to at. Shapes require exactly two points; text is visual annotation, not engineering source. Optional connector start/end anchors use {drawing: object ID or creation alias, u, v} and must target live rectangle/ellipse drawings. Grouping preserves positions; use placeObjects to arrange members. createPlot creates a derived worksheet curve. createAnalysis creates a scalar-model sweep in the input port's declared units, but its result requires the user's explicit Compute action after approval. No computation is executed.",
+        "Canvas/world pixels, not screen pixels. Use inspect_canvas for representation IDs, geometry, invocation point, viewport and scene. placeObjects uses representation IDs; drawing operations use drawing object IDs. New drawings use local points relative to at. Curves require three points (start, control, end); splines interpolate 2–128 knots. Other non-ink shapes require exactly two points; text is visual annotation, not engineering source. Optional connector start/end anchors use {drawing: object ID or creation alias, u, v} and must target live rectangle/ellipse drawings. Grouping preserves positions; use placeObjects to arrange members. createPlot creates a derived worksheet curve. createAnalysis creates a scalar-model sweep in the input port's declared units, but its result requires the user's explicit Compute action after approval. No computation is executed.",
       tools: ["inspect_canvas", "inspect_plot", "look_at_canvas"],
     },
     editSchema: {

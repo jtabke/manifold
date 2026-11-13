@@ -420,7 +420,7 @@ starts computation. Current native captures use V9; older V1–V8 files are supp
 
 Use the drawing toolbar below the header to sketch beside calculations. **Pen** and
 **More drawing tools → Highlighter** accept mouse or pen input; Pen retains stylus
-pressure where supported. Open **Shapes** for Line, Arrow, Rectangle, Ellipse and Visual
+pressure where supported. Open **Shapes** for Line, Curve, Spline, Arrow, Rectangle, Ellipse and Visual
 connector. **Text** creates a drawing label, not an equation or worksheet note. Shift snaps line angles or constrains shapes to squares/circles. Drag a
 **Visual connector** between rectangles/ellipses: it stays attached as they move or
 resize, without creating a computational relationship.
@@ -468,7 +468,17 @@ objects. Escape leaves Pan and restores the previous tool; choosing an authoring
 also exits Pan. Finger-drag pans and two fingers pinch-zoom; Space-drag and middle-drag
 also pan.
 
-Ordinary drawing gestures save on release as one Undo step. A held regularization saves
+**Shapes → Curve** creates a quadratic Bézier: click the start, control point, then
+end. **Shapes → Spline** creates a smooth curve through clicked knots (2–128);
+press **Enter** or double-click the final knot to finish. Both show live previews.
+**Backspace** removes the last placed point; **Escape** discards unfinished work.
+Choose **Select / Edit** with one curve or spline selected to drag its point handles.
+Focus a handle and use arrow keys to move it by 5 units, or Shift+Arrow for 20.
+Curves and splines support moving, resizing, duplication, erasing and Undo/Redo;
+they are visual drawings, not computed plots or dimensional CAD constraints.
+
+Ordinary drawing gestures save on release as one Undo step. Curves and splines save
+only when finished, as one Undo step; each subsequent point edit is another step. A held regularization saves
 the original ink first, then replaces it through a second normal history operation:
 **Undo restores the exact ink/pressure; another Undo removes the stroke**. Redo restores
 the fitted shape. If replacement cannot be accepted, the original ink remains. Selecting
@@ -536,7 +546,8 @@ its area and all members together: deleting just the area is refused rather than
 physical interpretation. Area properties, dimensions and calibration survive local
 recovery and native-file Download/Open. Up to 32 areas share the existing 2,000-mark
 limit. Unscaled records retain the original `canvas-drawing@1` contract; areas and
-unit-bearing drawings use `canvas-drawing@2`. Calibration explicitly upgrades selected
+unit-bearing drawings use `canvas-drawing@2`. Curves and splines use
+`canvas-drawing@3`, including when assigned to a scaled area. Calibration explicitly upgrades selected
 revisions, and Undo restores their original version and meaning. This is not a CAD
 solver or a fixed-scale printing/export feature.
 
