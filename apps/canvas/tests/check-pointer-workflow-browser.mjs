@@ -70,6 +70,65 @@ try {
   await chooseDrawingTool(page, "Select / Edit");
   await expect(pan).toHaveAttribute("aria-pressed", "false");
 
+  // A drag commits the active writer and selects immediately, without a second try.
+  await equation.dblclick();
+  await writer.fill("mass = 5 kg");
+  const canvasBox = await canvas.boundingBox();
+  await page.mouse.move(canvasBox.x + 70, canvasBox.y + 70);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox.x + 350, canvasBox.y + 210);
+  await expect(page.locator(".er-selection-marquee")).toBeVisible();
+  await expect(writer).toHaveCount(0);
+  await expect(page.locator(".er-selection-outline")).toHaveCount(1);
+  // The drag's stable geometry must not be remeasured on subsequent moves.
+  await page.evaluate(() => {
+    window.regionMeasurements = 0;
+    window.originalRegionRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      if (this.hasAttribute("data-region-id")) window.regionMeasurements++;
+      return window.originalRegionRect.call(this);
+    };
+  });
+  await page.mouse.move(canvasBox.x + 360, canvasBox.y + 220, { steps: 8 });
+  expect(await page.evaluate(() => window.regionMeasurements)).toBe(0);
+  await page.evaluate(() => {
+    Element.prototype.getBoundingClientRect = window.originalRegionRect;
+    delete window.originalRegionRect;
+    delete window.regionMeasurements;
+  });
+  // Another pointer cannot move or end the active selection.
+  await canvas.dispatchEvent("pointermove", {
+    pointerId: 99,
+    clientX: canvasBox.x + 900,
+    clientY: canvasBox.y + 900,
+  });
+  await canvas.dispatchEvent("pointerup", { pointerId: 99 });
+  await expect(page.locator(".er-selection-marquee")).toBeVisible();
+  await expect(page.locator(".er-selection-outline")).toHaveCount(1);
+  await page.mouse.up();
+  await expect(page.locator(".er-selection-marquee")).toHaveCount(0);
+  await expect(selection).toBeVisible();
+  await expect(writer).toHaveCount(0);
+  expect(
+    (await readWorkspace(page)).page.regions.find((r) => r.id === massId).text,
+  ).toBe("mass = 5 kg");
+  await page.keyboard.press("Escape");
+
+  // Reverse drags work, and Escape restores the selection from before the drag.
+  await page.mouse.move(canvasBox.x + 360, canvasBox.y + 220);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox.x + 70, canvasBox.y + 70);
+  await expect(page.locator(".er-selection-outline")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(selection).toHaveCount(0);
+  await expect(writer).toHaveCount(0);
+
+  // A plain blank click still commits without immediately opening another writer.
+  await equation.dblclick();
+  await canvas.click({ position: { x: 350, y: 220 } });
+  await expect(writer).toHaveCount(0);
+
   await chooseDrawingTool(page, "Rectangle");
   await expect(tool("Shapes")).toHaveAttribute("data-active", "true");
   await expect(tool("Shapes")).toHaveAttribute("aria-expanded", "false");

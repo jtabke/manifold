@@ -508,6 +508,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         moved: boolean;
         previous: string[];
         additive: boolean;
+        frames?: CanvasFrame[];
       }
     | undefined
   >(undefined);
@@ -798,6 +799,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     };
   };
   const readCanvasFrames = (): CanvasFrame[] => {
+    if (marqueeGesture.current?.frames) return marqueeGesture.current.frames;
     const node = canvas.current;
     if (!node) return [];
     const origin = node.getBoundingClientRect();
@@ -858,6 +860,53 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ),
     ];
   };
+  function updateMarquee(clientX: number, clientY: number, pointerId: number) {
+    const gesture = marqueeGesture.current;
+    if (
+      !gesture ||
+      gesture.pointerId !== pointerId ||
+      (!gesture.moved &&
+        Math.hypot(clientX - gesture.client.x, clientY - gesture.client.y) < 5)
+    )
+      return;
+    if (!gesture.moved) {
+      // Measure once, after any writer commit has rendered, not on every move.
+      gesture.frames = readCanvasFrames();
+      setSelected(undefined);
+      setArtifactFocus(undefined);
+      setTerm(undefined);
+      setOverlay("none");
+    }
+    gesture.moved = true;
+    suppressCanvasClick.current = true;
+    const rect = selectionRect(gesture.start, canvasPoint(clientX, clientY));
+    setMarquee(rect);
+    // A marquee inside an area selects its contents, not the entire physical area.
+    const areaIds = new Set(
+      drawings(session.document)
+        .filter((e) => e.mark.kind === "area")
+        .map((e) => e.id),
+    );
+    const hits = gesture
+      .frames!.filter(
+        (f) =>
+          touches(rect, f) &&
+          (!areaIds.has(f.id) ||
+            (rect.x <= f.x &&
+              rect.y <= f.y &&
+              rect.x + rect.width >= f.x + f.width &&
+              rect.y + rect.height >= f.y + f.height)),
+      )
+      .map((f) => f.id);
+    const ids = [
+      ...new Set([...(gesture.additive ? gesture.previous : []), ...hits]),
+    ];
+    setCanvasSelection((previous) =>
+      previous.length === ids.length && previous.every((id, i) => id === ids[i])
+        ? previous
+        : ids,
+    );
+  }
   const overlaps = useCanvasOverlaps({
     canvas,
     zoom,
@@ -4003,6 +4052,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               if (!navigation.up(e)) spatial.cancel(e);
             }}
             onLostPointerCapture={(e) => {
+              const gesture = marqueeGesture.current;
+              if (gesture?.pointerId === e.pointerId) {
+                marqueeGesture.current = undefined;
+                setCanvasSelection(gesture.previous);
+                setMarquee(undefined);
+                suppressCanvasClick.current = true;
+              }
               navigation.end();
               spatial.lostCapture(e);
             }}
@@ -4241,21 +4297,20 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 )
               )
                 return;
+              if (marqueeGesture.current) return;
+              const committedEditing = !!editing;
               if (editing) {
                 skipBlur.current = true;
                 if (!commit()) {
                   skipBlur.current = false;
                   return;
                 }
-                e.preventDefault();
-                suppressCanvasClick.current = true;
                 setSelected(undefined);
                 setAreaSelection(undefined);
-                return;
               }
               e.preventDefault();
               e.currentTarget.focus({ preventScroll: true });
-              suppressCanvasClick.current = false;
+              suppressCanvasClick.current = committedEditing;
               marqueeGesture.current = {
                 start: canvasPoint(e.clientX, e.clientY),
                 client: { x: e.clientX, y: e.clientY },
@@ -4267,65 +4322,22 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               e.currentTarget.setPointerCapture(e.pointerId);
             }}
             onPointerMove={(e) => {
-              const gesture = marqueeGesture.current;
-              if (
-                !gesture ||
-                (!gesture.moved &&
-                  Math.hypot(
-                    e.clientX - gesture.client.x,
-                    e.clientY - gesture.client.y,
-                  ) < 5)
-              )
-                return;
+              if (marqueeGesture.current?.pointerId !== e.pointerId) return;
               e.preventDefault();
-              gesture.moved = true;
-              suppressCanvasClick.current = true;
-              const rect = selectionRect(
-                gesture.start,
-                canvasPoint(e.clientX, e.clientY),
-              );
-              setMarquee(rect);
-              // A marquee inside an area selects its contents, not the entire physical area.
-              const areaIds = new Set(
-                drawings(session.document)
-                  .filter((e) => e.mark.kind === "area")
-                  .map((e) => e.id),
-              );
-              const hits = readCanvasFrames()
-                .filter(
-                  (f) =>
-                    touches(rect, f) &&
-                    (!areaIds.has(f.id) ||
-                      (rect.x <= f.x &&
-                        rect.y <= f.y &&
-                        rect.x + rect.width >= f.x + f.width &&
-                        rect.y + rect.height >= f.y + f.height)),
-                )
-                .map((f) => f.id);
-              const ids = [
-                ...new Set([
-                  ...(gesture.additive ? gesture.previous : []),
-                  ...hits,
-                ]),
-              ];
-              setCanvasSelection((previous) =>
-                previous.join() === ids.join() ? previous : ids,
-              );
-              setSelected(undefined);
-              setArtifactFocus(undefined);
-              setTerm(undefined);
-              setOverlay("none");
+              updateMarquee(e.clientX, e.clientY, e.pointerId);
             }}
             onPointerUp={(e) => {
-              if (!marqueeGesture.current) return;
+              if (marqueeGesture.current?.pointerId !== e.pointerId) return;
+              updateMarquee(e.clientX, e.clientY, e.pointerId);
               marqueeGesture.current = undefined;
               setMarquee(undefined);
               if (e.currentTarget.hasPointerCapture(e.pointerId))
                 e.currentTarget.releasePointerCapture(e.pointerId);
             }}
-            onPointerCancel={() => {
+            onPointerCancel={(e) => {
               const gesture = marqueeGesture.current;
-              if (gesture) setCanvasSelection(gesture.previous);
+              if (gesture?.pointerId !== e.pointerId) return;
+              setCanvasSelection(gesture.previous);
               marqueeGesture.current = undefined;
               suppressCanvasClick.current = true;
               setMarquee(undefined);
