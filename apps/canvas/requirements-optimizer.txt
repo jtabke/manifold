@@ -1,0 +1,6 @@
+# Optional optimizer worker only: CPython 3.12, Linux x86_64, manylinux2014 wheels.
+# Wheel hashes captured from the installed/tested PyPI releases. No source builds.
+--only-binary=:all:
+--require-hashes
+numpy==2.2.6 --hash=sha256:fd83c01228a688733f1ded5201c678f0c53ecc1006ffbc404db9f7a899ac6249
+scipy==1.15.3 --hash=sha256:271e3713e645149ea5ea3e97b57fdab61ce61333f97cfae392c28ba786f9bb49
