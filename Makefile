@@ -1,4 +1,4 @@
-.PHONY: setup canvas canvas-dev build check check-repo check-docs check-docs-worktree check-python check-canvas check-browser check-foundation-package check-foundation-package-browser foundation verify verify-application-foundation
+.PHONY: dev doctor setup-browser setup canvas canvas-dev build check check-repo check-docs check-docs-worktree check-python check-canvas check-browser check-foundation-package check-foundation-package-browser foundation verify verify-application-foundation
 
 PYTHON ?= python3
 export PYTHON
@@ -21,9 +21,15 @@ setup:
 canvas: build
 	$(PYTHON) apps/canvas/server.py
 
-# Keep the Python server running in another terminal.
-canvas-dev:
-	npm --prefix apps/canvas run dev
+# One owned development session: frontend HMR and Python restart-on-change.
+dev canvas-dev:
+	npm run dev
+
+doctor:
+	npm run doctor
+
+setup-browser:
+	npm run setup:browser
 
 build:
 	npm --prefix apps/canvas run build
@@ -31,8 +37,8 @@ build:
 check: check-repo check-docs check-python check-canvas check-assistant check-foundation-package check-tools
 
 check-repo:
-	node_modules/.bin/prettier --check package.json scripts/check_repo.mjs scripts/repo_policy.test.mjs scripts/browser.mjs .github/workflows/ci.yml .github/workflows/release-tools.yml
-	node --test scripts/repo_policy.test.mjs
+	node_modules/.bin/prettier --check package.json scripts/*.mjs scripts/*.mts .github/workflows/ci.yml .github/workflows/release-tools.yml
+	node --test scripts/*.test.mjs
 	node scripts/check_repo.mjs
 
 check-docs:
@@ -85,6 +91,7 @@ verify:
 	# check-canvas already built the canvas; do not rebuild it for the browser phase.
 	npm --prefix apps/canvas run test:all-browser
 	node packages/cli/test/preview-browser.mjs
+	npm run test:dev:browser
 
 # Retain the documented entry point, without requiring private evaluation archives.
 verify-application-foundation: verify

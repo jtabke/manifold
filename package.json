@@ -12,6 +12,15 @@
     "node": ">=22.18.0"
   },
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "setup:browser": "playwright install chromium",
+    "build": "npm --workspace manifold-canvas run build",
+    "typecheck": "npm --workspace manifold-canvas run check && npm --workspace @manifold/foundation run check",
+    "test": "npm --workspace manifold-canvas test --",
+    "test:browser": "npm --workspace manifold-canvas run test:all-browser --",
+    "test:dev": "node --test scripts/dev.test.mjs",
+    "test:dev:browser": "node scripts/dev-browser.mjs",
     "assistant": "node apps/assistant/src/main.mjs",
     "mcp": "node apps/assistant/src/mcp-main.mjs",
     "build:tools": "node packages/cli/build.mjs",

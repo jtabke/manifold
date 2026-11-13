@@ -29,7 +29,8 @@ without losing the original.
   Local browser storage is device-specific; export a file for backup or handoff.
 
 **Early prototype.** These are implemented interactions, not a claim of validated
-engineering practice or demonstrated usability. No live AI service is connected.
+engineering practice or demonstrated usability. AI is optional and requires explicit provider setup;
+ordinary local use does not require credentials.
 
 ## A closer look
 
@@ -59,20 +60,17 @@ their JSON configuration. Editor keys and essential navigation remain protected.
 Requires **Python 3.11+**, **Node 22.18+** and npm. Python uses only the standard library.
 
 ```sh
-make setup
-make canvas
+npm ci
+npm run dev
 ```
 
-Open [Manifold locally](http://127.0.0.1:58310/). Click the canvas and start writing,
+Open [Manifold locally](http://127.0.0.1:58311/). Click the canvas and start writing,
 or import a CSV. **New canvas** opens separate work with its own URL.
 
-Without Make:
-
-```sh
-npm ci
-npm --prefix apps/canvas run build
-python3 apps/canvas/server.py
-```
+Frontend edits update live; Python edits restart the backend. Ctrl-C stops both services.
+`make dev` runs the same workflow. For a built-app preview without live updates, use `make canvas`.
+Run `npm run doctor` if setup fails; see the [development quickstart](docs/development/README.md)
+for browser-test installation, optional runtimes and port configuration.
 
 See the [canvas guide](docs/guides/canvas.md) for controls and file handling, or the
 [documentation index](docs/README.md) for guides, reference and architecture.
@@ -80,11 +78,12 @@ See the [canvas guide](docs/guides/canvas.md) for controls and file handling, or
 ## Develop and contribute
 
 ```sh
-make check          # Repository, docs, Python, types, unit tests and builds
-make verify         # Also runs foundation and canvas browser workflows; needs Chrome
+npm run typecheck   # Fast type feedback, without a bundle
+npm test -- check-headless
+npm run check       # Repository, docs, Python, types, unit tests and builds
+npm run verify      # Also runs browser workflows; install Chromium first
 ```
 
-For frontend development, leave the Python server running and use `make canvas-dev`.
 The reusable, UI-independent foundation and its examples live in
 [`packages/foundation`](packages/foundation/README.md); run `make foundation` for its workbench.
 For browser-free document inspection, editing and explicit computation, see the

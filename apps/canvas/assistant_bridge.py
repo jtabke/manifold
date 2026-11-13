@@ -18,8 +18,9 @@ class AssistantUnavailable(RuntimeError):
 
 
 class AssistantBridge:
-    def __init__(self, port):
+    def __init__(self, port, *, dev_port=58311):
         self.port = port
+        self.dev_port = dev_port
         self.process = None
         self.url = None
         self.lock = threading.Lock()
@@ -81,7 +82,7 @@ class AssistantBridge:
         return [
             f"http://{host}:{port}"
             for host in ("127.0.0.1", "localhost")
-            for port in {self.port, 58311}
+            for port in {self.port, self.dev_port}
         ]
 
     def request(self, path, body=None, origin=None):

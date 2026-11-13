@@ -32,7 +32,7 @@ class Handler(BaseHTTPRequestHandler):
             origin = self.headers.get("Origin")
             bridge = self.server.assistant
             if (parsed.hostname not in ("127.0.0.1", "localhost")
-                    or parsed.port not in (self.server.server_port, 58311)
+                    or parsed.port not in (self.server.server_port, self.server.dev_port)
                     or (origin and origin not in bridge.origins)):
                 self.send_json({"error": "Use the local canvas origin."}, 403)
                 return
@@ -54,11 +54,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             host = self.headers.get("Host", "")
             allowed_hosts = {f"{name}:{port}" for name in ("127.0.0.1", "localhost")
-                             for port in (self.server.server_port, 58311)}
+                             for port in (self.server.server_port, self.server.dev_port)}
             origins = {
                 f"http://127.0.0.1:{self.server.server_port}",
                 f"http://localhost:{self.server.server_port}",
-                "http://127.0.0.1:58311", "http://localhost:58311",
+                f"http://127.0.0.1:{self.server.dev_port}", f"http://localhost:{self.server.dev_port}",
             }
             if (host not in allowed_hosts
                     or (self.headers.get("Origin") and self.headers["Origin"] not in origins)):
@@ -110,7 +110,8 @@ class Handler(BaseHTTPRequestHandler):
             origin = self.headers.get("Origin")
             if origin and origin not in (
                 f"http://{self.headers.get('Host')}",
-                "http://127.0.0.1:58311",
+                f"http://127.0.0.1:{self.server.dev_port}",
+                f"http://localhost:{self.server.dev_port}",
             ):
                 raise ValueError("Use the local workspace origin")
             self.send_json(sample(body))
@@ -154,9 +155,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class CanvasServer(ThreadingHTTPServer):
-    def __init__(self, address, handler=Handler):
+    def __init__(self, address, handler=Handler, *, dev_port=58311):
         super().__init__(address, handler)
-        self.assistant = AssistantBridge(self.server_port)
+        self.dev_port = dev_port
+        self.assistant = AssistantBridge(self.server_port, dev_port=dev_port)
         self.optimizer = OptimizerHost()
 
     def server_close(self):
@@ -172,8 +174,12 @@ class CanvasServer(ThreadingHTTPServer):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=58310)
+    parser.add_argument("--dev-port", type=int, default=58311,
+                        help="Exact local Vite port allowed by API origin checks")
     args = parser.parse_args()
-    server = CanvasServer(("127.0.0.1", args.port))
+    if not 0 <= args.port <= 65535 or not 1 <= args.dev_port <= 65535:
+        parser.error("Ports must be within 1..65535 (server port 0 selects an ephemeral port)")
+    server = CanvasServer(("127.0.0.1", args.port), dev_port=args.dev_port)
     print(f"Manifold canvas: http://127.0.0.1:{server.server_port}", flush=True)
     def stop(_signal, _frame):
         raise KeyboardInterrupt

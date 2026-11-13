@@ -14,13 +14,15 @@ choices in an ADR. The [repository map](docs/repository.md) identifies module bo
 Requires Python 3.11+, Node 22.18+ and npm.
 
 ```sh
-make setup
-make canvas
+npm ci
+npm run dev
 ```
 
-Leave the Python server running and use `make canvas-dev` in another terminal for
-frontend development. See the [development guide](docs/development/README.md) for setup
-variants and focused checks, or the [canvas guide](docs/guides/canvas.md) for product usage.
+Open the printed development URL at <http://127.0.0.1:58311/>. Frontend edits update live;
+Python edits restart the backend. Ctrl-C stops both. `make dev` is an equivalent entry point.
+Use `npm run doctor` for setup diagnostics. See the [development guide](docs/development/README.md)
+for troubleshooting, built-app preview and focused checks, or the [canvas guide](docs/guides/canvas.md)
+for product usage.
 
 The root `package-lock.json` owns all four npm workspaces. Use `npm install` at the root
 when updating dependencies and include the lockfile. `npm ci` installs shared tools
@@ -38,7 +40,7 @@ make verify
 Browser checks use Playwright-managed Chromium by default:
 
 ```sh
-npx --no-install playwright install chromium
+npm run setup:browser
 ```
 
 To use an existing Chromium executable instead, set
