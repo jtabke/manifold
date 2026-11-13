@@ -121,7 +121,7 @@ const pointX = (
     ? input.high
     : input.low + ((input.high - input.low) * i) / (input.points - 1);
 const validated = new WeakSet<object>();
-function analysisInput(value: unknown): asserts value is AnalysisInput {
+export function analysisInput(value: unknown): asserts value is AnalysisInput {
   f.assert(f.object(value), "Invalid model analysis capture");
   if (validated.has(value)) return;
   f.fields(value, [
@@ -451,5 +451,5 @@ export function createModelAnalyses(
       points,
     };
   };
-  return { schema, method, execute };
+  return { schema, method, execute, evaluator };
 }

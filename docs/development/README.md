@@ -8,7 +8,8 @@ expectations, see [Contributing](../../CONTRIBUTING.md). For module ownership, u
 ## Setup and local development
 
 Requires Python 3.11+, Node 22.18+ and npm. Run commands from the repository root; the npm
-workspace has one lockfile and shared tools. Python uses the standard library.
+workspace has one lockfile and shared tools. Basic canvas operation uses only the Python standard library;
+model optimization is an optional numerical profile.
 
 ```sh
 make setup
@@ -32,6 +33,27 @@ make canvas-dev
 
 Vite runs at <http://127.0.0.1:58311/> and proxies API calls to port 58310. `make foundation`
 runs the reusable foundation's workbench; see its [package guide](../../packages/foundation/README.md).
+
+### Optional numerical runtime
+
+Optimization uses SciPy, never a built-in fallback or automatic installation. The hash lock supports
+**CPython 3.12, Linux x86_64** (manylinux2014-compatible) only; the base Python 3.11+ support claim
+does not include numerical optimization. Install it deliberately and start the ordinary server with it:
+
+```sh
+make setup-optimizer                  # OPTIMIZER_PYTHON selects your CPython 3.12
+make canvas PYTHON=.venv/optimizer/bin/python
+make check-optimizer
+make verify PYTHON="$PWD/.venv/optimizer/bin/python"
+```
+
+The target owns `.venv/optimizer` and installs only the pinned/hash-checked binary wheels in
+[`requirements-optimizer.txt`](../../apps/canvas/requirements-optimizer.txt). It does not install
+globally. Do not run it against an environment owned by another worktree. Other platforms remain
+unsupported by this lock. Missing/incompatible dependencies produce explicit unavailability;
+startup, Open, editing and retained result inspection still work. Numerical-only checks explicitly
+skip outside the supported environment. CI has both the base profile and an actual numerical profile.
+The backend [protocol](../../apps/canvas/artifact_optimizer_contract.md) specifies limits and identity.
 
 ## Checks
 

@@ -22,3 +22,19 @@ jobs:
       - run: make setup
       - run: npx --no-install playwright install --with-deps chromium
       - run: make verify
+  numerical:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: make setup setup-optimizer
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: make verify PYTHON=${{ github.workspace }}/.venv/optimizer/bin/python

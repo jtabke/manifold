@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 
 from artifact_sampler import SamplingUnavailable, sample
 from assistant_bridge import AssistantBridge, AssistantUnavailable
+from artifact_optimizer import BackendUnavailable
+from optimizer_transport import OptimizerHost, OptimizerBusy
 
 ROOT = Path(__file__).parent
 
@@ -48,7 +50,52 @@ class Handler(BaseHTTPRequestHandler):
         except AssistantUnavailable as error:
             self.send_json({"error": str(error)}, 503)
 
+    def optimizer_request(self, action: str) -> None:
+        try:
+            host = self.headers.get("Host", "")
+            allowed_hosts = {f"{name}:{port}" for name in ("127.0.0.1", "localhost")
+                             for port in (self.server.server_port, 58311)}
+            origins = {
+                f"http://127.0.0.1:{self.server.server_port}",
+                f"http://localhost:{self.server.server_port}",
+                "http://127.0.0.1:58311", "http://localhost:58311",
+            }
+            if (host not in allowed_hosts
+                    or (self.headers.get("Origin") and self.headers["Origin"] not in origins)):
+                self.send_json({"error": "Use the local canvas origin"}, 403)
+                return
+            if action == "capability":
+                self.send_json({"backend": self.server.optimizer.capability()})
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            limit = 66000 if action == "optimize" else 128
+            if (not 0 < length <= limit
+                    or self.headers.get("Content-Type") != "application/json"
+                    or self.headers.get("Transfer-Encoding")):
+                raise ValueError("Expected a bounded JSON request")
+            self.connection.settimeout(5)
+            body = json.loads(self.rfile.read(length))
+            fields = {"token", "request"} if action == "optimize" else {"token"}
+            if not isinstance(body, dict) or set(body) != fields:
+                raise ValueError("Invalid optimizer transport request")
+            if action == "cancel":
+                self.server.optimizer.cancel(body["token"])
+                self.send_json({"cancelled": True})
+            else:
+                self.send_json(self.server.optimizer.optimize(body["token"], body["request"]))
+        except BackendUnavailable as error:
+            self.send_json({"error": str(error)}, 503)
+        except OptimizerBusy as error:
+            self.send_json({"error": str(error)}, 429)
+        except TimeoutError:
+            self.send_json({"error": "Numerical request body deadline exceeded"}, 408)
+        except (ValueError, TypeError, RecursionError) as error:
+            self.send_json({"error": str(error)}, 400)
+
     def do_POST(self) -> None:
+        if self.path in ("/api/optimizer/optimize", "/api/optimizer/cancel"):
+            self.optimizer_request(self.path.rsplit("/", 1)[1])
+            return
         if self.path == "/api/assistant/connect":
             self.assistant_request("connect")
             return
@@ -74,6 +121,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         requested = urlparse(self.path).path
+        if requested == "/api/optimizer/capability":
+            self.optimizer_request("capability")
+            return
         if requested == "/api/assistant/configuration":
             self.assistant_request("configuration")
             return
@@ -107,8 +157,12 @@ class CanvasServer(ThreadingHTTPServer):
     def __init__(self, address, handler=Handler):
         super().__init__(address, handler)
         self.assistant = AssistantBridge(self.server_port)
+        self.optimizer = OptimizerHost()
 
     def server_close(self):
+        optimizer = getattr(self, "optimizer", None)
+        if optimizer:
+            optimizer.close()
         bridge = getattr(self, "assistant", None)
         if bridge:
             bridge.close()

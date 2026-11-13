@@ -1,6 +1,19 @@
 .PHONY: setup canvas canvas-dev build check check-repo check-docs check-docs-worktree check-python check-canvas check-browser check-foundation-package check-foundation-package-browser foundation verify verify-application-foundation
 
 PYTHON ?= python3
+export PYTHON
+OPTIMIZER_PYTHON ?= python3.12
+
+# Optional numerical profile only: CPython 3.12 on Linux x86_64.
+.PHONY: setup-optimizer check-optimizer
+setup-optimizer:
+	$(OPTIMIZER_PYTHON) -c 'import sys,platform; assert platform.python_implementation() == "CPython" and sys.version_info[:2] == (3,12) and platform.system() == "Linux" and platform.machine() == "x86_64", "Optimizer lock requires CPython 3.12/Linux x86_64"'
+	$(OPTIMIZER_PYTHON) -m venv .venv/optimizer
+	.venv/optimizer/bin/python -m pip install --require-hashes --only-binary=:all: -r apps/canvas/requirements-optimizer.txt
+
+check-optimizer:
+	$(MAKE) check-python PYTHON=.venv/optimizer/bin/python
+	PYTHON=$(CURDIR)/.venv/optimizer/bin/python node apps/canvas/tests/check-model-optimizations.mjs
 
 setup:
 	npm ci

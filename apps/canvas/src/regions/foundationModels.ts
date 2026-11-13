@@ -1,6 +1,7 @@
 /** Installed model/source adapters. Portable documents supply data, never executable methods. */
 import * as f from "@manifold/foundation";
 import { createModelAnalyses } from "./modelAnalysis.ts";
+import { createModelOptimizations } from "./modelOptimization.ts";
 import {
   authoredModelSchema,
   equationMethods,
@@ -94,6 +95,7 @@ export const modelResultMethod = Object.freeze({
   runtime: "manifold-native-models@1",
 });
 export const modelAnalyses = createModelAnalyses(modelAdapter);
+export const modelOptimizations = createModelOptimizations(modelAnalyses);
 export const canvasMethods = f.createMethods(
   [{ requirements: modelResultMethod, inputs: { value: "N" }, output: "N" }],
   [
@@ -102,6 +104,7 @@ export const canvasMethods = f.createMethods(
     v3SamplingMethod,
     modelOutputsMethod,
     modelAnalyses.method,
+    modelOptimizations.method,
   ],
 );
 export const canvasExecutor: f.Executor = async (snapshot, signal) => {
@@ -200,6 +203,7 @@ export const canvasContentSchemas = [
   authoredModelSchema,
   modelOutputsSchema,
   modelAnalyses.schema,
+  modelOptimizations.schema,
   csvObservationSchema,
 ];
 export const MODEL_RENDERER = "canvas-independent-model@1";

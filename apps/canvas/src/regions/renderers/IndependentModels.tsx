@@ -4,6 +4,7 @@ import { useEditBuffer } from "../app/useEditBuffer";
 import * as f from "@manifold/foundation";
 import { AUTHORED_MODEL, type AuthoredModel } from "../authoredModels";
 import { ModelAnalysisEditor } from "./ModelAnalyses";
+import { ModelOptimizationEditor } from "./ModelOptimizations";
 import { ModelDefinitionEditor } from "./ModelDefinitionEditor";
 import type { RegionSession, Point } from "../document.ts";
 import { canvasSchemas } from "../app/canvasDocument.ts";
@@ -112,6 +113,7 @@ function ModelCard({
     result = session.foundation.result(target, scope),
     name = document.items.get(instance)?.label || "Model";
   const [editingAnalysis, setEditingAnalysis] = useState(false);
+  const [editingOptimization, setEditingOptimization] = useState(false);
   const [editingDefinition, setEditingDefinition] = useState(false),
     [update, setUpdate] = useState<ReturnType<typeof reviewInstanceUpdate>>(),
     [resetBindings, setResetBindings] = useState(false);
@@ -495,6 +497,13 @@ function ModelCard({
                 Analyze model
               </button>
             )}
+          {canEdit &&
+            Object.keys(definition.inputs).length > 0 &&
+            !Object.keys(definition.children).length && (
+              <button onClick={() => run(() => setEditingOptimization(true))}>
+                Optimize model
+              </button>
+            )}
           {canEdit && (
             <button onClick={() => run(() => setEditingDefinition(true))}>
               Edit model definition
@@ -572,6 +581,15 @@ function ModelCard({
             </div>
           )}
         </section>
+      )}
+      {editingOptimization && (
+        <ModelOptimizationEditor
+          session={session}
+          buffers={editBuffers}
+          instance={instance}
+          at={{ x: at.x + 450, y: at.y }}
+          close={() => setEditingOptimization(false)}
+        />
       )}
       {editingAnalysis && (
         <ModelAnalysisEditor

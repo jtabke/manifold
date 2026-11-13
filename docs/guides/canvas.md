@@ -429,6 +429,42 @@ must be published or cancelled before file transitions. Native files preserve so
 and checked results; Open starts no jobs. See [ADR 0035](../design/decisions/0035-authorable-scalar-models-and-general-outputs.md)
 for the design rationale.
 
+## Optimize a reusable model
+
+Choose **Optimize model** on a self-contained authored-model instance. Explicitly upgrade its
+arithmetic/function equations to scientific math v3 first; legacy v1/v2 semantics are not changed.
+Select one public numeric input/output, finite increasing closed bounds, and **Minimize**,
+**Maximize**, or **Solve target**. Bounds/input tolerance use the displayed input unit;
+target/residual tolerance use the displayed output unit. Equivalent authored unit literals normalize
+through the existing scalar engine. Source connections retain the existing exact-unit binding rules.
+
+**Create optimization** only authors settings. **Run optimization** explicitly reviews the optional
+[SciPy runtime](../development/README.md#optional-numerical-runtime), freezes its identity in the
+request, and computes a fixed captured model and all other effective inputs/observations. Open,
+reload and rendering never launch numerical work. Missing/incompatible runtimes and busy workers
+are explicit refusals, with no installation or alternate solver. **Cancel optimization** cancels
+through the shared scheduler and explicitly signals the owned numerical worker.
+
+Inspect the candidate input/output/units, residual, convergence or controlled termination, work
+counts/limits, captured inputs/dependency revisions, program digest and runtime provenance.
+Min/max is a bounded **local search, not a global-optimum proof**, including closed endpoints.
+Solve target requires opposite endpoint residual signs or a satisfactory endpoint; there is no
+unbracketed root heuristic. Discontinuous sign changes that fail the actual residual tolerance
+are not successes. Domain and budget failures may retain a partial candidate, never an applicable
+success. No interval-wide continuity/domain or physical-validity proof is provided.
+
+**Apply candidate** is a separate undoable edit after independent evaluation through the captured
+scalar engine. It requires the same current baseline receipt and exact reviewed work, no preview
+and finished valid edit buffers. If connected, **Replace source with candidate** explicitly warns
+that a literal replaces the source connection; Undo restores the exact prior connection. Applying
+makes the prior result noncurrent but retains its evidence. Edited/deleted inputs, sources, requests,
+changed references and kept results cannot authorize stale Apply. **Keep optimization** preserves
+the capture/evidence without applying. Native export and local reload retain evidence, not jobs.
+
+Phase 1 supports at most 16 optimization views, one variable, no constraints or new statistics scope,
+and only reviewed v3 scalar method families that lower to the bounded numeric DAG. Unrecognized
+or native method families are refused rather than approximated.
+
 ## Analyze a reusable model
 
 Choose **Analyze model** on an independent model card. Select a public input/output, an increasing

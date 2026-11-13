@@ -1,12 +1,11 @@
 # Canonical numeric optimizer backend v1
 
-This is an independent backend candidate, not an integrated product feature.
-`artifact_optimizer.py` owns bounded numeric execution only. TypeScript must own
-unit checking/normalization and graph lowering; source math versions are **not**
-this contract version. The adapter does not establish graph provenance, model
-analysis identity, currency, receipts, history, or document mutation. Those remain
-foundation/application owners. No HTTP route, UI, registry or shared semaphore is
-installed here.
+`artifact_optimizer.py` owns bounded numeric execution only. The canvas integrates it through
+`modelOptimization.ts`, closed v3 DAG lowering, ordinary foundation typed requests/receipts,
+the shared scheduler and guarded authored commands. `optimizer_transport.py` owns only transient
+server admission/cancellation for the existing `server.py` routes, not history or stored results.
+Source math versions are **not** this contract version. Unit normalization, provenance, currency,
+receipts and explicit undoable Apply remain foundation/application responsibilities.
 
 ## Reproducible optional runtime
 
@@ -43,7 +42,10 @@ import SciPy/NumPy. The worker lazily imports dependencies. Missing libraries gi
   unchanged. Wrap as `{"version": VERSION, "program": normalizedProgram}` and
   encode recursively sorted-key, compact UTF-8 JSON without whitespace. Node
   order matters; `1` and `1.0` match, while signed zeros remain distinct. This
-  avoids cross-language decimal/exponent formatting ambiguity. Digest fixture:
+  avoids cross-language decimal/exponent formatting ambiguity. The canvas deliberately normalizes
+  constant `-0` to `+0` before capture/hashing/JSON transport, matching JavaScript JSON serialization;
+  the standalone Python API still distinguishes signed zeros. Cross-language fixtures test this policy.
+  Digest fixture:
   the one-node `const(2)` program with output 0 hashes to
   `fccf28040726cd9a9be993e6de5e1f5bfb4880c34928df553e2caa695f10dc2b`.
 - `validate(body) -> None`: no dependency imports. Invalid shapes raise
@@ -194,6 +196,16 @@ cannot recover worker counts/candidate/actual identity: those fields are null,
 not fabricated zeros. Pre-start failures have zero evaluations/iterations.
 Source/program hashes are reproducibility checks, **not trusted graph provenance**.
 
+## Integrated transport
+
+The existing server exposes GET `/api/optimizer/capability`, POST `/api/optimizer/optimize`
+(`{token, request}`), and POST `/api/optimizer/cancel` (`{token}`). Tokens are transient UUIDs.
+All three validate local Host/Origin; POSTs cap raw JSON bytes before parsing. Two server-wide
+slots cover probes and solves with immediate 429 busy refusal, held until process cleanup settles.
+Cancellation includes short-lived bounded tombstones for cancel-before-start races. Server close
+cancels and waits for owned jobs. No result store, hidden queue, OS sandbox or memory quota is claimed.
+Runtime review is an explicit Run setup authored transaction, not an effect of projection or Open.
+
 ## Verification boundary
 
 Tests use analytic min/max and root oracles, closed endpoints, constant objectives,
@@ -205,8 +217,7 @@ The pinned numerical tests explicitly skip on unsupported/missing runtime; run t
 in the documented venv, not only default Python. Missing dependency behavior is also
 exercised with `-I -S`, which excludes all site packages.
 
-The implementation checkout's full Python suite was attempted with both the pinned
-venv and default Python. Its assistant companion startup test requires repository
-Node dependencies (`node_modules` is absent in the prepared checkout); this is an
-unrelated regression-check gap, not an optimizer pass or a reason to change the
-companion. Parent integration must run the full suite after normal repository setup.
+Integrated checks include actual supported-runtime SciPy execution, v3 scalar differential tests,
+strict result validation, domain Apply currency guards and real browser Run/Apply/Undo flows.
+`make verify` includes these checks; missing numerical dependencies are reported as explicit skips,
+not numerical passes. The numerical CI profile installs the hash lock and exercises the real path.

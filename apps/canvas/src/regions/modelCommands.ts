@@ -171,18 +171,26 @@ export function setModelInput(
   instance: string,
   port: string,
   value: number,
+  expected = session.document,
 ) {
-  session.applyCommands([
-    {
-      kind: "revise",
-      item: instance,
-      revision: revision(
-        instance,
-        "scalar-model-instance@1",
-        inputBody(session, instance, port, value),
-      ),
-    },
-  ]);
+  f.assert(
+    session.document === expected,
+    "Work changed before setting model input",
+  );
+  session.applyCommands(
+    [
+      {
+        kind: "revise",
+        item: instance,
+        revision: revision(
+          instance,
+          "scalar-model-instance@1",
+          inputBody(session, instance, port, value),
+        ),
+      },
+    ],
+    expected,
+  );
 }
 export function previewModelInput(
   session: RegionSession,

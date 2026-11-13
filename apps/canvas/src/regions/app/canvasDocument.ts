@@ -1,6 +1,8 @@
 /** One accepted record owner; Page is a read-only compatibility projection for the current renderer. */
 import { drawingSchema, validateDrawingDocument } from "../drawing.ts";
 import { analysisMethodRef } from "../modelAnalysis.ts";
+import { optimizationMethodRef } from "../modelOptimization.ts";
+import { validateOptimizationViews } from "../modelOptimizationCommands.ts";
 import { validateAnalysisViews } from "../modelAnalysisCommands.ts";
 import {
   modelOutputsExecutor,
@@ -41,6 +43,7 @@ import {
 } from "../samplingPlans.ts";
 import {
   modelAnalyses,
+  modelOptimizations,
   canvasContentSchemas,
   canvasMethods,
   canvasExecutor,
@@ -987,6 +990,7 @@ export function validateCanvasDocument(
   validateDrawingDocument(document);
   validateModelViews(document);
   validateAnalysisViews(document);
+  validateOptimizationViews(document);
   validateWorkspaceData(canvasPage(document), canvasArtifacts(document), false);
   validateCalculationSources(document);
   validateSamplingPlans(
@@ -1116,6 +1120,11 @@ export class CanvasDocument {
           methods: canvasMethods,
           executor: canvasExecutor,
           typedExecutor: async (snapshot, signal, io) => {
+            if (
+              f.methodKey(snapshot.method) ===
+              f.methodKey(optimizationMethodRef)
+            )
+              return modelOptimizations.execute(snapshot, signal, io);
             if (f.methodKey(snapshot.method) === f.methodKey(analysisMethodRef))
               return modelAnalyses.execute(snapshot, signal, io);
             if (

@@ -61,6 +61,8 @@ import {
 } from "react";
 import CalculationHistory from "../renderers/CalculationHistory";
 import { ModelAnalyses } from "../renderers/ModelAnalyses";
+import { ModelOptimizations } from "../renderers/ModelOptimizations";
+import { optimizationViews } from "../modelOptimizationCommands";
 import { analysisViews } from "../modelAnalysisCommands";
 import { IndependentModels } from "../renderers/IndependentModels";
 import { insertModel, modelViews } from "../modelCommands";
@@ -288,7 +290,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   }));
   const independentViews = modelViews(acceptedDocument);
   const analysisFrames = analysisViews(acceptedDocument);
-  const modelFrames = [...independentViews, ...analysisFrames];
+  const modelFrames = [
+    ...independentViews,
+    ...analysisFrames,
+    ...optimizationViews(acceptedDocument),
+  ];
   const [resume] = useState(() => {
     if (!artifactMode || saved?.blocked) return;
     try {
@@ -6518,6 +6524,18 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         setInput={setInput}
                       />
                     ))}
+                  <ModelOptimizations
+                    session={session}
+                    buffers={editBuffers}
+                    positions={spatial.preview}
+                    move={(id, event) => spatial.start(id, event, true)}
+                    beforeAction={() => {
+                      if (editing && !commit()) return false;
+                      setEditing(undefined);
+                      revertExploration();
+                      return true;
+                    }}
+                  />
                   <ModelAnalyses
                     session={session}
                     buffers={editBuffers}
