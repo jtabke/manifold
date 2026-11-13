@@ -1,0 +1,33 @@
+/* Use the complete font: Latin-only web subsets omit the mathematical glyphs
+   and stretchy variants. See ../fonts/README.md for provenance and license. */
+@font-face {
+  font-family: "STIX Two Math";
+  src: url("../fonts/STIXTwoMath-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+/* Shared by worksheet and workspace math. */
+.er-typeset-math {
+  font-family: "STIX Two Math", "Cambria Math", math;
+  font-weight: 400;
+  font-style: normal;
+  padding-block: 0.18em;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+/* Results stay quieter than the authored equation and don't compete for space.
+   Rows grow with tall notation; long expressions wrap the result, not the math. */
+.er-math-line:has(.er-typeset-math) {
+  flex-wrap: wrap;
+  column-gap: 0.7em;
+  row-gap: 0.25em;
+}
+
+.er-app .er-math-line button.er-result,
+.er-app .mw-equation-line .mw-result {
+  font-family: "STIX Two Math", "Cambria Math", math;
+  font-size: 0.9em;
+}

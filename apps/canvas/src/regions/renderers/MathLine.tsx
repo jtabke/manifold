@@ -1,4 +1,5 @@
 import { isDialogEvent } from "../interaction/modalInput";
+import "../styles/math.css";
 import React, {
   useRef,
   useMemo,
@@ -403,13 +404,42 @@ function MathLineContent({
         e.name === "degC" ? "°C" : e.name === "pi" ? "π" : e.name,
         { mathvariant: "normal", ...sourceProps(mapped.span) },
       );
-    if (e.kind === "call")
+    if (e.kind === "call") {
+      // Keep the transformed operator linked to its authored function name;
+      // arguments retain their own precise source spans and interactions.
+      const operator = sourceProps(mapped.operator);
+      if (e.name === "sqrt") return m("msqrt", expression(e.args[0]), operator);
+      if (e.name === "abs")
+        return m("mrow", [
+          m("mo", "|", { key: "open", ...operator }),
+          m("mrow", expression(e.args[0]), { key: "arg" }),
+          m("mo", "|", { key: "close", ...operator }),
+        ]);
+      if (e.name === "exp")
+        return m("msup", [
+          m("mi", "e", { key: "fn", mathvariant: "normal", ...operator }),
+          m("mrow", expression(e.args[0]), { key: "arg" }),
+        ]);
       return m("mrow", [
-        m("mi", e.name, {
-          key: "fn",
-          mathvariant: "normal",
-          ...sourceProps(mapped.span),
-        }),
+        e.name === "log10"
+          ? m(
+              "msub",
+              [
+                m("mi", "log", {
+                  key: "fn",
+                  mathvariant: "normal",
+                  ...operator,
+                }),
+                m("mn", "10", { key: "base", ...operator }),
+              ],
+              { key: "fn" },
+            )
+          : m("mi", e.name, {
+              key: "fn",
+              mathvariant: "normal",
+              ...operator,
+            }),
+        m("mo", "⁡", { key: "apply" }),
         m("mo", "(", { key: "open" }),
         ...e.args.flatMap((arg, i) => [
           ...(i ? [m("mo", ",", { key: `comma-${i}` })] : []),
@@ -417,37 +447,70 @@ function MathLineContent({
         ]),
         m("mo", ")", { key: "close" }),
       ]);
+    }
     if (e.kind === "unary")
       return m("mrow", [
         m("mo", "−", { key: "o", ...sourceProps(mapped.operator) }),
-        m("mrow", expression(e.expression), { key: "e" }),
+        m(
+          "mrow",
+          grouped(
+            e.expression,
+            e.expression.kind === "unary" ||
+              (e.expression.kind === "binary" &&
+                ["+", "-"].includes(e.expression.op)),
+          ),
+          { key: "e" },
+        ),
       ]);
     if (e.op === "/" || e.op === "^")
       return m(
         e.op === "/" ? "mfrac" : "msup",
         [
-          m("mrow", expression(e.left), { key: "l" }),
+          m(
+            "mrow",
+            grouped(
+              e.left,
+              e.op === "^" &&
+                (e.left.kind === "binary" ||
+                  e.left.kind === "unary" ||
+                  (e.left.kind === "call" && e.left.name === "exp") ||
+                  (e.left.kind === "number" && e.left.value < 0)),
+            ),
+            { key: "l" },
+          ),
           m("mrow", expression(e.right), { key: "r" }),
         ],
         sourceProps(mapped.operator),
       );
-    const child = (value: Expression) =>
-      value.kind === "binary" && ["+", "-"].includes(value.op) && e.op === "*"
-        ? m("mrow", [
-            m("mo", "(", { key: "a" }),
-            m("mrow", expression(value), { key: "v" }),
-            m("mo", ")", { key: "b" }),
-          ])
-        : expression(value);
+    const child = (value: Expression, right = false) =>
+      grouped(
+        value,
+        (value.kind === "binary" &&
+          ["+", "-"].includes(value.op) &&
+          (e.op === "*" || (e.op === "-" && right))) ||
+          (right && value.kind === "unary"),
+      );
     return m("mrow", [
       m("mrow", child(e.left), { key: "l" }),
       m("mo", e.op === "*" ? "·" : e.op === "-" ? "−" : e.op, {
         key: "o",
         ...sourceProps(mapped.operator),
       }),
-      m("mrow", child(e.right), { key: "r" }),
+      m("mrow", child(e.right, true), { key: "r" }),
     ]);
   };
+  // Fractions, radicals and exponent slots already delimit their contents.
+  // Other contexts need explicit fences to preserve the parsed meaning.
+  function grouped(value: Expression, needed: boolean): ReactNode {
+    const content = expression(value);
+    return needed
+      ? m("mrow", [
+          m("mo", "(", { key: "open" }),
+          m("mrow", content, { key: "value" }),
+          m("mo", ")", { key: "close" }),
+        ])
+      : content;
+  }
   return m(
     "math",
     m("mrow", [
@@ -468,12 +531,15 @@ function MathLineContent({
     ]),
     {
       display: "inline",
+      // Full-sized fractions improve worksheet reading; scripts still shrink
+      // naturally inside exponents and nested fractions.
+      displaystyle: "true",
       "data-math-renders": renders.current,
       tabIndex: -1,
       onKeyDown: numbers.onKeyDown,
       onKeyUp: numbers.onKeyUp,
       onBlur: numbers.onBlur,
-      className: nativeEdit ? "er-editable-math" : undefined,
+      className: `er-typeset-math${nativeEdit ? " er-editable-math" : ""}`,
       onPointerDown: (event: React.PointerEvent<Element>) => {
         if (numbers.onPointerDown(event)) return;
         if (

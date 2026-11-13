@@ -51,6 +51,7 @@ export function mathSource(statement: Statement, text: string) {
       span = take(e.name);
     else if (e.kind === "call") {
       const name = take(e.name);
+      operator = name;
       const args = e.args.map(walk);
       let end = args.at(-1)?.end ?? name.end;
       const opening = text.indexOf("(", name.end);

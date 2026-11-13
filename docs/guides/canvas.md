@@ -28,6 +28,14 @@ Enter in the source field continues below and Escape finishes editing. Unresolve
 expressions remain editable. Mathematical source-range selection, Alt-click term
 inspection and dedicated number-exploration controls retain their own gestures.
 
+Equations display as typeset mathematics after editing: `sqrt(...)` becomes a radical,
+`abs(...)` uses absolute-value bars, `exp(...)` displays as an exponential, and `log10(...)`
+uses a subscripted base. Fractions, powers and grouped expressions preserve their mathematical
+meaning. Keep typing the same plain-text source; double-click the formatted equation to edit
+it. A bundled math font keeps symbols consistent without a font service or local font install.
+Tall expressions grow their rows, and results wrap below long equations instead of crowding them.
+Notes remain plain text; this is equation formatting, not a LaTeX editor for prose.
+
 Use **Import CSV** or drop a CSV onto the canvas. Measurements retain their source;
 connections to mathematical quantities require explicit review. Plot responses and
 compare alternatives through the existing quantities. The command palette opens
