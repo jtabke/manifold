@@ -1,6 +1,10 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
-import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  revealRegionActions,
+  startWriting,
+} from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
@@ -16,9 +20,7 @@ try {
   const editor = page.getByLabel("Write an engineering region", {
     exact: true,
   });
-  await page
-    .getByRole("button", { name: "Write equation or note", exact: true })
-    .click();
+  await startWriting(page);
   for (const text of ["P = F*v", "F = 20 N", "v = 3 m/s", "P <= 75 W"]) {
     await editor.fill(text);
     await editor.press("Enter");
@@ -170,9 +172,7 @@ try {
   expect((await saved()).page).toEqual(baseline);
 
   // Undefined downstream results cannot be accepted or preserved as alternatives.
-  await page
-    .getByRole("button", { name: "Write equation or note", exact: true })
-    .click();
+  await startWriting(page);
   await editor.fill("R = 1/F");
   await editor.press("Enter");
   await editor.press("Escape");

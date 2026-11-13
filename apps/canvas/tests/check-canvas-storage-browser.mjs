@@ -4,7 +4,11 @@ import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { canvasDatabaseName } from "../src/regions/app/canvasLocalStore.ts";
 import { decodeWorkspace } from "../src/regions/artifacts.ts";
-import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  readWorkspaceBytes,
+  startWriting,
+} from "./browser-workspace.mjs";
 const fixture = readFileSync(
   new URL("./canvas-v2.fixture.json", import.meta.url),
   "utf8",
@@ -46,9 +50,7 @@ try {
     "read-only recovery does not publish a new generation",
   );
   const write = async (page, text) => {
-    await page
-      .getByRole("button", { name: "Write equation or note", exact: true })
-      .click();
+    await startWriting(page);
     const editor = page.getByLabel("Write an engineering region", {
       exact: true,
     });
@@ -63,7 +65,7 @@ try {
   await write(b, "Second writer remains in memory");
   await expect(b.getByText(/Another tab saved a newer version/)).toBeVisible();
   await expect(b.getByLabel("Workspace save status")).toHaveText(
-    "Unsaved changes",
+    "Local save needs attention",
   );
   expect(await readWorkspaceBytes(b)).toBe(
     accepted,

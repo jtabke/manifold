@@ -7,16 +7,18 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, expect } from "@playwright/test";
 import { openHeadlessWorkspace } from "manifold-canvas/headless";
-import { decodeWorkspace } from "../src/regions/artifacts.ts";
+import { archive, decodeWorkspace } from "../src/regions/artifacts.ts";
+import { stageWorkspaceFile } from "../src/regions/app/workspaceFiles.ts";
 import { readWorkspace } from "./browser-workspace.mjs";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const cli = fileURLToPath(new URL("../tools/manifold.mjs", import.meta.url));
-const baseline = fileURLToPath(
+const baselineFixture = fileURLToPath(
   new URL("./fixtures/agent-spring/baseline.manifold", import.meta.url),
 );
 const directory = await mkdtemp(join(tmpdir(), "manifold-agent-handoff-"));
 const file = (name) => join(directory, name);
+const baseline = file("baseline.manifold");
 const errors = [],
   executions = [];
 let browser;
@@ -164,7 +166,9 @@ async function save(page, name) {
     .getByRole("button", { name: "Save workspace file", exact: true })
     .click();
   const download = await event;
-  expect(download.suggestedFilename()).toBe("manifold-workspace.manifold");
+  expect(download.suggestedFilename()).toBe(
+    `${await page.getByLabel("Document title", { exact: true }).inputValue()}.manifold`,
+  );
   await download.saveAs(file(name));
   return inspect(file(name));
 }
@@ -187,6 +191,13 @@ async function durableEvidence(page, expected) {
 }
 
 try {
+  // A named document must retain its exact root through agent/browser handoffs.
+  // Filename-derived migration of older unnamed files is covered by the chrome test.
+  const named = await stageWorkspaceFile(
+    await readFile(baselineFixture, "utf8"),
+  );
+  named.renameDocument("Spring study");
+  await writeFile(baseline, archive(named.native()));
   const baselineBytes = await readFile(baseline, "utf8");
   const source = run(["inspect", baseline, "--compact"]);
   const x = source.worksheet.regions.find((row) => row.name === "x");

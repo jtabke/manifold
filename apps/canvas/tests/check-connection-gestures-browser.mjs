@@ -1,7 +1,7 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
-import { readWorkspace } from "./browser-workspace.mjs";
+import { readWorkspace, startWriting } from "./browser-workspace.mjs";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
@@ -13,9 +13,7 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(base);
-  await page
-    .getByRole("button", { name: "Write equation or note", exact: true })
-    .click();
+  await startWriting(page);
   const editor = page.getByLabel("Write an engineering region", {
     exact: true,
   });

@@ -78,7 +78,7 @@ try {
   await expect(controls).toHaveCount(0);
   await expect(artifact).toHaveAttribute("data-status", "current");
   await expect(page.getByLabel("Workspace save status")).toHaveText(
-    "Unsaved changes",
+    "Local save needs attention",
   );
   await expect(
     page.getByRole("button", { name: "Retry local save", exact: true }),

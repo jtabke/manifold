@@ -22,7 +22,7 @@
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-rows: minmax(58px, auto) minmax(0, 1fr);
+  grid-template-rows: minmax(54px, auto) auto minmax(0, 1fr);
   font-family: "DM Sans Variable", sans-serif;
   color: var(--canvas-text, #252934);
   background: var(--canvas-bg, #fdfdfb);
@@ -71,38 +71,174 @@
 }
 .er-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  min-width: 0;
   gap: 12px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--canvas-border, #e9e8ed);
-  background: var(--canvas-surface, #fff);
-  z-index: 10;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--canvas-border);
+  background: var(--canvas-surface);
+  z-index: 50;
 }
 .er-brand {
   display: flex;
-  align-items: center;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: 6px;
 }
-.er-header > input {
-  font:
-    13px "DM Sans Variable",
-    sans-serif;
-  color: var(--canvas-muted, #656a79);
-  padding: 5px 12px;
+.er-brand .manifold-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+.er-scenario-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-basis: 100%;
+  border-top: 1px solid var(--canvas-border);
+  padding-top: 6px;
+}
+.er-scenario-bar > span {
+  font-size: 11px;
+  color: var(--canvas-muted);
+}
+.er-scenario-bar .er-contexts {
+  flex-wrap: wrap;
+  min-width: 0;
   border: 0;
-  border-left: 1px solid var(--canvas-border, #e5e5eb);
-  background: transparent;
-  width: 200px;
-  margin-right: auto;
 }
-.er-header > button {
-  color: var(--canvas-muted, #626878);
+.er-document-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+.er-document-identity > input {
+  min-width: 0;
+  width: clamp(120px, 22vw, 320px);
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.er-document-identity > input:hover {
+  border-color: var(--canvas-border);
+}
+.er-document-identity > input:focus {
+  background: var(--canvas-bg);
+}
+.er-document-actions,
+.er-history-tools,
+.er-view-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.er-header button,
+.er-authoring-bar button {
+  min-height: 32px;
+  border-radius: 6px;
+}
+.er-document-actions > button {
   font-size: 12px;
 }
-.er-header .is-active {
-  color: var(--canvas-accent, #73569c);
-  background: var(--canvas-accent-tint, #f1edf8);
+.er-document-actions .er-download-button {
+  background: var(--canvas-accent-tint);
+  border-color: var(--canvas-border);
+  color: var(--canvas-accent);
+}
+.er-document-actions .er-download-button:hover {
+  background: var(--canvas-accent-strong);
+  color: var(--canvas-on-accent);
+}
+.er-agent-button {
+  border-left-color: var(--canvas-border) !important;
+}
+.er-authoring-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 16px;
+  background: var(--canvas-surface);
+  border-bottom: 1px solid var(--canvas-border);
+  z-index: 40;
+}
+.er-history-tools {
+  padding-right: 8px;
+  border-right: 1px solid var(--canvas-border);
+  gap: 0;
+}
+.er-history-tools > button {
+  width: 32px;
+  padding: 5px;
+}
+.drawing-toolbar-host {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+.er-view-tools {
+  margin-left: auto;
+}
+.er-command-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.er-command-menu > button {
+  font-size: 12px;
+}
+.er-command-menu > button[aria-expanded="true"] {
+  color: var(--canvas-accent);
+  background: var(--canvas-accent-tint);
+}
+.er-command-panel {
+  position: fixed;
+  box-sizing: border-box;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 252px;
+  max-width: calc(100vw - 32px);
+  max-height: min(560px, 65dvh);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 10px;
+  background: var(--canvas-surface);
+  box-shadow: 0 10px 32px var(--canvas-shadow);
+}
+.er-command-panel > button {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+  font-size: 12px;
+}
+.er-command-panel > button[aria-pressed="true"] {
+  color: var(--canvas-accent);
+  background: var(--canvas-accent-tint);
+}
+.er-command-heading {
+  color: var(--canvas-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 8px 8px 3px;
+}
+.er-command-panel .er-contexts {
+  flex-wrap: wrap;
+  padding: 4px;
+  border: 0;
+}
+.er-command-panel small {
+  padding: 8px;
 }
 .er-canvas {
   position: relative;
@@ -816,15 +952,14 @@
   padding: 2px;
 }
 .er-zoom {
-  position: absolute;
-  bottom: 18px;
-  left: 20px;
+  position: relative;
   display: flex;
   align-items: center;
   background: var(--canvas-surface, #fffffff0);
   border: 1px solid var(--canvas-border, #eee9f3);
   border-radius: 5px;
-  opacity: 0.85;
+  opacity: 1;
+  flex-shrink: 0;
   z-index: 45;
 }
 .er-zoom:hover,
@@ -844,51 +979,11 @@
   opacity: 0.35;
 }
 @media (max-width: 850px) {
-  .er-header {
-    padding: 7px 15px;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .er-header > input {
-    width: 135px;
-    padding-left: 9px;
-  }
-  .er-header > button > span {
-    display: none;
-  }
-  .er-header .er-contexts {
-    order: 1;
-    flex-basis: 100%;
-  }
   .er-empty {
     left: 60px;
   }
 }
 @media (max-width: 500px) {
-  .er-header {
-    gap: 6px;
-    padding: 0 12px;
-  }
-  .er-brand {
-    flex-shrink: 0;
-    font-size: 16px;
-  }
-  .er-brand .manifold-logo {
-    width: 40px;
-  }
-  .er-header > input {
-    flex: 1;
-    min-width: 0;
-    width: 0;
-    padding-right: 0;
-    font-size: 11px;
-  }
-  .er-header > button {
-    flex-shrink: 0;
-  }
-  .er-header kbd {
-    display: none;
-  }
   .er-empty {
     left: 35px;
     right: 25px;
@@ -1957,9 +2052,6 @@
 }
 
 @media (max-width: 600px) {
-  .er-header > input {
-    display: none;
-  }
   .er-workspace-switcher {
     margin-right: auto;
     padding-left: 4px;
@@ -2085,13 +2177,80 @@
 }
 
 .er-save-status {
-  position: absolute;
-  right: 16px;
-  bottom: 14px;
-  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
   color: var(--canvas-muted);
   font-size: 11px;
-  pointer-events: none;
+}
+.er-save-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--canvas-warning);
+}
+.er-save-status[data-saved="true"]::before {
+  background: var(--canvas-success);
+}
+@media (max-width: 1200px) {
+  .drawing-toolbar-host {
+    order: 1;
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 850px) {
+  .er-document-actions kbd,
+  .er-agent-button > span {
+    display: none;
+  }
+  .er-document-identity {
+    gap: 4px;
+  }
+  .er-save-status > span {
+    display: none;
+  }
+  .er-document-identity > input {
+    width: 100%;
+  }
+}
+@media (max-width: 600px) {
+  .er-header {
+    padding: 7px 8px;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .er-brand .manifold-logo {
+    width: 25px;
+    height: 25px;
+  }
+  .er-document-actions {
+    gap: 0;
+  }
+  .er-document-actions > button {
+    padding: 5px 7px;
+  }
+  .er-document-actions .er-download-button > span {
+    display: none;
+  }
+  .er-document-identity > input {
+    padding: 6px 4px;
+    font-size: 12px;
+  }
+  .er-authoring-bar {
+    padding: 5px 8px;
+    gap: 5px;
+  }
+  .er-history-tools {
+    padding-right: 5px;
+  }
+  .er-history-tools > button {
+    width: 28px;
+  }
+  .er-zoom button {
+    padding: 5px 6px;
+  }
 }
 
 /* Choosing covered work changes personal attention, never authored layer order. */

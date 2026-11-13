@@ -19,8 +19,9 @@ For the equivalent commands without Make and frontend development, see the
 
 ## Equations and data
 
-Start typing an equation or note, then click to choose its position. **Write equation or note** starts
-in the visible canvas. The inline source field grows with your text instead of opening a
+With the default **Select / Edit** pointer, click blank canvas to place the writer, or
+start typing on the focused canvas. There is no separate Write tool or toolbar button.
+The inline source field grows with your text instead of opening a
 fixed-width panel. Enter continues below, Escape finishes, Shift+Enter adds a line and `@`
 offers references. Arithmetic such as `1+1` evaluates without a variable name.
 Single-click an equation or note to select it; double-click or press Enter to edit.
@@ -125,10 +126,10 @@ replace its default allowed origins and `--port` selects the port; stop it with 
 
 ## Commands and keyboard shortcuts
 
-The compact toolbar, **Actions**, right-click and Shift+F10 expose contextual actions.
+The selection toolbar, the **Canvas actions** ellipsis beside Undo/Redo, right-click and Shift+F10 expose contextual actions.
 Use Ctrl/Cmd+K for command search. Equations offer editing, plotting, connections,
 alternatives and tracing; selections offer organization, grouping and model creation.
-Click **?** beside the bottom-left zoom controls for a searchable **Keyboard shortcuts**
+Click **?** beside the zoom controls in the tools row for searchable **Keyboard shortcuts**
 reference, or search **help** / **Keyboard shortcuts** with the default Ctrl/⌘+K. Scope notes
 explain where keys apply. Escape closes the reference and restores focus; opening from the
 writer preserves its draft and caret.
@@ -269,15 +270,28 @@ reviewed interfaces; evaluation currently uses globally unique symbols.
 
 ## Save, open and share
 
-Accepted work, its title and navigation state save in this browser on this device.
-**New canvas** creates an independent URL. Keep that URL to reopen it.
+The document header groups **File**, the editable document name, local-save status,
+Search, Ask agent and **Download**. The row beneath groups Undo/Redo and canvas actions,
+selection/ink/shape tools, and View/Pan/Zoom/Help. **View** contains Reveal,
+named viewpoints and System overview. Scenario controls appear in a separate labelled
+strip when alternatives exist. **Drawing style** holds stroke color and width; the
+shape palette scrolls horizontally on narrow screens without hiding the document name.
+File, View and style disclosures support Tab, Escape and outside-click dismissal.
 
-- **Save file** in the toolbar (Ctrl/Cmd+S) downloads a portable `.manifold` copy after
+Accepted work and navigation state save in this browser on this device.
+**File → New document** creates an independent URL. Keep that URL to reopen it.
+The document name is authored metadata and travels inside `.manifold` files. Opening
+an older unnamed file uses its filename without the extension. An embedded name takes
+precedence over the transport filename. Enter or blur keeps a rename; Escape cancels it;
+Undo/Redo restores accepted renames. Legacy browser-only names migrate into the document.
+Files currently contain one page, not a tabbed multi-page document.
+
+- **Download** in the header (Ctrl/Cmd+S) downloads a portable `.manifold` copy after
   finishing pending edits. Keep a copy outside browser storage for backup or sharing.
   Your browser controls the download location and whether to ask for a filename.
-  Later edits autosave only in this browser; use **Save file** again for an updated copy.
+  Later edits autosave only in this browser; use **Download** again for an updated copy.
   This does not overwrite an opened file or keep a connection to it.
-- **Open** in the toolbar (Ctrl/Cmd+O), or dropping a `.manifold`/legacy JSON file,
+- **File → Open file…** (Ctrl/Cmd+O), or dropping a `.manifold`/legacy JSON file,
   validates the file and loads it under a fresh canvas URL after preserving current work.
   Cancelling the picker or choosing an invalid file leaves current work intact.
 - The command palette also offers **Save workspace file** (searchable as “export”) and
@@ -285,11 +299,11 @@ Accepted work, its title and navigation state save in this browser on this devic
 
 Opening loaded Python never executes it; verified saved results can display, and
 changed/unchecked results need **Run Python**. Session Undo, recent calculation history and temporary previews do not travel; explicitly kept
-calculations preserve their original mathematics and source records. Title, active camera and
-tool attention remain personal. Authored groups, tool arrangements and named layouts travel
+calculations preserve their original mathematics and source records. The active camera and
+tool attention remain personal; the document name is portable. Authored groups, tool arrangements and named layouts travel
 with the workspace, as described under [portable arrangements](#portable-arrangements).
 
-Local save failures show unsaved status and **Retry local save**. Saves detect conflicting
+Local save failures show **Local save needs attention** and **Retry local save**. Saves detect conflicting
 changes from other tabs rather than silently overwriting them. **Review workspace cleanup**
 reviews unused history and obsolete saved data separately; it preserves current work,
 alternatives, retained Undo and results for restorable artifacts.

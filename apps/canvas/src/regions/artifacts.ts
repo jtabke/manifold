@@ -753,6 +753,14 @@ export function validateWorkspaceData(
   )
     fail();
   const p = value.page;
+  if (
+    p.title !== undefined &&
+    (typeof p.title !== "string" ||
+      !p.title.trim() ||
+      p.title.length > 160 ||
+      /[\u0000-\u001f\u007f]/.test(p.title))
+  )
+    fail();
   if (p.calculations !== undefined) {
     if (!Array.isArray(p.calculations)) fail();
     p.calculations.forEach(validateKeptCalculation);

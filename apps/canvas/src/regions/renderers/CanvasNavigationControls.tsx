@@ -21,6 +21,8 @@ export function CanvasNavigationControls({
   return (
     <div
       className="er-zoom"
+      role="group"
+      aria-label="Canvas navigation"
       onPointerDown={(e) => {
         if ((e.target as Element).closest("button")) e.preventDefault();
       }}

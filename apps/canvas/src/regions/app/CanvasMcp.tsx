@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Plug, X } from "lucide-react";
 import { createMcpCanvas } from "../mcp";
 import { mcpErrorData, McpError, type McpScope } from "../mcpProtocol";
 import "../styles/mcp.css";
@@ -65,10 +67,12 @@ function requestedEndpoint() {
 
 /** A private fragment requests a connection. Only a human's selected scope grants authority. */
 export function CanvasMcp({
+  statusHost,
   session,
   edits,
   canvas,
 }: {
+  statusHost: HTMLElement | null;
   session: RegionSession;
   edits: WorkspaceEdits;
   canvas: AssistantCanvasPort;
@@ -77,6 +81,29 @@ export function CanvasMcp({
   const ports = useRef({ edits, canvas });
   ports.current = { edits, canvas };
   const [scope, setScope] = useState<McpScope>("read-only");
+  const [expanded, setExpanded] = useState(true);
+  const [wasConnected, setWasConnected] = useState(false);
+  const panel = useRef<HTMLElement>(null);
+  const indicator = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  const closePanel = () => {
+    setExpanded(false);
+    if (panel.current?.contains(document.activeElement))
+      indicator.current?.focus({ preventScroll: true });
+  };
+  useEffect(() => {
+    if (!expanded || !endpoint) return;
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !panel.current?.contains(target) &&
+        !indicator.current?.contains(target)
+      )
+        setExpanded(false);
+    };
+    document.addEventListener("pointerdown", outside, true);
+    return () => document.removeEventListener("pointerdown", outside, true);
+  }, [expanded, endpoint]);
   const [status, setStatus] = useState("disconnected");
   const [agent, setAgent] = useState("External agent");
   const [view, setView] = useState<ReturnType<Owner["state"]>>();
@@ -102,6 +129,9 @@ export function CanvasMcp({
       clearMcpFragment();
       disconnect();
       setEndpoint(candidate);
+      setExpanded(true);
+      setWasConnected(false);
+      setAgent("External agent");
       setScope("read-only");
       setStatus("disconnected");
       setView(undefined);
@@ -173,6 +203,8 @@ export function CanvasMcp({
         }
         if (message.type === "ready" && current.owner) {
           setStatus("connected");
+          setWasConnected(true);
+          closePanel();
           return;
         }
         const owner = current.owner;
@@ -219,133 +251,243 @@ export function CanvasMcp({
   };
   const connected = status === "connected" || status === "connecting";
   const permission = scopes.find((entry) => entry.id === scope)!;
+  const pending =
+    status === "connected"
+      ? (view?.proposals.filter((proposal) => proposal.status === "pending")
+          .length ?? 0)
+      : 0;
+  const summary =
+    status === "connected"
+      ? "Agent connected"
+      : status === "connecting"
+        ? "Connecting agent…"
+        : status === "connection failed"
+          ? "Connection failed"
+          : wasConnected
+            ? "Agent disconnected"
+            : "Connection requested";
   return (
-    <section
-      aria-label="External agent control"
-      className="er-mcp-control"
-      role="region"
-    >
-      <strong>External agent: {status}</strong>
-      {connected && (
-        <p>
-          Client-reported name: <b>{agent}</b> · Granted scope:{" "}
-          {permission.label}
-        </p>
-      )}
-      <label>
-        Agent permissions{" "}
-        <select
-          aria-label="Agent permissions"
-          value={scope}
-          disabled={connected}
-          onChange={(event) => setScope(event.target.value as McpScope)}
-        >
-          {scopes.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <p>
-        {permission.description} Your content may reach the agent's model
-        provider. Only enable for an agent you trust. Disconnect before changing
-        permissions.
-      </p>
-      {connected ? (
-        <button
-          onClick={() => {
-            disconnect();
-            setStatus("disconnected");
+    <>
+      {statusHost &&
+        createPortal(
+          <button
+            ref={indicator}
+            className="er-mcp-indicator"
+            aria-label="External agent connection"
+            aria-expanded={expanded}
+            aria-controls={panelId}
+            data-status={status}
+            data-scope={scope}
+            title={`${summary}${connected ? ` · ${permission.label} · Client-reported name: ${agent}` : ""}`}
+            onClick={() => {
+              if (expanded) closePanel();
+              else {
+                setExpanded(true);
+                requestAnimationFrame(() =>
+                  panel.current?.focus({ preventScroll: true }),
+                );
+              }
+            }}
+          >
+            <Plug size={15} />
+            <span className="er-mcp-indicator-label">{summary}</span>
+            {pending > 0 && (
+              <span
+                className="er-mcp-badge"
+                aria-label={`${pending} pending agent proposal${pending === 1 ? "" : "s"}`}
+              >
+                {pending}
+                <span> to review</span>
+              </span>
+            )}
+            <span className="er-mcp-announcement" role="status">
+              {summary}
+              {status === "connected" ? ` · ${permission.label}` : ""}
+              {pending
+                ? ` · ${pending} proposal${pending === 1 ? "" : "s"} awaiting your review`
+                : ""}
+            </span>
+          </button>,
+          statusHost,
+        )}
+      {expanded && (
+        <section
+          id={panelId}
+          ref={panel}
+          tabIndex={-1}
+          aria-label="External agent control"
+          className="er-mcp-control"
+          role="region"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              closePanel();
+            }
           }}
         >
-          Disconnect agent
-        </button>
-      ) : (
-        <button onClick={connect}>
-          {scope === "full-control"
-            ? "Enable full control"
-            : `Enable ${permission.label.toLowerCase()}`}
-        </button>
-      )}
-      {error && <p role="alert">{error}</p>}
-      {status === "connected" && view && (
-        <>
-          <p aria-live="polite">
-            Current action: {view.current ?? "Idle"} ·{" "}
-            {view.jobs.filter((job) => job.state !== "completed").length} active
-            computation(s)
-          </p>
-          {view.proposals.map((proposal) => (
-            <article key={proposal.id} aria-label="External agent proposal">
-              <strong>Proposed edit · {proposal.status}</strong>
-              <p>{proposal.explanation}</p>
-              <p>
-                {proposal.diff.regions.length} worksheet changes ·{" "}
-                {proposal.diff.models.length} affected models ·{" "}
-                {proposal.validation.issues.length} validation issue(s)
-              </p>
-              <details>
-                <summary>Review changes and diagnostics</summary>
-                <pre>
-                  {JSON.stringify(
-                    { changes: proposal.diff, validation: proposal.validation },
-                    null,
-                    2,
-                  )}
-                </pre>
-              </details>
-              <button
-                disabled={proposal.status !== "pending" || !!view.current}
-                onClick={() => {
-                  try {
-                    bridge.current?.owner?.approveProposal(proposal.id);
-                    setError("");
-                  } catch (failure) {
-                    setError(mcpErrorData(failure).message);
-                  }
-                }}
-              >
-                Apply agent proposal
-              </button>
-              <button
-                disabled={!["pending", "stale"].includes(proposal.status)}
-                onClick={() =>
-                  bridge.current?.owner?.dismissProposal(proposal.id)
-                }
-              >
-                Dismiss agent proposal
-              </button>
-            </article>
-          ))}
-          <details>
-            <summary>Agent activity ({view.activity.length})</summary>
+          <header>
+            <strong>
+              {!connected && !wasConnected
+                ? "Connect an external agent?"
+                : `External agent: ${status}`}
+            </strong>
+            <button
+              aria-label="Close agent connection details"
+              title="Close details without disconnecting"
+              onClick={closePanel}
+            >
+              <X size={16} />
+            </button>
+          </header>
+          {connected && (
             <p>
-              Transient activity only, not a durable audit log. Undo/Redo can
-              affect human edits; these entries attribute the agent action, not
-              the authorship of the reversed work.
+              Client-reported name: <b>{agent}</b> · Granted scope:{" "}
+              {permission.label}
             </p>
-            <ol>
-              {view.activity
-                .slice()
-                .reverse()
-                .map((entry, index) => (
-                  <li key={`${entry.time}-${index}`}>
-                    {entry.agent} · {entry.tool} · {entry.status} ·{" "}
-                    <time>{entry.time}</time>
-                  </li>
-                ))}
-            </ol>
-            <ul>
-              {view.jobs.map((job) => (
-                <li key={job.jobId}>
-                  {job.agent} · computation {job.jobId} · {job.state}
-                </li>
+          )}
+          <label>
+            Agent permissions{" "}
+            <select
+              aria-label="Agent permissions"
+              value={scope}
+              disabled={connected}
+              onChange={(event) => setScope(event.target.value as McpScope)}
+            >
+              {scopes.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.label}
+                </option>
               ))}
-            </ul>
-          </details>
-        </>
+            </select>
+          </label>
+          {!connected ? (
+            <p>
+              {permission.description} Your content may reach the agent's model
+              provider. Only enable for an agent you trust. Permission lasts for
+              this connection only.
+            </p>
+          ) : (
+            <p>
+              Access is limited to this connection. Closing these details does
+              not disconnect the agent. Disconnect to revoke access or change
+              permissions.
+            </p>
+          )}
+          {connected ? (
+            <button
+              onClick={() => {
+                disconnect();
+                setStatus("disconnected");
+                setScope("read-only");
+                setView(undefined);
+                closePanel();
+              }}
+            >
+              Disconnect agent
+            </button>
+          ) : (
+            <button onClick={connect}>
+              {scope === "full-control"
+                ? "Enable full control"
+                : `Enable ${permission.label.toLowerCase()}`}
+            </button>
+          )}
+          {!connected && (
+            <button
+              onClick={() => {
+                disconnect();
+                setEndpoint(undefined);
+                setView(undefined);
+                setStatus("disconnected");
+              }}
+            >
+              {wasConnected ? "Remove connection" : "Decline connection"}
+            </button>
+          )}
+          {error && <p role="alert">{error}</p>}
+          {status === "connected" && view && (
+            <>
+              <p aria-live="polite">
+                Current action: {view.current ?? "Idle"} ·{" "}
+                {view.jobs.filter((job) => job.state !== "completed").length}{" "}
+                active computation(s)
+              </p>
+              {view.proposals.map((proposal) => (
+                <article key={proposal.id} aria-label="External agent proposal">
+                  <strong>Proposed edit · {proposal.status}</strong>
+                  <p>{proposal.explanation}</p>
+                  <p>
+                    {proposal.diff.regions.length} worksheet changes ·{" "}
+                    {proposal.diff.models.length} affected models ·{" "}
+                    {proposal.validation.issues.length} validation issue(s)
+                  </p>
+                  <details>
+                    <summary>Review changes and diagnostics</summary>
+                    <pre>
+                      {JSON.stringify(
+                        {
+                          changes: proposal.diff,
+                          validation: proposal.validation,
+                        },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                  </details>
+                  <button
+                    disabled={proposal.status !== "pending" || !!view.current}
+                    onClick={() => {
+                      try {
+                        bridge.current?.owner?.approveProposal(proposal.id);
+                        setError("");
+                      } catch (failure) {
+                        setError(mcpErrorData(failure).message);
+                      }
+                    }}
+                  >
+                    Apply agent proposal
+                  </button>
+                  <button
+                    disabled={!["pending", "stale"].includes(proposal.status)}
+                    onClick={() =>
+                      bridge.current?.owner?.dismissProposal(proposal.id)
+                    }
+                  >
+                    Dismiss agent proposal
+                  </button>
+                </article>
+              ))}
+              <details>
+                <summary>Agent activity ({view.activity.length})</summary>
+                <p>
+                  Transient activity only, not a durable audit log. Undo/Redo
+                  can affect human edits; these entries attribute the agent
+                  action, not the authorship of the reversed work.
+                </p>
+                <ol>
+                  {view.activity
+                    .slice()
+                    .reverse()
+                    .map((entry, index) => (
+                      <li key={`${entry.time}-${index}`}>
+                        {entry.agent} · {entry.tool} · {entry.status} ·{" "}
+                        <time>{entry.time}</time>
+                      </li>
+                    ))}
+                </ol>
+                <ul>
+                  {view.jobs.map((job) => (
+                    <li key={job.jobId}>
+                      {job.agent} · computation {job.jobId} · {job.state}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </>
+          )}
+        </section>
       )}
-    </section>
+    </>
   );
 }

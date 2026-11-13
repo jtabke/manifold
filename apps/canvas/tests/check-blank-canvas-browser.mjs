@@ -1,6 +1,6 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
-import { readWorkspace } from "./browser-workspace.mjs";
+import { readWorkspace, startWriting } from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
@@ -43,9 +43,9 @@ try {
   ).toBeVisible();
 
   // Existing controls keep their normal keyboard behavior.
-  await page.getByLabel("Page title", { exact: true }).fill("Power check");
+  await page.getByLabel("Document title", { exact: true }).fill("Power check");
   expect((await saved()).page.regions).toHaveLength(4);
-  await page.getByLabel("Write equation or note", { exact: true }).click();
+  await startWriting(page);
   await editor.fill("1+1");
   await editor.press("Escape");
   await expect(
@@ -112,6 +112,7 @@ try {
   expect((await saved()).page.regions).toHaveLength(before);
   // Starting fresh never replaces the original canvas or its name.
   const originalURL = page.url();
+  await page.getByRole("button", { name: "File", exact: true }).click();
   await page.getByRole("button", { name: "New canvas", exact: true }).click();
   await expect(page).toHaveURL(/canvas=[a-f0-9-]{36}/);
   await expect(
@@ -120,7 +121,7 @@ try {
   await expect(page.locator(".er-region")).toHaveCount(0);
   await page.goto(originalURL);
   await expect(page.locator('[data-result-for="P"]')).toContainText("60 W");
-  await expect(page.getByLabel("Page title", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Document title", { exact: true })).toHaveValue(
     "Power check",
   );
   expect(errors).toEqual([]);

@@ -1,3 +1,4 @@
+import { startWriting } from "./browser-workspace.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -41,10 +42,30 @@ const errorCode = (result) => {
   assert(error.recovery);
   return error.code;
 };
+const connectionIndicator = page.getByRole("button", {
+  name: "External agent connection",
+  exact: true,
+});
+const connectionPanel = page.getByRole("region", {
+  name: "External agent control",
+  exact: true,
+});
+const openDetails = async () => {
+  if ((await connectionIndicator.getAttribute("aria-expanded")) !== "true")
+    await connectionIndicator.click();
+  await expect(connectionPanel).toBeVisible();
+};
 const disconnect = async () => {
+  await openDetails();
   await page
     .getByRole("button", { name: "Disconnect agent", exact: true })
     .click();
+  await expect(connectionPanel).toHaveCount(0);
+  await expect(connectionIndicator).toHaveAttribute(
+    "data-status",
+    "disconnected",
+  );
+  await openDetails();
   await expect(
     page.getByLabel("Agent permissions", { exact: true }),
   ).toBeEnabled();
@@ -60,15 +81,29 @@ const connect = async (scope) => {
     "full-control": "Enable full control",
   };
   await page.getByRole("button", { name: labels[scope], exact: true }).click();
-  await expect(
-    page.getByText("External agent: connected", { exact: true }),
-  ).toBeVisible();
+  await expect(connectionIndicator).toHaveAttribute("data-status", "connected");
+  await expect(connectionPanel).toHaveCount(0);
+  await expect(connectionIndicator).toHaveAttribute("aria-expanded", "false");
+  await expect(connectionIndicator).toBeFocused();
   const connection = await call("connect_canvas");
   sessionId = connection.sessionId;
   assert.equal(connection.scope, scope);
+  await openDetails();
   await expect(
     page.getByText(/Client-reported name:.*canvas-browser-test/),
   ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: "Close agent connection details",
+      exact: true,
+    })
+    .click();
+  await expect(connectionPanel).toHaveCount(0);
+  assert.equal(
+    (await call("connect_canvas")).sessionId,
+    sessionId,
+    "Closing connection details must not revoke the active grant",
+  );
 };
 try {
   await client.connect(transport);
@@ -82,8 +117,61 @@ try {
     errorCode(await raw("inspect_workspace")),
     "NO_CANVAS_CONNECTED",
   );
+  // Dismissing or declining a request never grants authority or leaves a blocking banner.
+  await page
+    .getByRole("button", {
+      name: "Close agent connection details",
+      exact: true,
+    })
+    .click();
+  await expect(connectionPanel).toHaveCount(0);
+  assert.equal(
+    errorCode(await raw("inspect_workspace")),
+    "NO_CANVAS_CONNECTED",
+  );
+  await openDetails();
+  await expect(
+    page.getByLabel("Agent permissions", { exact: true }),
+  ).toHaveValue("read-only");
+  await page
+    .getByRole("button", { name: "Decline connection", exact: true })
+    .click();
+  await expect(connectionIndicator).toHaveCount(0);
+  assert.equal(
+    errorCode(await raw("inspect_workspace")),
+    "NO_CANVAS_CONNECTED",
+  );
+  await page.goto(url);
+  await expect(
+    page.getByLabel("Agent permissions", { exact: true }),
+  ).toHaveValue("read-only");
   await connect("read-only");
   const initial = await call("inspect_workspace");
+  // The compact connection controls remain usable on phones without covering the canvas.
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    const bounds = await connectionIndicator.boundingBox();
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width);
+    await openDetails();
+    const details = await connectionPanel.boundingBox();
+    assert(details.x >= 0 && details.x + details.width <= width);
+    await connectionPanel.focus();
+    await page.keyboard.press("Escape");
+    await expect(connectionIndicator).toBeFocused();
+    await expect(connectionPanel).toHaveCount(0);
+    assert.equal(
+      (await call("inspect_workspace")).documentId,
+      initial.documentId,
+    );
+  }
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await openDetails();
+  await page.getByLabel("Document title", { exact: true }).click();
+  await expect(connectionPanel).toHaveCount(0);
+  assert.equal(
+    (await call("inspect_workspace")).documentId,
+    initial.documentId,
+  );
   assert.equal(
     errorCode(await raw("edit_canvas", { batch: {} })),
     "PERMISSION_DENIED",
@@ -122,6 +210,18 @@ try {
     (await call("inspect_workspace")).documentId,
     initial.documentId,
   );
+  await expect(
+    page.getByLabel("1 pending agent proposal", { exact: true }),
+  ).toBeVisible();
+  await expect(connectionPanel).toHaveCount(0);
+  await page.setViewportSize({ width: 320, height: 900 });
+  const reviewBadgeBounds = await connectionIndicator.boundingBox();
+  assert(
+    reviewBadgeBounds.x >= 0 &&
+      reviewBadgeBounds.x + reviewBadgeBounds.width <= 320,
+  );
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await openDetails();
   const review = page.getByRole("article", {
     name: "External agent proposal",
     exact: true,
@@ -140,6 +240,9 @@ try {
     (await call("proposal_status", { id: proposed.id })).status,
     "applied",
   );
+  await expect(
+    page.getByLabel("1 pending agent proposal", { exact: true }),
+  ).toHaveCount(0);
   await disconnect();
   await connect("edit");
   const baseline = await call("inspect_workspace");
@@ -246,7 +349,7 @@ try {
     expectedDocumentId: (await call("inspect_workspace")).documentId,
   });
   await expect(page.getByLabel("Spring model", { exact: true })).toBeVisible();
-  await page.getByLabel("Write equation or note", { exact: true }).click();
+  await startWriting(page);
   await page
     .getByLabel("Write an engineering region", { exact: true })
     .fill("unaccepted draft");
@@ -288,6 +391,7 @@ try {
   } finally {
     restored.dispose();
   }
+  await openDetails();
   await page.getByText(/^Agent activity \(/).click();
   await expect(
     page.getByRole("region", { name: "External agent control", exact: true }),
@@ -328,9 +432,8 @@ try {
   await page
     .getByRole("button", { name: "Enable read-only access", exact: true })
     .click();
-  await expect(
-    page.getByText("External agent: connected", { exact: true }),
-  ).toBeVisible();
+  await expect(connectionIndicator).toHaveAttribute("data-status", "connected");
+  await expect(connectionPanel).toHaveCount(0);
   assert.equal((await replacementCall("connect_canvas")).sessionId, sessionId);
   assert.equal(
     (
@@ -343,15 +446,17 @@ try {
   // Reload starts a new recovery lifetime; old mutation guards must mechanically reject replay.
   await page.reload();
   await page.goto(replacementUrl);
+  await expect(
+    page.getByLabel("Agent permissions", { exact: true }),
+  ).toHaveValue("read-only");
   await page
     .getByLabel("Agent permissions", { exact: true })
     .selectOption("full-control");
   await page
     .getByRole("button", { name: "Enable full control", exact: true })
     .click();
-  await expect(
-    page.getByText("External agent: connected", { exact: true }),
-  ).toBeVisible();
+  await expect(connectionIndicator).toHaveAttribute("data-status", "connected");
+  await expect(connectionPanel).toHaveCount(0);
   assert.notEqual(
     (await replacementCall("connect_canvas")).sessionId,
     sessionId,

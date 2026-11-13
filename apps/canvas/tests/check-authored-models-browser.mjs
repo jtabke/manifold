@@ -18,7 +18,7 @@ try {
   page.setDefaultTimeout(10000);
   await page.goto(base);
   await expect(
-    page.getByRole("button", { name: "Write equation or note", exact: true }),
+    page.getByRole("button", { name: "Select / Edit", exact: true }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Search objects and commands", exact: true })

@@ -1,6 +1,10 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
-import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  revealRegionActions,
+  startWriting,
+} from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
@@ -22,9 +26,7 @@ try {
     });
     const saved = () => readWorkspace(page);
     await page.goto(base);
-    await page
-      .getByRole("button", { name: "Write equation or note", exact: true })
-      .click();
+    await startWriting(page);
     for (const text of ["P = F*v", "F = 20 N", "v = 3 m/s"]) {
       await editor.fill(text);
       await editor.press("Enter");

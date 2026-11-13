@@ -63,6 +63,7 @@ for (const count of [1, 8, 24]) {
     await expect(page.getByLabel("Workspace save status")).toHaveText(
       "Saved locally",
     );
+    await page.getByRole("button", { name: "View", exact: true }).click();
     await page
       .getByRole("button", { name: "Canvas viewpoints", exact: true })
       .click();

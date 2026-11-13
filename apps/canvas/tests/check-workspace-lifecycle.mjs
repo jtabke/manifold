@@ -4,7 +4,15 @@ import {
   recovery,
   evidence as evidenceMap,
 } from "./sampling-test-helpers.mjs";
-import { decodeWorkspace } from "../src/regions/artifacts.ts";
+import {
+  decodeWorkspace,
+  validateWorkspaceData,
+} from "../src/regions/artifacts.ts";
+import {
+  documentTitle,
+  documentFilename,
+  titleFromFilename,
+} from "../src/regions/documentTitle.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -116,6 +124,58 @@ async function setup(options = {}) {
     discarded,
     errors,
   };
+}
+
+// Names are authored metadata, survive recovery, and never depend on a transport filename.
+{
+  assert.equal(documentTitle("  Pump sizing  "), "Pump sizing");
+  assert.equal(documentTitle("\n\t"), "Untitled document");
+  assert.equal(
+    titleFromFilename("Thermal balance.MANIFOLD"),
+    "Thermal balance",
+  );
+  assert.equal(documentFilename("Pump: A/B"), "Pump- A-B.manifold");
+  assert.equal(documentFilename(".."), "manifold-workspace.manifold");
+  const h = await setup();
+  const original = h.session.state;
+  h.session.renameDocument("Pump sizing");
+  assert.equal(h.session.state.title, "Pump sizing");
+  assert.deepEqual(h.session.state.regions, original.regions);
+  h.session.undo();
+  assert.equal(h.session.state.title, undefined);
+  h.session.redo();
+  const bytes = await h.workspace.export(h.edits);
+  assert.equal((await decodeWorkspace(bytes)).page.title, "Pump sizing");
+  assert.equal(await h.workspace.save(), true);
+  assert.equal(
+    (await canvasLocalStore(h.backend).load()).page.title,
+    "Pump sizing",
+  );
+  const incoming = await setup();
+  await incoming.workspace.open(
+    { name: "transport.manifold", size: bytes.length, text: async () => bytes },
+    incoming.edits,
+  );
+  assert.equal(
+    (await canvasLocalStore([...incoming.destinations.values()][0]).load()).page
+      .title,
+    "Pump sizing",
+  );
+  const fallback = await setup();
+  await fallback.workspace.open(
+    { ...file, name: "Original machine.manifold" },
+    fallback.edits,
+  );
+  assert.equal(
+    (await canvasLocalStore([...fallback.destinations.values()][0]).load()).page
+      .title,
+    "Original machine",
+  );
+  for (const title of [4, "", "x".repeat(161), "bad\nname"])
+    assert.throws(
+      () => validateWorkspaceData({ ...original, title }, h.session.artifacts),
+      /Unsupported workspace/,
+    );
 }
 
 // Concurrent saves share one promise; a late edit gets a fresh capture and acknowledgement.

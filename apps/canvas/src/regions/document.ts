@@ -1,3 +1,4 @@
+import { documentTitle } from "./documentTitle.ts";
 import {
   project,
   effective,
@@ -102,6 +103,7 @@ export type Plot = {
   at?: Point;
 };
 export type Page = {
+  title?: string;
   regions: Region[];
   contexts: Context[];
   active: string;
@@ -724,6 +726,10 @@ export class RegionSession {
     }
     this.apply(next);
     return [...mapping.values()];
+  }
+  renameDocument(value: string) {
+    const title = documentTitle(value);
+    if (title !== this.state.title) this.apply({ ...this.state, title });
   }
   /** Refuse partial deletion of live engineering dependencies rather than silently rebinding them. */
   deleteRegions(ids: readonly string[]) {

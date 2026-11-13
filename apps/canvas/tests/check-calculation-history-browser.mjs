@@ -142,7 +142,7 @@ try {
     .getByRole("button", { name: "Keep current calculation", exact: true })
     .click();
   await expect(page.getByLabel("Workspace save status")).toHaveText(
-    "Unsaved changes",
+    "Local save needs attention",
   );
   expect(await readWorkspaceBytes(page, key)).toBe(before);
   await expect(

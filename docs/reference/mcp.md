@@ -38,16 +38,25 @@ URLs; do not operate another tab on the same saved workspace concurrently.
 1. Ask the external agent to call `connect_canvas`.
 2. Open the private returned URL in the browser. Opening it grants no authority.
 3. Select **Agent permissions** and enable the required scope. The default is read-only.
-4. Work with the agent. The connection notice shows its client-reported name, granted
-   scope, current tool, active job count, proposal review and expandable recent activity.
-5. Click **Disconnect agent** to revoke authority. Accepted work remains in the canvas.
+4. After the connection is ready, the permission panel closes automatically. A compact
+   **External agent connection** indicator stays in the document header. Open it to see
+   the client-reported name, granted scope, current tool, active jobs and recent activity.
+   Pending proposals add a review badge; they never apply themselves or force the panel open.
+5. Open the indicator and click **Disconnect agent** to revoke authority. Accepted work
+   remains in the canvas. Closing the details, pressing Escape or clicking outside only
+   hides the panel; it does not disconnect or change the granted scope.
 
-| Scope | Agent authority |
-| --- | --- |
-| `read-only` | Inspect content/images, status/activity and native exports. No proposals, edits or computation. |
+Before granting access, you may close the request and return to it using the indicator,
+or choose **Decline connection** to remove it. Neither action grants authority. Requests
+start read-only, and permission is never remembered across a reload or a new connection
+request. After disconnecting, changing scope requires another explicit enable action.
+
+| Scope           | Agent authority                                                                                                                  |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `read-only`     | Inspect content/images, status/activity and native exports. No proposals, edits or computation.                                  |
 | `proposal-only` | Read and prepare proposals. Only a human can **Apply agent proposal** in the canvas after reviewing its changes and diagnostics. |
-| `edit` | Read, propose, apply supported edits and use shared Undo/Redo; no computation. |
-| `full-control` | All supported tools, including explicit registered computation and cancellation. |
+| `edit`          | Read, propose, apply supported edits and use shared Undo/Redo; no computation.                                                   |
+| `full-control`  | All supported tools, including explicit registered computation and cancellation.                                                 |
 
 Permissions are enforced by both the Node transport and browser semantic adapter, not just
 MCP annotations. Change scopes by disconnecting, selecting the new scope and reconnecting;
@@ -70,18 +79,18 @@ reconnect after a reload; a reload creates a **new recovery session**.
 
 ## Discover and inspect efficiently
 
-| Tool | Contract |
-| --- | --- |
-| `inspect_workspace` | Full worksheet/model inspection and exact computation request references. Use `compact: true` for concise discovery; focused model inspection supplies exact references. |
-| `inspect_model` | One discovered model `id`, its units, input/output bindings, projections and exact computation requests. |
-| `inspect_equation` | One worksheet region `id`, including source, quantity, units, diagnostic and constraint. |
+| Tool                   | Contract                                                                                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inspect_workspace`    | Full worksheet/model inspection and exact computation request references. Use `compact: true` for concise discovery; focused model inspection supplies exact references.                  |
+| `inspect_model`        | One discovered model `id`, its units, input/output bindings, projections and exact computation requests.                                                                                  |
+| `inspect_equation`     | One worksheet region `id`, including source, quantity, units, diagnostic and constraint.                                                                                                  |
 | `inspect_dependencies` | Bounded graph for region/semantic item `id`; `direction` is upstream (default) or downstream, `depth` 1–8 (default 2), `limit` 1–100 (default 50). Reports truncation; at most 500 edges. |
-| `inspect_selection` | Focused facts for explicit `ids` (at most 50), or the human's current canvas selection if omitted. Missing selections are reported per object. |
-| `inspect_canvas` | Paged objects, drawings, plots/groups and viewport/selection/frame context. `offset` and `limit` (1–100); long strokes retain full point counts but only 64 preview points. |
-| `inspect_plot` | Exact plot data and actual evidence currency for a discovered representation `id`; never computes. |
-| `look_at_canvas` | Bounded native MCP JPEG image of the canvas or visible representation `id`; excludes assistant, connection notice and browser chrome. |
-| `capabilities` | Supported edit operations and exact batch JSON Schema. |
-| `validate` | Diagnostics and computation currency without execution. |
+| `inspect_selection`    | Focused facts for explicit `ids` (at most 50), or the human's current canvas selection if omitted. Missing selections are reported per object.                                            |
+| `inspect_canvas`       | Paged objects, drawings, plots/groups and viewport/selection/frame context. `offset` and `limit` (1–100); long strokes retain full point counts but only 64 preview points.               |
+| `inspect_plot`         | Exact plot data and actual evidence currency for a discovered representation `id`; never computes.                                                                                        |
+| `look_at_canvas`       | Bounded native MCP JPEG image of the canvas or visible representation `id`; excludes assistant, connection notice and browser chrome.                                                     |
+| `capabilities`         | Supported edit operations and exact batch JSON Schema.                                                                                                                                    |
+| `validate`             | Diagnostics and computation currency without execution.                                                                                                                                   |
 
 Dependency inspection follows current worksheet bindings and registered local semantic
 follow references. Pinned history, cross-document references and visual connectors are
@@ -91,14 +100,14 @@ IDs. Discover IDs rather than assuming labels are unique. Pixels are not numeric
 
 ## Atomic edits and replay-safe recovery
 
-| Tool | Contract |
-| --- | --- |
-| `edit_canvas` | Immediately apply a `batch` of 1–50 edits atomically; return accepted document ID and creation aliases. Call `validate` separately for diagnostics. |
-| `prepare_edit` | Stage `explanation` and `batch` without publication; return exact proposal, diff and validation. At most 20 proposals per connection. |
-| `apply_proposal` | Apply a prepared `id` using `expectedDocumentId`; edit/full-control only. |
-| `proposal_status` | Read proposal `id` status: pending, applied, dismissed or stale. |
-| `undo`, `redo` | Reverse/replay one shared canvas history entry using `expectedDocumentId`. These can affect human edits. |
-| `operation_status` | Look up mutation `operationId` in the current tab recovery session. |
+| Tool               | Contract                                                                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `edit_canvas`      | Immediately apply a `batch` of 1–50 edits atomically; return accepted document ID and creation aliases. Call `validate` separately for diagnostics. |
+| `prepare_edit`     | Stage `explanation` and `batch` without publication; return exact proposal, diff and validation. At most 20 proposals per connection.               |
+| `apply_proposal`   | Apply a prepared `id` using `expectedDocumentId`; edit/full-control only.                                                                           |
+| `proposal_status`  | Read proposal `id` status: pending, applied, dismissed or stale.                                                                                    |
+| `undo`, `redo`     | Reverse/replay one shared canvas history entry using `expectedDocumentId`. These can affect human edits.                                            |
+| `operation_status` | Look up mutation `operationId` in the current tab recovery session.                                                                                 |
 
 Supported edits include worksheet/model authoring, drawings/connectors, grouping, placement,
 worksheet plots and scalar-model analysis setup. Use `capabilities` for exact payloads. This
@@ -158,13 +167,13 @@ reloading into a new recovery lifetime.
 
 ## Nonblocking computations
 
-| Tool | Contract |
-| --- | --- |
-| `start_compute` | Submit an exact discovered `target` with mutation/session/document guards; immediately return `jobId`. |
-| `job_status` | Read `jobId` state (`running`, `cancelling`, `completed`), captured document, target, agent and timestamps. |
-| `job_result` | Read job metadata and its actual completion/error if settled; while running, no completion is fabricated. |
-| `cancel_compute` | Submit an operation/session-guarded cancellation request for `jobId`. Completed jobs are a safe no-op. |
-| `compute` | Convenience submit-and-wait variant. Prefer `start_compute` so reads and cancellation remain available. |
+| Tool             | Contract                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| `start_compute`  | Submit an exact discovered `target` with mutation/session/document guards; immediately return `jobId`.      |
+| `job_status`     | Read `jobId` state (`running`, `cancelling`, `completed`), captured document, target, agent and timestamps. |
+| `job_result`     | Read job metadata and its actual completion/error if settled; while running, no completion is fabricated.   |
+| `cancel_compute` | Submit an operation/session-guarded cancellation request for `jobId`. Completed jobs are a safe no-op.      |
+| `compute`        | Convenience submit-and-wait variant. Prefer `start_compute` so reads and cancellation remain available.     |
 
 Only full-control can start/cancel computations. Use exact references returned by
 `inspect_model.model.requests[]`, full `inspect_workspace.models[].requests[]` or a

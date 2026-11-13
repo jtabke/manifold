@@ -1,3 +1,4 @@
+import { startWriting } from "./browser-workspace.mjs";
 import { browserOptions } from "../../../scripts/browser.mjs";
 import { chromium, expect } from "@playwright/test";
 
@@ -14,18 +15,15 @@ try {
     const editor = page.getByLabel("Write an engineering region", {
       exact: true,
     });
-    const write = page.getByRole("button", {
-      name: "Write equation or note",
-      exact: true,
-    });
+    const write = () => startWriting(page);
     await page.goto(base);
-    await write.click();
+    await write();
     await editor.fill("F = 20 N");
     await editor.press("Escape");
 
     // A search with no results must not trap continuation or invent a binding.
     for (const key of ["Enter", "Tab"]) {
-      await write.click();
+      await write();
       await editor.fill(`unfinished_${key} = @missing`);
       await expect(page.getByRole("status")).toContainText(
         "No matching resolved quantities",
@@ -45,7 +43,7 @@ try {
     }
 
     // Shift+Enter is a newline even when autocomplete has a valid candidate.
-    await write.click();
+    await write();
     await editor.fill("Consider @F");
     await expect(page.getByRole("option")).toHaveCount(1);
     await editor.press("Shift+Enter");
@@ -53,7 +51,7 @@ try {
     await editor.press("Escape");
 
     // Ordinary selection still inserts the reference, then continues below.
-    await write.click();
+    await write();
     await editor.fill("R = @F");
     await editor.press("Enter");
     await expect(editor).toHaveValue("R = F");
@@ -63,7 +61,7 @@ try {
     await expect(page.locator('[data-result-for="R"]')).toContainText("20 N");
 
     // Input-method confirmation keys must not commit the canvas region.
-    await write.click();
+    await write();
     await editor.fill("A note in progress");
     for (const event of [
       { key: "Enter", isComposing: true },

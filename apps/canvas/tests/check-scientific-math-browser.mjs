@@ -3,7 +3,11 @@ import { chromium, expect } from "@playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  revealRegionActions,
+  startWriting,
+} from "./browser-workspace.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({
   ...browserOptions(),
@@ -23,9 +27,7 @@ try {
     const editor = page.getByLabel("Write an engineering region", {
       exact: true,
     });
-    await page
-      .getByRole("button", { name: "Write equation or note", exact: true })
-      .click();
+    await startWriting(page);
     for (const text of [
       "theta := 30 deg",
       "F := 500 N",

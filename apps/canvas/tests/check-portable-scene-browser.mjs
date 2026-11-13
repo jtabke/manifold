@@ -35,6 +35,7 @@ try {
     page.getByLabel("Model Scene model", { exact: true }),
   ).toBeVisible();
   const chooseView = async (p) => {
+    await p.getByRole("button", { name: "View", exact: true }).click();
     await p
       .getByRole("button", { name: "Canvas viewpoints", exact: true })
       .click();

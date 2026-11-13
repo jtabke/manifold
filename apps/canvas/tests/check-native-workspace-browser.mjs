@@ -8,7 +8,11 @@ import {
   makeArtifact,
   decodeWorkspace,
 } from "../src/regions/artifacts.ts";
-import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  readWorkspaceBytes,
+  startWriting,
+} from "./browser-workspace.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const s = new RegionSession(),
   ids = [];
@@ -55,9 +59,7 @@ try {
       executions++;
   });
   await page.goto(base);
-  await page
-    .getByRole("button", { name: "Write equation or note", exact: true })
-    .click();
+  await startWriting(page);
   const editor = page.getByLabel("Write an engineering region", {
     exact: true,
   });
@@ -78,13 +80,16 @@ try {
     page.getByRole("status").filter({ hasText: "Workspace download started" }),
   ).toBeVisible();
   const toolbarDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Save file", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Download file", exact: true })
+    .click();
   expect((await toolbarDownload).suggestedFilename()).toBe(
     "manifold-workspace.manifold",
   );
   const previous = await readWorkspace(page);
   const originalURL = page.url();
   // Cancelling the toolbar picker leaves work and navigation alone.
+  await page.getByRole("button", { name: "File", exact: true }).click();
   const cancelledChooser = page.waitForEvent("filechooser");
   await page
     .getByRole("button", { name: "Open workspace", exact: true })
@@ -110,7 +115,10 @@ try {
   const key = `manifold.artifact-experiment.v1.canvas-${new URLSearchParams(search).get("canvas")}`;
   const opened = await readWorkspace(page, key);
   expect(opened.document).toBeTruthy();
-  expect(opened.page).toEqual(s.state);
+  expect(opened.page).toEqual({ ...s.state, title: "shared" });
+  await expect(page.getByLabel("Document title", { exact: true })).toHaveValue(
+    "shared",
+  );
   await result.getByRole("button", { name: "Run Python", exact: true }).click();
   await expect(result).toHaveAttribute("data-status", "current");
   expect(executions).toBeGreaterThan(0);
@@ -145,7 +153,7 @@ try {
     .getByRole("button", { name: "Save workspace file", exact: true })
     .click();
   const download = await downloadEvent;
-  expect(download.suggestedFilename()).toBe("manifold-workspace.manifold");
+  expect(download.suggestedFilename()).toBe("shared.manifold");
   const bytes = await readFile(await download.path(), "utf8");
   expect(JSON.parse(bytes).version).toBe(9);
   expect((await decodeWorkspace(bytes)).document.document).toBe(
@@ -204,9 +212,7 @@ try {
     mimeType: "application/json",
     buffer: Buffer.from(bytes),
   });
-  await page
-    .getByRole("button", { name: "Write equation or note", exact: true })
-    .click();
+  await startWriting(page);
   await editor.fill("A newer draft must survive");
   await page.evaluate(() => window.releaseWorkspaceRead());
   await expect(

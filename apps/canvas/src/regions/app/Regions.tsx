@@ -17,6 +17,13 @@ import {
   canvasObjectSelector,
 } from "./useCanvasOverlaps";
 import { DrawingCanvas } from "../renderers/DrawingCanvas";
+import { CanvasCommandMenu } from "../renderers/CanvasCommandMenu";
+import { CanvasDocumentTitle } from "../renderers/CanvasDocumentTitle";
+import {
+  documentTitle,
+  documentFilename,
+  UNTITLED_DOCUMENT,
+} from "../documentTitle";
 import { CanvasSelectionToolbar } from "../renderers/CanvasSelectionToolbar";
 import { drawings } from "../drawing";
 import { drawingGeometry } from "../drawingGeometry";
@@ -65,7 +72,8 @@ import {
   Check,
   GripVertical,
   FilePlus2,
-  Save,
+  Download,
+  Sparkles,
   Layers,
   LayoutGrid,
   Link2,
@@ -217,6 +225,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   });
   const [assistantPoint, setAssistantPoint] = useState<Point>({ x: 0, y: 0 });
   const assistantButton = useRef<HTMLButtonElement>(null);
+  const [mcpStatusHost, setMcpStatusHost] = useState<HTMLDivElement | null>(
+    null,
+  );
   const shortcutPreferences = useShortcutPreferences();
   const [authoringModel, setAuthoringModel] = useState<{
     source: ModelSource;
@@ -538,31 +549,37 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ),
     );
   const [zoom, setZoom] = useState(
-      initialSystem && !resume?.system
-        ? fitSystemZoom()
-        : resume?.camera.zoom || 1,
-    ),
-    [title, setTitle] = useState(() => {
+    initialSystem && !resume?.system
+      ? fitSystemZoom()
+      : resume?.camera.zoom || 1,
+  );
+  const [legacyTitle] = useState(() => {
+    try {
+      const saved = localStorage.getItem(
+        workspaceStorage("manifold.canvas-title.v1"),
+      );
+      return saved && saved !== "Untitled page"
+        ? documentTitle(saved)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  const title = page.title ?? legacyTitle ?? UNTITLED_DOCUMENT;
+  const [dragPreview, setDragPreview] = useState<Record<string, Point>>({});
+  useEffect(() => {
+    document.title = `${title} — Manifold`;
+    if (!artifactMode) return;
+    if (page.title === undefined && legacyTitle)
+      session.renameDocument(legacyTitle);
+    if (page.title !== undefined) {
       try {
-        const savedTitle = localStorage.getItem(
-          workspaceStorage("manifold.canvas-title.v1"),
-        );
-        if (savedTitle !== null) return savedTitle;
+        localStorage.removeItem(workspaceStorage("manifold.canvas-title.v1"));
       } catch {
         /* The engineering archive reports unavailable local storage. */
       }
-      return "Untitled page";
-    }),
-    [dragPreview, setDragPreview] = useState<Record<string, Point>>({});
-  useEffect(() => {
-    document.title = `${title || "Untitled page"} — Manifold`;
-    if (!artifactMode) return;
-    try {
-      localStorage.setItem(workspaceStorage("manifold.canvas-title.v1"), title);
-    } catch {
-      /* The engineering archive reports unavailable local storage. */
     }
-  }, [title, artifactMode]);
+  }, [title, page.title, legacyTitle, session, artifactMode]);
   let places = { ...basePlaces, ...dragPreview };
   if (dataSelection && !!dataSelection.detail && dataSelection.rows.length) {
     const expanded = (page.dataRelations || []).filter(
@@ -2199,7 +2216,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       link.href = url;
       link.download = savedWork
         ? "manifold-saved-workspace.manifold"
-        : "manifold-workspace.manifold";
+        : documentFilename(session.state.title);
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setMessage(
@@ -3434,6 +3451,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         data-interaction={explicit ? "A" : "B"}
       >
         <CanvasMcp
+          statusHost={mcpStatusHost}
           session={session}
           edits={workspaceEdits}
           canvas={agentCanvas}
@@ -3552,7 +3570,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             if (file) void importCsv(file).finally(() => (input.value = ""));
           }}
         />
-        <header className="er-header">
+        <header className="er-header" aria-label="Document">
           <a
             href="?think=1&artifacts=1"
             className="er-brand"
@@ -3560,58 +3578,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           >
             <img className="manifold-logo" src="/manifold-logo.png" alt="" />
           </a>
-          <input
-            aria-label="Page title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          {contexts.length > 1 && (
-            <div className="er-contexts">
-              {contexts.length > 3 ? (
-                <select
-                  aria-label="Design scenario"
-                  value={page.active}
-                  onChange={(e) => switchScenario(e.target.value)}
-                >
-                  {contexts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                contexts.map((c) => (
-                  <button
-                    key={c.id}
-                    aria-pressed={page.active === c.id}
-                    className={c.id !== "original" ? "er-alternative" : ""}
-                    onClick={() => switchScenario(c.id)}
-                  >
-                    {c.label}
-                  </button>
-                ))
-              )}
-              {(!artifactMode ||
-                !artifacts.length ||
-                page.plots.length > 0) && (
-                <button
-                  aria-pressed={compare}
-                  onClick={() => {
-                    setCompare(!compare);
-                    setTerm(undefined);
-                    if (!comparison && selectedId && comparisonContext)
-                      setComparison({
-                        context: comparisonContext,
-                        output:
-                          responseFor(page, selectedId)?.output || selectedId,
-                      });
-                  }}
-                >
-                  Compare
-                </button>
-              )}
-            </div>
-          )}
           <input
             ref={workspaceFile}
             type="file"
@@ -3624,170 +3590,298 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               if (file) void openWorkspace(file);
             }}
           />
-          <button
-            aria-label="Open workspace"
-            title="Open a .manifold file · Ctrl/Cmd+O · keeps current work in this browser"
-            aria-keyshortcuts="Control+O Meta+O"
-            onClick={() => workspaceFile.current?.click()}
-          >
-            <FileInput size={16} />
-            <span>Open</span>
-          </button>
-          <button
-            aria-label="Save file"
-            title="Download a .manifold file · Ctrl/Cmd+S · separate from browser autosave"
-            aria-keyshortcuts="Control+S Meta+S"
-            onClick={() => void exportArtifacts()}
-          >
-            <Save size={16} />
-            <span>Save file</span>
-          </button>
-          <button
-            aria-label="New canvas"
-            title="New canvas · keep current work"
-            onClick={() => void newCanvas()}
-          >
-            <FilePlus2 size={16} />
-          </button>
-
-          <button
-            aria-label="Write equation or note"
-            onClick={() => fresh(writingPoint())}
-          >
-            <Plus size={16} />
-            <span>Write</span>
-          </button>
-          <button
-            ref={assistantButton}
-            aria-label="Ask agent"
-            aria-expanded={assistantOpen}
-            onClick={() => {
-              if (assistantOpen) {
-                setAssistantOpen(false);
-                return;
-              }
-              const rect = canvas.current?.getBoundingClientRect();
-              openAssistant(
-                lastCanvasPress.current?.point ||
-                  actionPointer.current || {
-                    x: rect
-                      ? rect.left + rect.width / 2
-                      : window.innerWidth / 2,
-                    y: rect
-                      ? rect.top + rect.height / 2
-                      : window.innerHeight / 2,
-                  },
-              );
-            }}
-          >
-            Ask agent
-          </button>
-          <button
-            aria-label="Open canvas actions"
-            title="Context actions · Right-click or Shift+F10"
-            onClick={(e) => {
-              const rect = canvas.current?.getBoundingClientRect();
-              if (rect) {
-                const id = overlaps.picked || areaSelection || selected;
-                const objectPoint = id && overlaps.keyboardPoint(id);
-                const press = lastCanvasPress.current;
-                const pressedPoint =
-                  (press?.id && overlaps.keyboardPoint(press.id)) ||
-                  press?.point;
-                const at = (overlaps.picked && objectPoint) ||
-                  (e.detail
-                    ? pressedPoint || objectPoint
-                    : objectPoint || pressedPoint) ||
-                  actionPointer.current || {
-                    x: rect.left + rect.width / 2,
-                    y: rect.top + rect.height / 2,
-                  };
-                const hit = document.elementFromPoint(at.x, at.y);
-                openActionMenu(
-                  at.x,
-                  at.y,
-                  (hit && actionTarget(hit)) || selected,
-                );
-              }
-            }}
-          >
-            <MoreHorizontal size={16} />
-            <span>Actions</span>
-          </button>
-          <button
-            aria-label="Import CSV measurements"
-            onClick={() => csvFile.current?.click()}
-          >
-            <span>Import CSV</span>
-            <ArrowUpRight size={15} />
-          </button>
-          {!!page.regions.length && (
+          <CanvasCommandMenu label="File">
+            <span className="er-command-heading">Document</span>
             <button
-              aria-label="Reveal layer"
-              className={overlay !== "none" ? "is-active" : ""}
+              aria-label="New canvas"
+              title="New canvas · keep current work"
+              onClick={() => void newCanvas()}
+            >
+              <FilePlus2 size={16} />
+              <span>New document</span>
+            </button>
+            <button
+              aria-label="Open workspace"
+              title="Open a .manifold file · Ctrl/Cmd+O · keeps current work in this browser"
+              aria-keyshortcuts="Control+O Meta+O"
+              onClick={() => workspaceFile.current?.click()}
+            >
+              <FileInput size={16} />
+              <span>Open file…</span>
+            </button>
+            <span className="er-command-heading">Insert</span>
+            <button
+              aria-label="Import CSV measurements"
+              onClick={() => csvFile.current?.click()}
+            >
+              <span>Import CSV</span>
+              <ArrowUpRight size={15} />
+            </button>
+          </CanvasCommandMenu>
+          <div className="er-document-identity">
+            <CanvasDocumentTitle
+              title={title}
+              session={session}
+              buffers={editBuffers}
+            />
+            {artifactMode && (
+              <span
+                className="er-save-status"
+                data-saved={session.isSaved && !storageError}
+                aria-label="Workspace save status"
+                title="Autosaved in this browser on this device only. Use Download for a portable backup; downloaded files are not updated automatically."
+              >
+                <span>
+                  {storageError
+                    ? "Local save needs attention"
+                    : session.isSaved
+                      ? "Saved locally"
+                      : "Unsaved changes"}
+                </span>
+              </span>
+            )}
+          </div>
+          <div
+            className="er-document-actions"
+            role="group"
+            aria-label="Document actions"
+          >
+            <div className="er-mcp-status-host" ref={setMcpStatusHost} />
+            <button
+              aria-label="Search objects and commands"
+              title="Search objects and commands"
+              onClick={() => paletteOpen("search")}
+            >
+              <Search size={15} />
+              <kbd>{shortcutPreferences.bindings["search.open"][0] || "—"}</kbd>
+            </button>
+            <button
+              ref={assistantButton}
+              aria-label="Ask agent"
+              className="er-agent-button"
+              aria-expanded={assistantOpen}
               onClick={() => {
-                revealAreaCanvas.current?.();
-                setOverlay(
-                  overlay === "none"
-                    ? "dependencies"
-                    : overlay === "dependencies"
-                      ? "requirements"
-                      : "none",
+                if (assistantOpen) {
+                  setAssistantOpen(false);
+                  return;
+                }
+                const rect = canvas.current?.getBoundingClientRect();
+                openAssistant(
+                  lastCanvasPress.current?.point ||
+                    actionPointer.current || {
+                      x: rect
+                        ? rect.left + rect.width / 2
+                        : window.innerWidth / 2,
+                      y: rect
+                        ? rect.top + rect.height / 2
+                        : window.innerHeight / 2,
+                    },
                 );
               }}
             >
-              <Layers size={16} />
-              <span>
-                {overlay === "none"
-                  ? "Reveal"
-                  : overlay === "dependencies"
-                    ? "Dependencies"
-                    : "Requirements"}
-              </span>
+              <Sparkles size={16} />
+              <span>Ask agent</span>
             </button>
-          )}
-          <button
-            aria-label="Undo"
-            disabled={!session.canUndo && !exploration}
-            onClick={() => undo()}
-          >
-            <Undo2 size={16} />
-          </button>
-          <button
-            aria-label="Redo"
-            disabled={!session.canRedo}
-            onClick={() => session.redo()}
-          >
-            <Undo2 size={16} style={{ transform: "scaleX(-1)" }} />
-          </button>
-          <button
-            aria-label="Search objects and commands"
-            onClick={() => paletteOpen("search")}
-          >
-            <Search size={15} />
-            <kbd>{shortcutPreferences.bindings["search.open"][0] || "—"}</kbd>
-          </button>
-          {(page.models?.length || 0) > 1 && (
             <button
-              aria-label="System overview"
-              aria-pressed={systemActive}
-              onClick={() => (systemActive ? closeSystem() : openSystem())}
+              aria-label="Download file"
+              className="er-download-button"
+              title="Download a .manifold file · Ctrl/Cmd+S · separate from browser autosave"
+              aria-keyshortcuts="Control+S Meta+S"
+              onClick={() => void exportArtifacts()}
             >
-              <Link2 size={15} />
-              <span>System</span>
+              <Download size={16} />
+              <span>Download</span>
             </button>
-          )}
-          {!!page.regions.length && (
-            <button
-              aria-label="Canvas viewpoints"
-              aria-expanded={spatial.viewMenu}
-              onClick={() => spatial.setViewMenu(!spatial.viewMenu)}
+          </div>
+          {contexts.length > 1 && (
+            <div
+              className="er-scenario-bar"
+              role="group"
+              aria-label="Design scenarios"
             >
-              <Bookmark size={15} />
-              <span>Views</span>
-            </button>
+              <span>Scenario</span>
+              {contexts.length > 1 && (
+                <div className="er-contexts">
+                  {contexts.length > 3 ? (
+                    <select
+                      aria-label="Design scenario"
+                      value={page.active}
+                      onChange={(e) => switchScenario(e.target.value)}
+                    >
+                      {contexts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    contexts.map((c) => (
+                      <button
+                        key={c.id}
+                        aria-pressed={page.active === c.id}
+                        className={c.id !== "original" ? "er-alternative" : ""}
+                        onClick={() => switchScenario(c.id)}
+                      >
+                        {c.label}
+                      </button>
+                    ))
+                  )}
+                  {(!artifactMode ||
+                    !artifacts.length ||
+                    page.plots.length > 0) && (
+                    <button
+                      aria-pressed={compare}
+                      onClick={() => {
+                        setCompare(!compare);
+                        setTerm(undefined);
+                        if (!comparison && selectedId && comparisonContext)
+                          setComparison({
+                            context: comparisonContext,
+                            output:
+                              responseFor(page, selectedId)?.output ||
+                              selectedId,
+                          });
+                      }}
+                    >
+                      Compare
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </header>
+        <div
+          className="er-authoring-bar"
+          role="group"
+          aria-label="Canvas tools"
+        >
+          <div
+            className="er-history-tools"
+            role="group"
+            aria-label="Edit history and actions"
+          >
+            <button
+              aria-label="Undo"
+              title="Undo"
+              disabled={!session.canUndo && !exploration}
+              onClick={() => undo()}
+            >
+              <Undo2 size={16} />
+            </button>
+            <button
+              aria-label="Redo"
+              title="Redo"
+              disabled={!session.canRedo}
+              onClick={() => session.redo()}
+            >
+              <Undo2 size={16} style={{ transform: "scaleX(-1)" }} />
+            </button>
+            <button
+              aria-label="Open canvas actions"
+              title="Context actions · Right-click or Shift+F10"
+              onClick={(e) => {
+                const rect = canvas.current?.getBoundingClientRect();
+                if (rect) {
+                  const id = overlaps.picked || areaSelection || selected;
+                  const objectPoint = id && overlaps.keyboardPoint(id);
+                  const press = lastCanvasPress.current;
+                  const pressedPoint =
+                    (press?.id && overlaps.keyboardPoint(press.id)) ||
+                    press?.point;
+                  const at = (overlaps.picked && objectPoint) ||
+                    (e.detail
+                      ? pressedPoint || objectPoint
+                      : objectPoint || pressedPoint) ||
+                    actionPointer.current || {
+                      x: rect.left + rect.width / 2,
+                      y: rect.top + rect.height / 2,
+                    };
+                  const hit = document.elementFromPoint(at.x, at.y);
+                  openActionMenu(
+                    at.x,
+                    at.y,
+                    (hit && actionTarget(hit)) || selected,
+                  );
+                }
+              }}
+            >
+              <MoreHorizontal size={16} />
+            </button>
+          </div>
+          <div
+            className="drawing-toolbar-host"
+            hidden={systemActive}
+            ref={setDrawingToolbar}
+          />
+          <div className="er-view-tools">
+            <CanvasCommandMenu label="View" align="right">
+              <span className="er-command-heading">Canvas</span>
+              {!!page.regions.length && (
+                <button
+                  aria-label="Reveal layer"
+                  className={overlay !== "none" ? "is-active" : ""}
+                  onClick={() => {
+                    revealAreaCanvas.current?.();
+                    setOverlay(
+                      overlay === "none"
+                        ? "dependencies"
+                        : overlay === "dependencies"
+                          ? "requirements"
+                          : "none",
+                    );
+                  }}
+                >
+                  <Layers size={16} />
+                  <span>
+                    {overlay === "none"
+                      ? "Reveal"
+                      : overlay === "dependencies"
+                        ? "Dependencies"
+                        : "Requirements"}
+                  </span>
+                </button>
+              )}
+              {!!page.regions.length && (
+                <button
+                  aria-label="Canvas viewpoints"
+                  aria-expanded={spatial.viewMenu}
+                  onClick={() => spatial.setViewMenu(!spatial.viewMenu)}
+                >
+                  <Bookmark size={15} />
+                  <span>Views</span>
+                </button>
+              )}
+              {(page.models?.length || 0) > 1 && (
+                <button
+                  aria-label="System overview"
+                  aria-pressed={systemActive}
+                  onClick={() => (systemActive ? closeSystem() : openSystem())}
+                >
+                  <Link2 size={15} />
+                  <span>System</span>
+                </button>
+              )}
+              {!page.regions.length && contexts.length <= 1 && (
+                <small>
+                  View controls become available as you add content.
+                </small>
+              )}
+            </CanvasCommandMenu>
+            <CanvasNavigationControls
+              shortcuts={openShortcuts}
+              fitShortcut={shortcutLabel(
+                shortcutPreferences.bindings["canvas.fit"],
+              )}
+              visible={!artifactMode || areaCanvasVisible}
+              hand={navigation.hand}
+              setHand={navigation.setHand}
+              zoom={zoom}
+              zoomBy={navigation.zoomBy}
+              fit={fit}
+            />
+          </div>
+        </div>
         {spatial.focus && (
           <button className="cs-focus-return" onClick={spatial.restoreFocus}>
             <ArrowLeft size={14} />
@@ -3847,11 +3941,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             ))}
           </aside>
         )}
-        <div
-          className="drawing-toolbar-host"
-          hidden={systemActive}
-          ref={setDrawingToolbar}
-        />
+
         <WorkspaceAreas
           revealCanvas={revealAreaCanvas}
           enabled={
@@ -4334,6 +4424,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     buffers={editBuffers}
                     report={setMessage}
                     toolbar={drawingToolbar}
+                    onChooseTool={() => navigation.setHand(false)}
                     visible={!systemActive}
                     zoom={zoom}
                     point={canvasPoint}
@@ -7004,17 +7095,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             </button>
           </div>
         )}
-        {artifactMode && (
-          <span
-            className="er-save-status"
-            aria-label="Workspace save status"
-            title="Autosaved in this browser on this device only. Use Save file for a portable backup; downloaded files are not updated automatically."
-          >
-            {session.isSaved && !storageError
-              ? "Saved locally"
-              : "Unsaved changes"}
-          </span>
-        )}
         {storageError && (
           <aside className="er-storage-error" role="status">
             {storageError}
@@ -7055,18 +7135,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             close={() => setShortcutsOpen(false)}
           />
         )}
-        <CanvasNavigationControls
-          shortcuts={openShortcuts}
-          fitShortcut={shortcutLabel(
-            shortcutPreferences.bindings["canvas.fit"],
-          )}
-          visible={!artifactMode || areaCanvasVisible}
-          hand={navigation.hand}
-          setHand={navigation.setHand}
-          zoom={zoom}
-          zoomBy={navigation.zoomBy}
-          fit={fit}
-        />
       </main>
     </ArtifactComputationProvider>,
   );

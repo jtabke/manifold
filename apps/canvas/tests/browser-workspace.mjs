@@ -97,6 +97,16 @@ export async function readWorkspaceBytes(
     ? JSON.stringify(captured)
     : page.evaluate((key) => localStorage.getItem(key), key);
 }
+/** Insert through the command palette when a workflow needs an explicit new region. */
+export async function startWriting(page) {
+  await page
+    .getByRole("button", { name: "Search objects and commands", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Search commands", exact: true })
+    .fill("Write");
+  await page.locator('[data-command-id="canvas.write"]').click();
+}
 /** Open the selected region’s actions through the same explicit disclosure as the user. */
 export async function revealRegionActions(page) {
   const actions = page.locator(".er-region.is-selected > .er-actions");

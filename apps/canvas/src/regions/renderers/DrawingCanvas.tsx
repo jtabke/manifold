@@ -27,6 +27,8 @@ import {
   Workflow,
   Copy,
   Trash2,
+  Palette,
+  WandSparkles,
 } from "lucide-react";
 import type { RegionSession, Point } from "../document";
 import {
@@ -60,6 +62,7 @@ import {
 } from "../drawingRegularization";
 import type { EditBuffers } from "../app/workspaceFiles";
 import "../styles/drawing.css";
+import { CanvasCommandMenu } from "./CanvasCommandMenu";
 type Tool = "select" | "lasso" | "eraser" | DrawingKind;
 type DrawingPointer = ReactPointerEvent<SVGSVGElement>;
 type Label = {
@@ -636,68 +639,126 @@ function useDrawingCanvas(
   };
 }
 type Controller = ReturnType<typeof useDrawingCanvas>;
-function DrawingToolbar({ drawing: d }: { drawing: Controller }) {
+function DrawingToolbar({
+  drawing: d,
+  onChooseTool,
+}: {
+  drawing: Controller;
+  onChooseTool: () => void;
+}) {
   return (
     <div
       className="drawing-toolbar"
       role="toolbar"
       aria-label="Drawing and diagram tools"
     >
-      {tools.map(([tool, name, Icon]) => (
-        <button
-          key={tool}
-          aria-label={name}
-          title={name}
-          aria-pressed={d.tool === tool}
-          onClick={() => d.choose(tool)}
-        >
-          <Icon size={17} />
-        </button>
-      ))}
-      <input
-        aria-label="Stroke color"
-        title="Stroke color"
-        type="color"
-        value={d.style.color}
-        onChange={(e) => d.setStyle({ ...d.style, color: e.target.value })}
-      />
-      <label className="drawing-width">
-        Width{" "}
-        <input
-          aria-label="Stroke width"
-          type="range"
-          min="1"
-          max="10"
-          value={d.style.width}
-          onChange={(e) =>
-            d.setStyle({ ...d.style, width: Number(e.target.value) })
-          }
-        />
-      </label>
-      {(
-        [
-          ["Duplicate drawings", Copy, d.duplicate],
-          ["Delete drawings", Trash2, d.remove],
-        ] as const
-      ).map(([name, Icon, action]) => (
-        <button
-          key={name}
-          aria-label={name}
-          title={name}
-          disabled={!d.selection.size}
-          onClick={action}
-        >
-          <Icon size={16} />
-        </button>
-      ))}
-      <button
-        aria-label="Regularize selection"
-        title="Fit one selected pen stroke to a line, circle or rectangle. Undo restores ink."
-        disabled={!d.canRegularize}
-        onClick={d.regularize}
+      <div className="drawing-tool-palette">
+        {(
+          [
+            [
+              "Selection tools",
+              tools.filter(([tool]) => tool === "select" || tool === "lasso"),
+            ],
+            [
+              "Ink tools",
+              tools.filter(([tool]) =>
+                ["pen", "highlighter", "eraser"].includes(tool),
+              ),
+            ],
+            [
+              "Shape and label tools",
+              tools.filter(
+                ([tool]) =>
+                  !["select", "lasso", "pen", "highlighter", "eraser"].includes(
+                    tool,
+                  ),
+              ),
+            ],
+          ] as const
+        ).map(([label, entries]) => (
+          <div
+            className="drawing-tool-group"
+            role="group"
+            aria-label={label}
+            key={label}
+          >
+            {entries.map(([tool, name, Icon]) => (
+              <button
+                key={tool}
+                aria-label={name}
+                title={name}
+                aria-pressed={d.tool === tool}
+                onClick={() => {
+                  if (d.choose(tool)) onChooseTool();
+                }}
+              >
+                <Icon size={17} />
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+      <CanvasCommandMenu
+        label="Drawing style"
+        icon={<Palette size={17} />}
+        align="right"
       >
-        Regularize
-      </button>
+        <label className="drawing-style-color">
+          Color
+          <input
+            aria-label="Stroke color"
+            title="Stroke color"
+            type="color"
+            value={d.style.color}
+            onChange={(e) => d.setStyle({ ...d.style, color: e.target.value })}
+          />
+        </label>
+        <label className="drawing-width">
+          Width{" "}
+          <input
+            aria-label="Stroke width"
+            type="range"
+            min="1"
+            max="10"
+            value={d.style.width}
+            onChange={(e) =>
+              d.setStyle({ ...d.style, width: Number(e.target.value) })
+            }
+          />
+        </label>
+      </CanvasCommandMenu>
+      <div
+        className="drawing-selection-actions"
+        role="group"
+        aria-label="Drawing selection actions"
+      >
+        {(
+          [
+            ["Duplicate drawings", Copy, d.duplicate],
+            ["Delete drawings", Trash2, d.remove],
+          ] as const
+        ).map(([name, Icon, action]) => (
+          <button
+            key={name}
+            aria-label={name}
+            title={name}
+            disabled={!d.selection.size}
+            onClick={action}
+          >
+            <Icon size={16} />
+          </button>
+        ))}
+        <button
+          aria-label="Regularize selection"
+          hidden={!d.canRegularize}
+          title="Fit one selected pen stroke to a line, circle or rectangle. Undo restores ink."
+          disabled={!d.canRegularize}
+          onClick={d.regularize}
+        >
+          <WandSparkles size={16} />
+          <span>Regularize</span>
+        </button>
+      </div>
       <span
         className="drawing-hint"
         aria-hidden="true"
@@ -893,6 +954,7 @@ export function DrawingCanvas({
   buffers,
   report,
   toolbar,
+  onChooseTool,
   visible,
   zoom,
   point,
@@ -905,6 +967,7 @@ export function DrawingCanvas({
   buffers: EditBuffers;
   report: (message: string) => void;
   toolbar: HTMLElement | null;
+  onChooseTool: () => void;
   visible: boolean;
   zoom: number;
   point: (x: number, y: number) => Point;
@@ -955,7 +1018,11 @@ export function DrawingCanvas({
     stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
   return (
     <>
-      {toolbar && createPortal(<DrawingToolbar drawing={d} />, toolbar)}
+      {toolbar &&
+        createPortal(
+          <DrawingToolbar drawing={d} onChooseTool={onChooseTool} />,
+          toolbar,
+        )}
       <svg
         ref={d.surface}
         className={`drawing-surface ${active ? "is-drawing" : ""} ${b ? "has-selection" : ""}`}

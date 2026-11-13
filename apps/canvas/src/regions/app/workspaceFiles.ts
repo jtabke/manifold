@@ -1,3 +1,4 @@
+import { titleFromFilename } from "../documentTitle.ts";
 import { checkWorkspaceFileSize } from "./workspaceCodec.ts";
 import { archiveLoaded } from "./workspaceCodec.ts";
 import { canvasSchemas } from "./canvasDocument.ts";
@@ -220,13 +221,18 @@ export function canvasWorkspace(config: {
         if (!(await readyToLeave(edits))) return;
         return newSearch();
       }),
-    open: (file: Pick<File, "size" | "text">, edits: WorkspaceEdits) =>
+    open: (
+      file: Pick<File, "size" | "text"> & { name?: string },
+      edits: WorkspaceEdits,
+    ) =>
       transition(async () => {
         if (config.blocked || error)
           throw Error("Export current work first; local save is unavailable.");
         checkWorkspaceFileSize(file.size);
         const before = capture(edits),
           incoming = await stageWorkspaceFile(await file.text());
+        if (incoming.state.title === undefined && file.name)
+          incoming.renameDocument(titleFromFilename(file.name));
         unchanged(
           before,
           edits,

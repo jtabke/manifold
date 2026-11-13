@@ -11,7 +11,11 @@ import {
   canvasDatabaseName,
 } from "../src/regions/app/canvasLocalStore.ts";
 import { workspaceStorage } from "../src/regions/workspaceStorage.ts";
-import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
+import {
+  readWorkspace,
+  readWorkspaceBytes,
+  startWriting,
+} from "./browser-workspace.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const fixture = restore(
   readFileSync(new URL("./canvas-v2.fixture.json", import.meta.url), "utf8"),
@@ -125,7 +129,7 @@ try {
     "Current work could not be saved",
   );
   await expect(page.getByLabel("Workspace save status")).toHaveText(
-    "Unsaved changes",
+    "Local save needs attention",
   );
   expect(await raw()).toBe(
     before,
@@ -187,9 +191,7 @@ try {
   );
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page
-    .getByRole("button", { name: "Write equation or note", exact: true })
-    .click();
+  await startWriting(page);
   const editor = page.getByLabel("Write an engineering region", {
     exact: true,
   });
