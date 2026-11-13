@@ -39,7 +39,7 @@ try {
     await page.mouse.up();
   };
   await expect(tool("Select / Edit")).toHaveAttribute("aria-pressed", "true");
-  await expect(toolbar.getByRole("button")).toHaveCount(5);
+  await expect(toolbar.getByRole("button")).toHaveCount(6);
   await expect(tool("Rectangle")).toHaveCount(0);
   await expect(tool("Drawing style")).toHaveCount(0);
   await expect(tool("Duplicate drawings")).toHaveCount(0);

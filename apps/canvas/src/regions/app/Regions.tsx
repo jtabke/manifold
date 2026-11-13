@@ -4285,8 +4285,22 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 canvasPoint(e.clientX, e.clientY),
               );
               setMarquee(rect);
+              // A marquee inside an area selects its contents, not the entire physical area.
+              const areaIds = new Set(
+                drawings(session.document)
+                  .filter((e) => e.mark.kind === "area")
+                  .map((e) => e.id),
+              );
               const hits = readCanvasFrames()
-                .filter((f) => touches(rect, f))
+                .filter(
+                  (f) =>
+                    touches(rect, f) &&
+                    (!areaIds.has(f.id) ||
+                      (rect.x <= f.x &&
+                        rect.y <= f.y &&
+                        rect.x + rect.width >= f.x + f.width &&
+                        rect.y + rect.height >= f.y + f.height)),
+                )
                 .map((f) => f.id);
               const ids = [
                 ...new Set([
@@ -4431,6 +4445,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     report={setMessage}
                     toolbar={drawingToolbar}
                     onChooseTool={() => navigation.setHand(false)}
+                    onShortcut={performShortcut}
                     hand={navigation.hand}
                     visible={!systemActive}
                     zoom={zoom}

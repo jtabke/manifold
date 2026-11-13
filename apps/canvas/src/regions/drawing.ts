@@ -4,7 +4,17 @@ import type { RegionSession, Point } from "./document.ts";
 import { drawingGeometry } from "./drawingGeometry.ts";
 import { detachMember } from "./canvasScene.ts";
 import { sameJson } from "./immutableJson.ts";
+import {
+  validateDrawingScale,
+  type DrawingScale,
+  withAreaMembers,
+} from "./drawingScale.ts";
+import {
+  validateDimensionPlacements,
+  type DimensionPlacements,
+} from "./drawingDimensions.ts";
 export const DRAWING = "canvas-drawing@1";
+export const SCALED_DRAWING = "canvas-drawing@2";
 export const DRAWING_RENDERER = "canvas-drawing-view@1";
 export const MAX_DRAWINGS = 2000;
 export const MAX_STROKE_POINTS = 8192;
@@ -22,6 +32,10 @@ export type Mark = {
   text: string;
   start: Anchor | null;
   end: Anchor | null;
+  /** Physical membership is a native follow-reference, never a camera or scene setting. */
+  area?: f.Reference;
+  scale?: DrawingScale;
+  dimensionPlacement?: DimensionPlacements;
 };
 export type DrawingEntry = { id: string; view: f.View; mark: Mark };
 export type DrawingEdit = { entry: DrawingEntry; mark?: Mark; at?: Point };
@@ -34,6 +48,7 @@ const kinds = [
   "ellipse",
   "text",
   "connector",
+  "area",
 ] as const;
 const checked = new WeakSet<object>();
 const projections = new WeakMap<f.Document, DrawingEntry[]>();
@@ -44,7 +59,37 @@ const finite = (n: unknown, max = 1_000_000) =>
 export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
   f.assert(f.object(raw), "Invalid drawing");
   if (checked.has(raw)) return;
-  f.fields(raw, ["kind", "color", "width", "points", "text", "start", "end"]);
+  f.fields(raw, [
+    "kind",
+    "color",
+    "width",
+    "points",
+    "text",
+    "start",
+    "end",
+    "area",
+    "scale",
+    "dimensionPlacement",
+  ]);
+  if (raw.dimensionPlacement !== undefined) {
+    f.assert(
+      raw.area !== undefined,
+      "Dimension placement requires a scaled drawing",
+    );
+    validateDimensionPlacements(raw.dimensionPlacement, String(raw.kind));
+  }
+  if (raw.kind === "area") {
+    validateDrawingScale(raw.scale);
+    f.assert(raw.area === undefined, "Drawing areas cannot be nested");
+  } else f.assert(raw.scale === undefined, "Only drawing areas define a scale");
+  if (raw.area !== undefined) {
+    f.validateReference(raw.area);
+    f.assert(
+      raw.area.selection.kind === "follow" &&
+        sameJson(raw.area.selector, f.wholeSelector),
+      "Invalid drawing area reference",
+    );
+  }
   f.assert(kinds.includes(raw.kind as DrawingKind), "Unknown drawing tool");
   f.assert(
     typeof raw.color === "string" && /^#[0-9a-f]{6}$/i.test(raw.color),
@@ -69,6 +114,16 @@ export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
         finite(p.pressure, 1) &&
         (p.pressure as number) >= 0,
       "Invalid stroke point",
+    );
+  }
+  if (raw.kind === "area") {
+    const [a, b] = raw.points as unknown as InkPoint[];
+    f.assert(
+      raw.points.length === 2 &&
+        b &&
+        Math.abs(b.x - a.x) >= 20 &&
+        Math.abs(b.y - a.y) >= 20,
+      "Drag a drawing area at least 20 canvas units wide and tall",
     );
   }
   f.assert(
@@ -102,16 +157,38 @@ export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
   }
   if (f.deeplyFrozen(raw)) checked.add(raw);
 }
-export const drawingSchema: f.Schema = {
-  id: DRAWING,
+export const scaledDrawingSchema: f.Schema = {
+  id: SCALED_DRAWING,
   validate: validateMark,
   references(body) {
     validateMark(body);
-    return [body.start, body.end].flatMap((a) => (a ? [a.target] : []));
+    return [
+      ...[body.start, body.end].flatMap((a) => (a ? [a.target] : [])),
+      ...(body.area ? [body.area] : []),
+    ];
   },
   assets: () => [],
   project(body) {
     validateMark(body);
+    return { type: SCALED_DRAWING, value: body };
+  },
+};
+/** Keep the original portable pixel-drawing contract and projection meaning frozen. */
+function validateLegacyMark(body: f.Json) {
+  f.assert(f.object(body), "Invalid drawing");
+  f.fields(body, ["kind", "color", "width", "points", "text", "start", "end"]);
+  validateMark(body);
+}
+export const drawingSchema: f.Schema = {
+  ...scaledDrawingSchema,
+  id: DRAWING,
+  validate: validateLegacyMark,
+  references(body) {
+    validateLegacyMark(body);
+    return scaledDrawingSchema.references(body);
+  },
+  project(body) {
+    validateLegacyMark(body);
     return { type: DRAWING, value: body };
   },
 };
@@ -122,7 +199,10 @@ export function drawings(document: f.Document): DrawingEntry[] {
   for (const [, view] of document.views.entries()) {
     if (view.renderer !== DRAWING_RENDERER) continue;
     const revision = f.current(document, view.reference.item);
-    f.assert(revision?.schema === DRAWING, "Missing drawing");
+    f.assert(
+      revision?.schema === DRAWING || revision?.schema === SCALED_DRAWING,
+      "Missing drawing",
+    );
     validateMark(revision.body);
     let entry = entriesByView.get(view);
     if (entry?.mark !== revision.body) {
@@ -142,6 +222,10 @@ export function validateDrawingDocument(document: f.Document) {
     entries.length <= MAX_DRAWINGS && byId.size === entries.length,
     "The canvas supports 2000 unique drawings",
   );
+  f.assert(
+    entries.filter((e) => e.mark.kind === "area").length <= 32,
+    "The canvas supports up to 32 scaled drawing areas",
+  );
   for (const e of entries) {
     f.assert(
       !e.view.alternative &&
@@ -150,6 +234,12 @@ export function validateDrawingDocument(document: f.Document) {
         sameJson(e.view.reference.selector, f.wholeSelector),
       "Invalid drawing view",
     );
+    if (e.mark.area)
+      f.assert(
+        e.mark.area.document === document.document &&
+          byId.get(e.mark.area.item)?.mark.kind === "area",
+        "Drawings must belong to a live drawing area in this document",
+      );
     for (const a of [e.mark.start, e.mark.end])
       if (a) {
         const target = byId.get(a.target.item);
@@ -166,7 +256,7 @@ const uid = () => "drawing-" + crypto.randomUUID();
 const revision = (item: string, mark: Mark): f.Revision => ({
   item,
   id: uid(),
-  schema: DRAWING,
+  schema: mark.kind === "area" || mark.area ? SCALED_DRAWING : DRAWING,
   required: true,
   body: mark as unknown as f.Json,
 });
@@ -265,6 +355,12 @@ export function deleteDrawings(
     geometry = drawingGeometry(entries),
     removed = new Set(ids),
     commands: f.Command[] = [];
+  f.assert(
+    !entries.some(
+      (e) => !removed.has(e.id) && e.mark.area && removed.has(e.mark.area.item),
+    ),
+    "This drawing area still contains drawings. Delete its drawings first, or select the area and all its drawings together.",
+  );
   // Detach surviving connectors at their visible position in the same Undo operation.
   for (const e of entries) {
     if (removed.has(e.id)) {
@@ -286,7 +382,7 @@ export function deleteDrawings(
 }
 export function duplicateDrawings(session: RegionSession, ids: string[]) {
   const expected = session.document,
-    selected = new Set(ids);
+    selected = withAreaMembers(drawings(session.document), new Set(ids));
   const entries = drawings(expected).filter((e) => selected.has(e.id));
   const mapping = new Map(entries.map((e) => [e.id, uid()]));
   const anchor = (a: Anchor | null) =>
@@ -302,7 +398,19 @@ export function duplicateDrawings(session: RegionSession, ids: string[]) {
       createCommands(
         expected.document,
         mapping.get(e.id)!,
-        { ...e.mark, start: anchor(e.mark.start), end: anchor(e.mark.end) },
+        {
+          ...e.mark,
+          start: anchor(e.mark.start),
+          end: anchor(e.mark.end),
+          ...(e.mark.area
+            ? {
+                area: f.reference(
+                  expected.document,
+                  mapping.get(e.mark.area.item) ?? e.mark.area.item,
+                ),
+              }
+            : {}),
+        },
         { x: e.view.x + 24, y: e.view.y + 24 },
       ),
     ),

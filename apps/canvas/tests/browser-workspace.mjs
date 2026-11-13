@@ -111,6 +111,7 @@ export async function chooseDrawingTool(page, name) {
       "Rectangle",
       "Ellipse",
       "Visual connector",
+      "Scaled drawing area",
     ];
     await toolbar
       .getByRole("button", {

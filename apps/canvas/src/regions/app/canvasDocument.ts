@@ -1,5 +1,9 @@
 /** One accepted record owner; Page is a read-only compatibility projection for the current renderer. */
-import { drawingSchema, validateDrawingDocument } from "../drawing.ts";
+import {
+  drawingSchema,
+  scaledDrawingSchema,
+  validateDrawingDocument,
+} from "../drawing.ts";
 import { analysisMethodRef } from "../modelAnalysis.ts";
 import { optimizationMethodRef } from "../modelOptimization.ts";
 import { validateOptimizationViews } from "../modelOptimizationCommands.ts";
@@ -249,6 +253,7 @@ function validateCalculationSources(document: f.Document) {
 }
 export const canvasSchemas = f.createSchemas([
   drawingSchema,
+  scaledDrawingSchema,
   ...sceneSchemas,
   samplingPlanSchema,
   samplingHistorySchema,

@@ -1,4 +1,5 @@
 import { useShortcutMatcher } from "../app/useShortcutPreferences";
+import type { ShortcutAction } from "../interaction/shortcutBindings";
 import { isCanvasControlEvent } from "../interaction/modalInput";
 import {
   memo,
@@ -12,7 +13,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import type { Document } from "@manifold/foundation";
+import { reference, type Document } from "@manifold/foundation";
 import {
   MousePointer2,
   PenTool,
@@ -31,6 +32,7 @@ import {
   WandSparkles,
   Shapes,
   MoreHorizontal,
+  Ruler,
 } from "lucide-react";
 import type { RegionSession, Point } from "../document";
 import {
@@ -65,6 +67,9 @@ import {
 import type { EditBuffers } from "../app/workspaceFiles";
 import "../styles/drawing.css";
 import { CanvasCommandMenu } from "./CanvasCommandMenu";
+import { DrawingScaleControls } from "./DrawingScaleControls";
+import { defaultDrawingScale, snapDrawingPoint } from "../drawingScale";
+import { DrawingAreaGrid, DrawingDimensions } from "./DrawingDimensions";
 type Tool = "select" | "lasso" | "eraser" | DrawingKind;
 type DrawingPointer = ReactPointerEvent<SVGSVGElement>;
 type Label = {
@@ -87,6 +92,7 @@ type Gesture = {
   hold?: { at: Point; zoom: number; timer?: ReturnType<typeof setTimeout> };
   erased: Set<string>;
   transform?: (end: Point) => DrawingEdit[];
+  area?: DrawingEntry;
 };
 const tools = [
   ["select", "Select / Edit", MousePointer2],
@@ -100,6 +106,7 @@ const tools = [
   ["ellipse", "Ellipse", Circle],
   ["text", "Drawing label", Type],
   ["connector", "Visual connector", Workflow],
+  ["area", "Scaled drawing area", Ruler],
 ] as const;
 const freehand = (tool: Tool) => isInk(tool) || tool === "lasso";
 function clearHold(g: Gesture) {
@@ -120,6 +127,7 @@ function labelMark(
     y = old?.y ?? 0;
   return {
     kind: "text",
+    ...(prior?.area ? { area: prior.area } : {}),
     color,
     width,
     text,
@@ -156,6 +164,7 @@ function useDrawingCanvas(
 ) {
   const matchShortcut = useShortcutMatcher();
   const [tool, setTool] = useState<Tool>("select");
+  const [areaId, setAreaId] = useState<string>();
   const surface = useRef<SVGSVGElement>(null);
   const [style, setStyle] = useState({ color: "#c5d3e8", width: 3 });
   const selection = useMemo(() => new Set(shared.ids), [shared.ids]);
@@ -183,6 +192,24 @@ function useDrawingCanvas(
   );
   const selectedStroke =
     selected.size === 1 ? geometry.byId.get([...selected][0]) : undefined;
+  const areaAt = (p: Point, scene = geometry) => {
+    const areas = scene.entries
+      .filter((e) => e.mark.kind === "area")
+      .filter((e) => {
+        const b = scene.bounds(e);
+        return (
+          p.x >= b.x &&
+          p.x <= b.x + b.width &&
+          p.y >= b.y &&
+          p.y <= b.y + b.height
+        );
+      });
+    const preferred =
+      selectedStroke?.mark.kind === "area"
+        ? selectedStroke.id
+        : (selectedStroke?.mark.area?.item ?? areaId);
+    return areas.find((e) => e.id === preferred) ?? areas[areas.length - 1];
+  };
   const regularize = () => {
     if (gesture.current || selectedStroke?.mark.kind !== "pen") return;
     const mark = regularizeStroke(selectedStroke.mark, zoom);
@@ -280,6 +307,8 @@ function useDrawingCanvas(
       safe(() => {
         const prior = label.entry?.mark;
         const mark = labelMark(label.text, prior ?? style, prior);
+        const area = !prior && areaAt(label.at);
+        if (area) mark.area = reference(session.document.document, area.id);
         if (label.entry)
           editDrawings(session, [{ entry: label.entry, mark }], label.expected);
         else createDrawing(session, mark, label.at, label.expected);
@@ -436,6 +465,19 @@ function useDrawingCanvas(
     const expected = session.document,
       scene = drawingGeometry(drawings(expected)),
       target = scene.pick(p, 7 / zoom);
+    const area =
+      tool === "select"
+        ? target?.mark.kind === "area"
+          ? target
+          : target?.mark.area
+            ? scene.byId.get(target.mark.area.item)
+            : undefined
+        : areaAt(p, scene);
+    if (
+      area?.mark.scale &&
+      ["line", "arrow", "rectangle", "ellipse"].includes(tool)
+    )
+      p = snapDrawingPoint(p, scene.bounds(area), area.mark.scale);
 
     if (tool === "text") {
       setLabel({
@@ -479,12 +521,18 @@ function useDrawingCanvas(
       geometry: scene,
       points: [p],
       erased: new Set(),
+      area,
       transform:
         tool === "select" ? scene.transform(ids, p, resize) : undefined,
     };
     if (tool !== "select" && tool !== "lasso" && tool !== "eraser")
       g.mark = {
         kind: tool,
+        ...(tool === "area"
+          ? { scale: defaultDrawingScale() }
+          : area
+            ? { area: reference(expected.document, area.id) }
+            : {}),
         color: style.color,
         width:
           tool === "highlighter" ? Math.max(12, style.width * 4) : style.width,
@@ -504,6 +552,15 @@ function useDrawingCanvas(
     redraw();
   };
   const sample = (g: Gesture, p: InkPoint, zoom: number, shift: boolean) => {
+    if (
+      g.area?.mark.scale &&
+      ["line", "arrow", "rectangle", "ellipse", "select"].includes(g.tool)
+    )
+      p = snapDrawingPoint(
+        p,
+        g.tool === "select" ? g.start : g.geometry.bounds(g.area),
+        g.area.mark.scale,
+      );
     if (
       freehand(g.tool) &&
       Math.hypot(
@@ -525,7 +582,9 @@ function useDrawingCanvas(
       const hits = g.geometry.entries
         .filter(
           (e) =>
-            !g.erased.has(e.id) && g.geometry.sweptHit(e, g.last, p, 9 / zoom),
+            e.mark.kind !== "area" &&
+            !g.erased.has(e.id) &&
+            g.geometry.sweptHit(e, g.last, p, 9 / zoom),
         )
         .map((e) => e.id);
       if (hits.length) g.erased = new Set([...g.erased, ...hits]);
@@ -552,6 +611,7 @@ function useDrawingCanvas(
     if (g.expected !== session.document) return cancel();
     hold(g, p, zoom, e.type === "pointerup");
     if (!sample(g, p, zoom, e.shiftKey)) return;
+    p = g.last;
     if (e.type !== "pointerup") return show();
     const acceptedFit =
       shown.current?.gesture === g && shown.current.mark === g.regularized
@@ -563,6 +623,10 @@ function useDrawingCanvas(
         // Retain the authored ink as an ordinary history state: Undo shape → ink, then ink → absent.
         const id = createDrawing(session, g.mark, undefined, g.expected);
         setSelection(new Set([id]));
+        if (g.mark.kind === "area") {
+          setAreaId(id);
+          setTool("select");
+        }
         if (acceptedFit) {
           const entry = drawings(session.document).find((e) => e.id === id);
           if (
@@ -584,6 +648,13 @@ function useDrawingCanvas(
             g.geometry.entries
               .filter((entry) => {
                 const b = g.geometry.bounds(entry);
+                if (entry.mark.kind === "area")
+                  return [
+                    { x: b.x, y: b.y },
+                    { x: b.x + b.width, y: b.y },
+                    { x: b.x + b.width, y: b.y + b.height },
+                    { x: b.x, y: b.y + b.height },
+                  ].every((p) => inside(p, g.points));
                 return (
                   inside(
                     { x: b.x + b.width / 2, y: b.y + b.height / 2 },
@@ -610,6 +681,11 @@ function useDrawingCanvas(
   );
   return {
     tool,
+    areaId,
+    setAreaId,
+    select: (ids: string[]) => setSelection(new Set(ids)),
+    session,
+    report,
     surface,
     choose,
     style,
@@ -655,7 +731,9 @@ function DrawingToolbar({
   hand: boolean;
 }) {
   const shapeTools = tools.filter(([tool]) =>
-    ["line", "arrow", "rectangle", "ellipse", "connector"].includes(tool),
+    ["line", "arrow", "rectangle", "ellipse", "connector", "area"].includes(
+      tool,
+    ),
   );
   const extraTools = tools.filter(([tool]) =>
     ["highlighter", "eraser", "lasso"].includes(tool),
@@ -663,7 +741,8 @@ function DrawingToolbar({
   const activeShape = shapeTools.find(([tool]) => tool === d.tool);
   const activeExtra = extraTools.find(([tool]) => tool === d.tool);
   const ShapeIcon = activeShape?.[2] ?? Shapes;
-  const styleVisible = !hand && !["select", "lasso", "eraser"].includes(d.tool);
+  const styleVisible =
+    !hand && !["select", "lasso", "eraser", "area"].includes(d.tool);
   const guidance = hand
     ? "Pan active · Drag to move the canvas · Escape returns to the previous tool"
     : d.guidance;
@@ -729,6 +808,19 @@ function DrawingToolbar({
           </CanvasCommandMenu>
         </div>
       </div>
+      <DrawingScaleControls
+        session={d.session}
+        entries={d.entries}
+        selection={d.selection}
+        areaId={d.areaId}
+        setAreaId={d.setAreaId}
+        select={d.select}
+        report={d.report}
+        disabled={hand || !!d.preview}
+        drawArea={() => {
+          if (d.choose("area")) onChooseTool();
+        }}
+      />
       {styleVisible && (
         <div className="drawing-icon-menu">
           <CanvasCommandMenu
@@ -872,6 +964,16 @@ const MarkView = memo(function MarkView({
       />
     );
   const box = geometry?.bounds ?? pointBounds(points);
+  if (m.kind === "area")
+    return (
+      <rect
+        {...common}
+        {...box}
+        className="drawing-area-border"
+        strokeDasharray="8 5"
+        pointerEvents="none"
+      />
+    );
   if (m.kind === "rectangle") return <rect {...common} {...box} />;
   if (m.kind === "ellipse")
     return (
@@ -942,6 +1044,14 @@ const DrawingMarks = memo(function DrawingMarks({
     .map((entry, index) => {
       // Only dense ink needs local-path reuse; simple shapes/connectors keep shared world geometry.
       const local = isInk(entry.mark.kind);
+      const scale =
+        entry.mark.area && geometry.byId.get(entry.mark.area.item)?.mark.scale;
+      const dimensioned =
+        scale?.dimensions &&
+        ["line", "arrow", "rectangle", "ellipse"].includes(entry.mark.kind) &&
+        (selection.has(entry.id) ||
+          scale.allDimensions ||
+          !!entry.mark.dimensionPlacement);
       const markGeometry = local
         ? { points: entry.mark.points, bounds: pointBounds(entry.mark.points) }
         : geometry.geometry(entry);
@@ -953,9 +1063,13 @@ const DrawingMarks = memo(function DrawingMarks({
           className={`drawing-mark ${selection.has(entry.id) ? "is-selected" : ""}`}
           tabIndex={entry.id === tabStop ? 0 : -1}
           role="button"
-          aria-label={`${entry.mark.kind === "text" ? `Label: ${entry.mark.text}` : entry.mark.kind} drawing ${index + 1}`}
+          aria-label={
+            entry.mark.kind === "area"
+              ? `${entry.mark.scale!.name} scaled drawing area (${entry.mark.scale!.unit})`
+              : `${entry.mark.kind === "text" ? `Label: ${entry.mark.text}` : entry.mark.kind} drawing ${index + 1}`
+          }
           aria-pressed={selection.has(entry.id)}
-          aria-describedby="drawing-keyboard-help"
+          aria-describedby={`drawing-keyboard-help${dimensioned ? ` dimension-${entry.id}` : ""}`}
           onFocus={() => focusDrawing(entry.id)}
           onKeyDown={(e) => drawingKey(e, entry.id)}
           transform={
@@ -972,7 +1086,15 @@ const DrawingMarks = memo(function DrawingMarks({
             strokeDasharray={`${3 / zoom} ${3 / zoom}`}
           />
           {/* Match the geometry picker's tolerance in the default pointer tool. */}
-          {["rectangle", "text", "ellipse"].includes(entry.mark.kind) ? (
+          {entry.mark.kind === "area" ? (
+            <rect
+              {...markGeometry.bounds}
+              fill="none"
+              stroke="transparent"
+              strokeWidth={14 / zoom}
+              pointerEvents="stroke"
+            />
+          ) : ["rectangle", "text", "ellipse"].includes(entry.mark.kind) ? (
             <rect {...markGeometry.bounds} fill="transparent" />
           ) : (
             <polyline
@@ -1000,6 +1122,7 @@ export function DrawingCanvas({
   report,
   toolbar,
   onChooseTool,
+  onShortcut,
   hand,
   visible,
   zoom,
@@ -1014,6 +1137,7 @@ export function DrawingCanvas({
   report: (message: string) => void;
   toolbar: HTMLElement | null;
   onChooseTool: () => void;
+  onShortcut: (action: ShortcutAction) => void;
   hand: boolean;
   visible: boolean;
   zoom: number;
@@ -1097,6 +1221,16 @@ export function DrawingCanvas({
           if (entry?.mark.kind === "text") d.editLabel(entry);
         }}
       >
+        {entries
+          .filter((e) => e.mark.kind === "area")
+          .map((area) => (
+            <DrawingAreaGrid
+              key={area.id}
+              entry={area}
+              bounds={geometry.bounds(area)}
+              zoom={zoom}
+            />
+          ))}
         {active && (
           <rect
             className="drawing-background"
@@ -1122,6 +1256,19 @@ export function DrawingCanvas({
           focusDrawing={d.focusDrawing}
           drawingKey={d.drawingKey}
           focused={d.focused}
+        />
+        <DrawingDimensions
+          entries={entries}
+          zoom={zoom}
+          session={session}
+          buffers={buffers}
+          selection={d.selection}
+          enabled={!hand && d.tool === "select" && !d.preview}
+          point={point}
+          select={d.select}
+          activate={activate}
+          report={report}
+          onShortcut={onShortcut}
         />
         {draft && (
           <g

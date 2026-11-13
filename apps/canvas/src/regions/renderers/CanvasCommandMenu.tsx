@@ -16,6 +16,7 @@ export function CanvasCommandMenu({
   align = "left",
   active = false,
   description,
+  closeOnAction = true,
 }: {
   label: string;
   icon?: ReactNode;
@@ -23,6 +24,7 @@ export function CanvasCommandMenu({
   align?: "left" | "right";
   active?: boolean;
   description?: string;
+  closeOnAction?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -110,7 +112,7 @@ export function CanvasCommandMenu({
           aria-label={`${label} commands`}
           onClick={(event) => {
             const button = (event.target as Element).closest("button");
-            if (!button || button.disabled) return;
+            if (!closeOnAction || !button || button.disabled) return;
             trigger.current?.focus({ preventScroll: true });
             setOpen(false);
           }}

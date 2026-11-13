@@ -60,6 +60,22 @@ export function positionDrawings(
 ) {
   const entries = drawings(session.document),
     geometry = drawingGeometry(entries);
+  placements = { ...placements };
+  for (const area of entries.filter(
+    (e) => e.mark.kind === "area" && placements[e.id],
+  )) {
+    const bounds = geometry.bounds(area),
+      next = placements[area.id];
+    for (const member of entries.filter(
+      (e) => e.mark.area?.item === area.id && !placements[e.id],
+    )) {
+      const b = geometry.bounds(member);
+      placements[member.id] = {
+        x: b.x + next.x - bounds.x,
+        y: b.y + next.y - bounds.y,
+      };
+    }
+  }
   const ids = new Set(entries.filter((e) => placements[e.id]).map((e) => e.id));
   editDrawings(
     session,

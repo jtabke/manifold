@@ -189,6 +189,108 @@
   border-color: var(--canvas-border);
   background: var(--canvas-surface-soft);
 }
+.drawing-mark[data-drawing-kind="area"] {
+  pointer-events: none;
+}
+.drawing-area-border {
+  stroke: var(--canvas-border);
+}
+.drawing-area-grid {
+  stroke: var(--canvas-border);
+}
+.drawing-area-grid text {
+  fill: var(--canvas-muted);
+}
+.drawing-dimensions {
+  color: var(--canvas-muted);
+}
+.drawing-dimension-extension,
+.drawing-dimension-baseline {
+  stroke: currentColor;
+  fill: none;
+}
+.drawing-dimension-arrow {
+  fill: currentColor;
+  stroke: none;
+}
+.drawing-dimension-control {
+  cursor: grab;
+  touch-action: none;
+  outline: none;
+}
+.drawing-dimension-control[data-drawing-active] {
+  cursor: grabbing;
+}
+.drawing-dimension-label-hit {
+  fill: transparent;
+  stroke: transparent;
+}
+.drawing-dimension-control:hover .drawing-dimension-label-hit,
+.drawing-dimension-control:focus-visible .drawing-dimension-label-hit {
+  fill: var(--canvas-surface);
+  stroke: var(--canvas-accent, #c5a2f0);
+}
+.drawing-dimension-control.is-line:hover rect,
+.drawing-dimension-control.is-line:focus-visible rect {
+  fill: color-mix(in srgb, var(--canvas-accent, #c5a2f0) 22%, transparent);
+}
+.drawing-dimensions text {
+  fill: var(--canvas-text);
+  stroke: var(--canvas-surface);
+  paint-order: stroke;
+}
+.drawing-scale-panel {
+  display: grid;
+  gap: 10px;
+  width: min(310px, calc(100vw - 54px));
+  max-height: min(650px, calc(100dvh - 180px));
+  overflow: auto;
+  padding: 4px;
+}
+.drawing-scale-panel p {
+  margin: 0;
+  font-size: 12px;
+}
+.drawing-scale-panel fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--canvas-border);
+  border-radius: 6px;
+  padding: 10px;
+}
+.drawing-scale-panel legend {
+  font-weight: 600;
+  padding: 0 4px;
+}
+.drawing-scale-panel label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.drawing-scale-panel .drawing-scale-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.drawing-scale-panel input:not([type="checkbox"]),
+.drawing-scale-panel select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--canvas-text);
+  background: var(--canvas-surface);
+  border: 1px solid var(--canvas-border);
+  border-radius: 4px;
+  padding: 6px;
+}
+.drawing-scale-panel small {
+  font-size: 11px;
+  line-height: 1.5;
+}
+.drawing-scale-panel [role="alert"] {
+  color: var(--canvas-error, #b42318);
+}
 @media (max-width: 600px) {
   .drawing-primary-tools > button > span {
     display: none;

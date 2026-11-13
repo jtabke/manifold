@@ -381,6 +381,66 @@ shared workspace capacity. The eraser checks
 continuous paths between pointer samples, including the release position, so fast
 sweeps do not skip whole marks between events.
 
+## Scaled drawings
+
+Choose **Shapes → Scaled drawing area** (or **Scaled drawings → Draw new area**), then
+drag a boundary. Open **Scaled drawings** to name the area and set its display unit,
+physical scale, grid spacing and dimension visibility. Each area is independent: a
+building in feet can coexist with a component in millimetres. Existing drawings remain
+unscaled until explicitly assigned or calibrated; equations and worksheet notes are not
+rescaled.
+
+The display-unit field suggests metric and imperial units, including nm, um, mm, cm, m,
+km, in, ft, yd and mi. Other length-unit names supported by the unit engine, such as
+`inch`, may be typed. Mass, angle and other non-length units are rejected. Length fields
+accept explicit units and fractions, for example `120 mm`, `6 ft` and `1/2 in`.
+
+- **Display unit** converts measurements without resizing geometry or changing calibration.
+- **100 canvas units represent** defines physical scale. Changing it deliberately
+  recalibrates all drawings in that area; zoom only changes the view.
+- **Grid spacing** defines physical increments. Shape endpoints and pointer moves snap
+  when enabled. Minor grid lines thin out at distant zoom levels; the snap increment
+  does not change. Freehand ink remains freehand; Shift angle constraints take precedence.
+- **Create exact geometry** creates a line with a length/angle or a rectangle with a
+  width/height. Select a line or rectangle to **Apply dimensions** instead. Angles are
+  counterclockwise degrees. Drafting dimensions use extension lines, arrowheads and
+  readable measurements. Width appears below shapes, height to the right, and length
+  parallel to a line. Short spans use outside arrows and labels. Nonzero line angles
+  appear only on selected lines. These are measurements and explicit edits, not
+  persistent CAD constraints.
+- To calibrate an existing sketch, select exactly one nonzero reference line, optionally
+  with other unscaled drawings, enter its **Known line length**, and choose **Calibrate
+  selected drawings**. A new area uses the entered length unit. Existing-area calibration
+  affects all its members but leaves their geometry and camera unchanged. Calibration
+  and membership assignment are one Undo step.
+
+Dimensions appear on selected shapes by default. **Show all dimensions** is an explicit
+per-area option, applied with **Apply area properties**; **Show dimensions** is the master
+visibility toggle. Drag a dimension line toward/away from its shape, or drag its label
+along the line. These gestures only change annotation placement, never geometry or the
+measured value. Manually placed dimensions stay visible when deselected and remain
+attached as the shape moves or changes size. Placement survives unit conversion,
+Download/Open and local recovery. A release accepts one Undo step; Escape, pointer
+cancellation or window blur discards the preview without clearing the shape selection.
+
+Dimension handles support Tab focus and arrow-key placement (Shift moves farther).
+**Home** resets that dimension; **Escape** returns focus to the shape. **Scaled drawings →
+Reset dimension placement** resets all placed dimensions on the selected drawings,
+restoring automatic placement and removing their persistent visibility. Reset and
+placement edits support Undo/Redo.
+
+New drawings started inside an area inherit its scale. **Assign selected drawings**
+explicitly adds unscaled drawings to the chosen area. Drawings already using another
+area cannot be silently reassigned. Moving or duplicating an area carries its drawings;
+copies retain independent area references. Delete an area's drawings first, or select
+its area and all members together: deleting just the area is refused rather than losing
+physical interpretation. Area properties, dimensions and calibration survive local
+recovery and native-file Download/Open. Up to 32 areas share the existing 2,000-mark
+limit. Unscaled records retain the original `canvas-drawing@1` contract; areas and
+unit-bearing drawings use `canvas-drawing@2`. Calibration explicitly upgrades selected
+revisions, and Undo restores their original version and meaning. This is not a CAD
+solver or a fixed-scale printing/export feature.
+
 ## Independent model instances
 
 Search commands for **Insert spring model** or **Insert force scale model**. Each card is an

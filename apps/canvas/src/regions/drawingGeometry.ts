@@ -2,6 +2,7 @@
 import * as f from "@manifold/foundation";
 import type { Point } from "./document.ts";
 import { frameBounds } from "./selection.ts";
+import { withAreaMembers } from "./drawingScale.ts";
 import type {
   Anchor,
   DrawingEntry,
@@ -205,6 +206,17 @@ class DrawingGeometry {
     const b = this.bounds(e),
       margin = tolerance + e.mark.width / 2;
     if (!crossesBounds(from, to, b, margin)) return false;
+    if (e.mark.kind === "area") {
+      const corners = [
+        { x: b.x, y: b.y },
+        { x: b.x + b.width, y: b.y },
+        { x: b.x + b.width, y: b.y + b.height },
+        { x: b.x, y: b.y + b.height },
+      ];
+      return corners.some(
+        (a, i) => segmentDistance(from, to, a, corners[(i + 1) % 4]) <= margin,
+      );
+    }
     if (["rectangle", "text"].includes(e.mark.kind)) return true;
     if (e.mark.kind === "ellipse") {
       const normalize = (p: Point) => ({
@@ -255,7 +267,7 @@ class DrawingGeometry {
     };
   }
   private selected(ids: ReadonlySet<string>) {
-    return [...ids].flatMap((id) => {
+    return [...withAreaMembers(this.entries, ids)].flatMap((id) => {
       const e = this.byId.get(id);
       return e ? [e] : [];
     });
@@ -264,6 +276,7 @@ class DrawingGeometry {
     return frameBounds(this.selected(ids).map((e) => this.bounds(e)));
   }
   transform(ids: ReadonlySet<string>, start: Point, resize: boolean) {
+    ids = withAreaMembers(this.entries, ids);
     const bounds = this.selectionBounds(ids);
     // Resolve detached connectors and the selection once, not once per pointer sample.
     const selected = this.selected(ids).map((entry) => {

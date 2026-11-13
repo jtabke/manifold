@@ -177,6 +177,15 @@ export function scientificUnit(name: string): Quantity {
   if (!scientificUnits.has(name)) throw Error("Unsupported engineering unit.");
   return plain(math.unit(1, name));
 }
+/** Drawing-only unit lookup; does not extend the persisted worksheet unit namespace. */
+export function scientificLengthUnit(name: string): number {
+  if (!/^[A-Za-zµμ]{1,24}$/.test(name))
+    throw Error("Enter a supported length unit name.");
+  const q = plain(math.unit(1, name));
+  if (q.dimension.some((n, i) => n !== (i === 1 ? 1 : 0)))
+    throw Error("Choose a length unit, not an angle, mass or other dimension.");
+  return q.value;
+}
 export function scientificQuantity(value: number, unit: string): Quantity {
   if (unit === "1") return plain(value);
   if (

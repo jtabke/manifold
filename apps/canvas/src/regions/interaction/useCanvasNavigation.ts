@@ -246,7 +246,7 @@ export function useCanvasNavigation(
     if (e.pointerType === "touch") {
       if (
         (e.target as Element).closest(
-          "button,a,input,textarea,select,[contenteditable=true]",
+          "button,a,input,textarea,select,[contenteditable=true],[data-dimension-handle]",
         )
       )
         return false;
