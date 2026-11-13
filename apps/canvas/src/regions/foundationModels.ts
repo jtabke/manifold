@@ -204,6 +204,8 @@ export const canvasContentSchemas = [
   modelOutputsSchema,
   modelAnalyses.schema,
   modelOptimizations.schema,
+  modelOptimizations.legacySchema,
+  modelAnalyses.frozenSchema,
   csvObservationSchema,
 ];
 export const MODEL_RENDERER = "canvas-independent-model@1";

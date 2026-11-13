@@ -1,227 +1,30 @@
-import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import * as f from "@manifold/foundation";
 import type { RegionSession, Point } from "../document";
 import type { EditBuffers } from "../app/workspaceFiles";
-import { useEditBuffer } from "../app/useEditBuffer";
 import { inspectModel, modelReference } from "../modelCommands";
-import { canvasSchemas } from "../app/canvasDocument";
 import {
   optimizationRequest,
   optimizationCapability,
-  type OptimizationSpec,
   type OptimizationOutput,
   type OptimizationInput,
 } from "../modelOptimization";
 import {
+  computeOptimizationResponse,
+  undoOptimizationApply,
   optimizationViews,
-  createModelOptimization,
-  reviseModelOptimization,
   reviewOptimizationRuntime,
   applyOptimizationCandidate,
   keepModelOptimization,
   removeModelOptimization,
 } from "../modelOptimizationCommands";
+import { AnalysisSeries } from "./ModelAnalyses";
+import { optimizationConvert } from "../optimizationQuantities";
+import type { AnalysisOutput, ResponseRequest } from "../modelAnalysis";
 import "../styles/modelAnalyses.css";
 const format = (n: number) => Number(n.toPrecision(10)).toString();
-export function ModelOptimizationEditor({
-  session,
-  buffers,
-  instance,
-  item,
-  initial,
-  at,
-  close,
-}: {
-  session: RegionSession;
-  buffers: EditBuffers;
-  instance: string;
-  item?: string;
-  initial?: OptimizationSpec;
-  at: Point;
-  close: () => void;
-}) {
-  const { definition } = inspectModel(session, instance);
-  const [spec, setSpec] = useState<OptimizationSpec>(
-    () =>
-      initial || {
-        input: Object.keys(definition.inputs)[0]!,
-        output: Object.keys(definition.outputs)[0]!,
-        low: 0,
-        high: 10,
-        mode: "minimize",
-        target: null,
-        xTolerance: 1e-8,
-        residualTolerance: null,
-      },
-  );
-  const [expected] = useState(session.document),
-    [error, setError] = useState("");
-  const dialog = useRef<HTMLDialogElement>(null),
-    id = useId();
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null,
-      node = dialog.current!;
-    node.showModal();
-    node.querySelector<HTMLInputElement>('[aria-label="Lower bound"]')?.focus();
-    return () => {
-      node.close();
-      if (previous?.isConnected) previous.focus();
-    };
-  }, []);
-  useEditBuffer(buffers, id, {
-    read: () => JSON.stringify(spec),
-    finish: () => {
-      setError(
-        "Create, save or cancel optimization settings before changing files.",
-      );
-      return false;
-    },
-  });
-  const input = definition.inputs[spec.input],
-    node = input && definition.nodes[input.node];
-  const projectedOutput = f.project(
-    session.document,
-    modelReference(session.document, instance, f.modelPort(spec.output)),
-    canvasSchemas,
-    session.foundation.resources(),
-  );
-  const outputUnit =
-    projectedOutput.status === "resolved" &&
-    f.object(projectedOutput.projection.value)
-      ? String(projectedOutput.projection.value.unit)
-      : "unresolved output units";
-  return (
-    <dialog
-      ref={dialog}
-      className="im-editor"
-      aria-labelledby={id + "-title"}
-      onKeyDown={(e) => e.stopPropagation()}
-      onCancel={(e) => {
-        e.preventDefault();
-        close();
-      }}
-    >
-      <header>
-        <h2 id={id + "-title"}>
-          {item ? "Edit optimization" : "Optimize model"}
-        </h2>
-        <button onClick={close}>Cancel optimization editing</button>
-      </header>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          try {
-            f.assert(
-              session.document === expected,
-              "Work changed; reopen optimization settings",
-            );
-            if (item) reviseModelOptimization(session, item, spec, expected);
-            else createModelOptimization(session, instance, spec, at);
-            close();
-          } catch (e) {
-            setError((e as Error).message);
-          }
-        }}
-      >
-        <label>
-          Variable input
-          <select
-            aria-label="Optimization input"
-            value={spec.input}
-            onChange={(e) => setSpec((s) => ({ ...s, input: e.target.value }))}
-          >
-            {Object.entries(definition.inputs).map(([port, p]) => (
-              <option key={port} value={port}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Output
-          <select
-            aria-label="Optimization output"
-            value={spec.output}
-            onChange={(e) => setSpec((s) => ({ ...s, output: e.target.value }))}
-          >
-            {Object.entries(definition.outputs).map(([port, p]) => (
-              <option key={port} value={port}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Goal
-          <select
-            aria-label="Optimization goal"
-            value={spec.mode}
-            onChange={(e) => {
-              const mode = e.target.value as OptimizationSpec["mode"];
-              setSpec((s) => ({
-                ...s,
-                mode,
-                target: mode === "target" ? 0 : null,
-                residualTolerance: mode === "target" ? 1e-8 : null,
-              }));
-            }}
-          >
-            <option value="minimize">Minimize</option>
-            <option value="maximize">Maximize</option>
-            <option value="target">Solve target</option>
-          </select>
-        </label>
-        <p>
-          Closed bounds and input tolerance in{" "}
-          {node?.kind === "input" ? node.unit : "input units"}. Target and
-          residual tolerance are in {outputUnit}. Other effective inputs and
-          source observations stay fixed. Requires explicitly upgraded
-          scientific v3 authored equations.
-        </p>
-        {(
-          [
-            ["low", "Lower bound"],
-            ["high", "Upper bound"],
-            ["xTolerance", "Input tolerance"],
-            ...(spec.mode === "target"
-              ? [
-                  ["target", "Target output"],
-                  ["residualTolerance", "Residual tolerance"],
-                ]
-              : []),
-          ] as [
-            keyof Pick<
-              OptimizationSpec,
-              "low" | "high" | "xTolerance" | "target" | "residualTolerance"
-            >,
-            string,
-          ][]
-        ).map(([key, label]) => (
-          <label key={key}>
-            {label}
-            <input
-              type="number"
-              step="any"
-              required
-              autoFocus={key === "low"}
-              aria-label={label}
-              value={
-                spec[key] === null || Number.isNaN(spec[key]) ? "" : spec[key]!
-              }
-              onChange={(e) =>
-                setSpec((s) => ({ ...s, [key]: e.target.valueAsNumber }))
-              }
-            />
-          </label>
-        ))}
-        <button type="submit">
-          {item ? "Save optimization settings" : "Create optimization"}
-        </button>
-      </form>
-      {error && <p role="alert">{error}</p>}
-    </dialog>
-  );
-}
+export { ModelOptimizationEditor } from "./OptimizationEditor";
+import { ModelOptimizationEditor } from "./OptimizationEditor";
 export function ModelOptimizations({
   session,
   positions,
@@ -292,7 +95,13 @@ function OptimizationCard({
     | undefined;
   const [editing, setEditing] = useState(false),
     [error, setError] = useState(""),
-    [reviewing, setReviewing] = useState(false);
+    [reviewing, setReviewing] = useState(false),
+    [runtimeUnavailable, setRuntimeUnavailable] = useState(false),
+    [applied, setApplied] = useState<{
+      after: f.Document;
+      receipt: string;
+    } | null>(null);
+  const status = useRef<HTMLParagraphElement>(null);
   const job = useRef<ReturnType<RegionSession["compute"]> | undefined>(
       undefined,
     ),
@@ -315,6 +124,7 @@ function OptimizationCard({
       if (!edits().finish()) return;
       action();
       setError("");
+      status.current?.focus();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -327,7 +137,14 @@ function OptimizationCard({
       setReviewing(true);
       setError("");
       if (!alternative) {
-        const backend = await optimizationCapability();
+        let backend;
+        try {
+          backend = await optimizationCapability();
+          if (alive.current) setRuntimeUnavailable(false);
+        } catch (e) {
+          if (alive.current) setRuntimeUnavailable(true);
+          throw e;
+        }
         f.assert(
           alive.current &&
             session.document === expected &&
@@ -349,7 +166,10 @@ function OptimizationCard({
     } catch (e) {
       if (alive.current) setError((e as Error).message);
     } finally {
-      if (alive.current) setReviewing(false);
+      if (alive.current) {
+        setReviewing(false);
+        status.current?.focus();
+      }
     }
   };
   const info = (() => {
@@ -361,6 +181,66 @@ function OptimizationCard({
       return undefined;
     }
   })();
+  const [selectedResponse, setSelectedResponse] = useState<string | null>(null);
+  const responses = [...document.items.entries()]
+    .map(([id]) => ({ id, revision: f.current(document, id) }))
+    .filter(
+      (r) =>
+        r.revision?.schema === "canvas-model-response@1" &&
+        (r.revision.body as unknown as ResponseRequest).receipt === receipt?.id,
+    );
+  // Prefer the explicit action result, including a deduplicated earlier request.
+  // Reload falls back deterministically to the most recently retained response.
+  const response =
+    responses.find((r) => r.id === selectedResponse) ||
+    responses
+      .sort((a, b) => {
+        const order = (id: string) => {
+          const result = session.foundation.result(
+            modelReference(document, id),
+            "baseline",
+          );
+          return "receipt" in result ? (result.receipt?.order ?? -1) : -1;
+        };
+        return order(a.id) - order(b.id) || a.id.localeCompare(b.id);
+      })
+      .at(-1);
+  const responseBody = response?.revision?.body as unknown as
+    | ResponseRequest
+    | undefined;
+  const responseResult = response
+    ? session.foundation.result(
+        modelReference(document, response.id),
+        "baseline",
+      )
+    : undefined;
+  const responseReceipt =
+    responseResult && "receipt" in responseResult
+      ? responseResult.receipt
+      : undefined;
+  const responseSeries =
+    responseReceipt?.kind === "typed@1" &&
+    responseReceipt.outcome.status === "success"
+      ? (responseReceipt.outcome.output.body as unknown as AnalysisOutput)
+      : undefined;
+  const quantity = (value: number, axis: "input" | "output") => {
+    const source =
+      axis === "input" ? captured?.scalar.x.unit : captured?.scalar.y.unit;
+    const display = body.displayUnits?.[axis] || source || "1";
+    if (!source) return `${format(value)} ${display}`;
+    try {
+      return `${format(optimizationConvert(value, source, display))} ${display}`;
+    } catch {
+      return `${format(value)} ${source}`;
+    }
+  };
+  const runtimeMissing =
+    runtimeUnavailable ||
+    ["unavailable", "backend_mismatch", "transport_error"].includes(
+      output?.code || "",
+    );
+  const historical =
+    applied?.receipt === receipt?.id && result.status !== "current";
   const binding = info?.body.inputs[body.input],
     replacesSource = binding?.kind === "reference";
   const applicable =
@@ -397,81 +277,286 @@ function OptimizationCard({
           ↔
         </button>
       </header>
-      <p aria-label="Optimization status">
+      <p
+        ref={status}
+        tabIndex={-1}
+        aria-label="Optimization status"
+        role="status"
+        aria-live="polite"
+      >
         {reviewing
           ? "Reviewing numerical runtime"
-          : result.status === "ready" && prior
-            ? "noncurrent retained evidence"
-            : result.status}{" "}
-        · {body.mode} · {body.input}: [{body.low}, {body.high}]
+          : result.status === "pending"
+            ? "Running"
+            : historical
+              ? "Result from before this change"
+              : runtimeMissing
+                ? "Runtime unavailable"
+                : result.status === "ready" && prior
+                  ? "Model changed — result captured before current settings. Run again before applying"
+                  : result.status === "failed"
+                    ? "Stopped without convergence"
+                    : output
+                      ? output.success
+                        ? body.mode === "target"
+                          ? "Target met"
+                          : "Search converged"
+                        : "Stopped without convergence"
+                      : "Ready"}
       </p>
       <p>
-        Bounded local search, not a global-optimum proof. Solve target requires
-        a bracket or satisfactory endpoint. No physical-validity assessment.
+        {body.mode === "target"
+          ? "Reach target"
+          : body.mode === "minimize"
+            ? "Make smaller"
+            : "Make larger"}
+        :{" "}
+        {captured?.scalar.y.label ||
+          info?.definition.outputs[body.output]?.label ||
+          body.output}
+        {body.mode === "target"
+          ? ` = ${body.target} ${captured?.scalar.y.unit || ""}`
+          : ""}
+        . Change only{" "}
+        {captured?.scalar.x.label ||
+          info?.definition.inputs[body.input]?.label ||
+          body.input}{" "}
+        in [{body.low}, {body.high}] {captured?.scalar.x.unit || ""}.
       </p>
-      {result.status === "blocked" && <p role="status">{result.reason}</p>}
-      {receipt?.outcome.status === "failed" && (
-        <p role="alert">{receipt.outcome.reason}</p>
+      {output?.candidate && captured && (
+        <p>
+          <strong>Current (at Run):</strong>{" "}
+          {quantity(
+            captured.scalar.inputs[captured.scalar.x.port]!.value,
+            "input",
+          )}{" "}
+          → <strong>Proposed:</strong> {quantity(output.candidate.x, "input")};
+          resulting {captured.scalar.y.label}:{" "}
+          {quantity(output.candidate.output, "output")}.
+          {output.candidate.residual !== null && (
+            <>
+              {" "}
+              Target error {format(Math.abs(output.candidate.residual))}{" "}
+              {captured.scalar.y.unit}; numerical tolerance{" "}
+              {output.residual_tolerance} {captured.scalar.y.unit}.
+            </>
+          )}
+          {output.candidate.x === output.bounds[0] ||
+          output.candidate.x === output.bounds[1]
+            ? " Best found at the selected limit; range has not been expanded."
+            : ""}
+          {!output.success && " Unconfirmed candidate — Apply disabled."}
+        </p>
       )}
-      <div className="im-actions">
-        <button
-          disabled={
-            reviewing ||
-            result.status === "pending" ||
-            !!session.foundation.preview()
-          }
-          onClick={() => void run()}
-        >
-          Run optimization
-        </button>
-        {result.status === "pending" && (
-          <button onClick={() => job.current?.cancel()}>
-            Cancel optimization
-          </button>
-        )}
-        {!alternative && (
-          <button disabled={!info} onClick={() => act(() => setEditing(true))}>
-            Edit optimization settings
-          </button>
-        )}
-        <button
-          disabled={!applicable}
-          onClick={() =>
-            act(() => {
-              f.assert(receipt, "No reviewed receipt");
-              applyOptimizationCandidate(session, view, receipt, document);
-            })
-          }
-        >
-          {replacesSource ? "Replace source with candidate" : "Apply candidate"}
-        </button>
-        {!alternative && (
+      {output && !output.success && (
+        <p role="status">
+          {output.code === "no_bracket"
+            ? "Checked endpoints are on the same side of the target. Edit the range or target; this does not prove no solution exists."
+            : output.code.includes("domain")
+              ? "The model could not be evaluated in this range. The numerical runtime did not identify a failed expression. Edit the range or view the model."
+              : "Search stopped without confirmed convergence. Review range and model; another run is not guaranteed to succeed."}
+        </p>
+      )}
+      {result.status === "blocked" && body.backend && (
+        <p role="status">
+          Model not ready: {result.reason}. View the model or edit optimization
+          settings.
+        </p>
+      )}
+      {receipt?.outcome.status === "failed" && (
+        <p role="alert">
+          Computation could not finish. Review the model and permitted range,
+          then Run again.
+        </p>
+      )}
+      <details className="optimization-controls">
+        <summary>Settings and actions</summary>
+        <p>
+          One variable; all other effective inputs fixed. Bounded local search,
+          not global-optimum or engineering acceptance proof. Run explicitly
+          captures and reviews the optional runtime.
+        </p>
+        <div className="im-actions">
           <button
-            disabled={result.status !== "current"}
+            disabled={
+              reviewing ||
+              result.status === "pending" ||
+              !!session.foundation.preview()
+            }
+            onClick={() => void run()}
+          >
+            Run optimization
+          </button>
+          {result.status === "pending" && (
+            <button
+              onClick={() => {
+                job.current?.cancel();
+                status.current?.focus();
+              }}
+            >
+              Cancel optimization
+            </button>
+          )}
+          {!alternative && (
+            <button
+              disabled={!info}
+              onClick={() => act(() => setEditing(true))}
+            >
+              Edit settings / Adjust range
+            </button>
+          )}
+          <button
+            disabled={!applicable}
             onClick={() =>
               act(() => {
-                keepModelOptimization(session, view, {
-                  x: at.x + 560,
-                  y: at.y,
-                });
+                f.assert(receipt, "No reviewed receipt");
+                applyOptimizationCandidate(session, view, receipt, document);
+                setApplied({ after: session.document, receipt: receipt.id });
               })
             }
           >
-            Keep optimization
+            Apply change
           </button>
+          {!alternative && (
+            <button
+              disabled={result.status !== "current"}
+              onClick={() =>
+                act(() => {
+                  keepModelOptimization(session, view, {
+                    x: at.x + 560,
+                    y: at.y,
+                  });
+                })
+              }
+            >
+              Keep result
+            </button>
+          )}
+          <button
+            onClick={() => act(() => removeModelOptimization(session, view))}
+          >
+            Remove optimization
+          </button>
+        </div>
+        {output?.candidate && captured && (
+          <p role="note">
+            Apply writes the literal {String(output.candidate.x)}{" "}
+            {captured.scalar.x.unit} to {captured.scalar.x.label}.
+            {replacesSource
+              ? " This replaces and disconnects the current source connection. Undo restores that exact connection."
+              : " Undo restores the exact former input literal."}
+          </p>
         )}
-        <button
-          onClick={() => act(() => removeModelOptimization(session, view))}
-        >
-          Remove optimization
-        </button>
-      </div>
-      {replacesSource && (
-        <p role="note">
-          Apply replaces the input's source connection with a literal candidate.
-          Undo restores the exact prior connection.
-        </p>
-      )}
+        {historical && (
+          <p role="status">
+            Applied {captured?.scalar.x.label}:{" "}
+            {captured &&
+              String(
+                captured.scalar.inputs[captured.scalar.x.port]!.value,
+              )}{" "}
+            → {output?.candidate && String(output.candidate.x)}{" "}
+            {captured?.scalar.x.unit}. Evidence below is from before this
+            change.{" "}
+            <button
+              disabled={
+                session.document !== applied?.after ||
+                !!session.foundation.preview()
+              }
+              onClick={() =>
+                act(() => {
+                  f.assert(applied, "Apply history unavailable");
+                  undoOptimizationApply(session, applied.after);
+                  setApplied(null);
+                })
+              }
+            >
+              Undo this change
+            </button>
+            {session.document !== applied?.after &&
+              " Later work exists; use global Undo to review history."}
+          </p>
+        )}
+        {receipt?.outcome.status === "success" && (
+          <div className="im-actions">
+            <button
+              disabled={responseResult?.status === "pending"}
+              onClick={() =>
+                act(() => {
+                  const response = computeOptimizationResponse(
+                    session,
+                    view,
+                    receipt,
+                  );
+                  setSelectedResponse(response.item);
+                  job.current = response.job;
+                })
+              }
+            >
+              Compute response plot
+            </button>
+            <button
+              disabled={responseResult?.status === "pending"}
+              onClick={() =>
+                act(() => {
+                  const response = computeOptimizationResponse(
+                    session,
+                    view,
+                    receipt,
+                    2,
+                  );
+                  setSelectedResponse(response.item);
+                  job.current = response.job;
+                })
+              }
+            >
+              Check endpoint outputs
+            </button>
+            {responseResult?.status === "pending" && (
+              <button
+                onClick={() => {
+                  job.current?.cancel();
+                  status.current?.focus();
+                }}
+              >
+                Cancel response sampling
+              </button>
+            )}
+          </div>
+        )}
+        {responseResult?.status === "pending" && (
+          <p role="status">Sampling captured model…</p>
+        )}
+        {responseReceipt?.outcome.status === "failed" && (
+          <p role="alert">
+            Response sampling stopped: one or more captured model evaluations
+            failed. No continuous curve or partial values are claimed. Edit the
+            range or view the model.
+          </p>
+        )}
+        {responseSeries && responseBody && (
+          <details open>
+            <summary>
+              Checked response samples — exact optimization capture
+            </summary>
+            <p>
+              Additional explicit sampling; not solver evaluation points. Each
+              dot is checked evidence, not continuity or global optimality.
+              Current at Run: {responseBody.current} {responseSeries.x.unit};
+              candidate: {responseBody.candidate ?? "none"}; bounds:{" "}
+              {responseBody.capture.low}–{responseBody.capture.high}; target:{" "}
+              {responseBody.target ?? "none"}. Source receipt:{" "}
+              {responseBody.receipt}. Live model edits do not replace this
+              capture.
+            </p>
+            <AnalysisSeries
+              key={responseReceipt!.id}
+              series={responseSeries}
+              receipt={responseReceipt!.id}
+              markers={responseBody}
+            />
+          </details>
+        )}
+      </details>
       {output && captured && (
         <div data-optimization-receipt={receipt!.id}>
           <p aria-label="Optimization termination">
@@ -490,17 +575,20 @@ function OptimizationCard({
                 : ""}
             </output>
           )}
-          <p>
-            Evaluations: {output.evaluations ?? "unknown"}/
-            {output.limits.evaluations}; iterations:{" "}
-            {output.iterations ?? "unknown"}/{output.limits.iterations}; wall
-            limit: {output.limits.wall_ms} ms. Input tolerance:{" "}
-            {output.x_tolerance} {captured.scalar.x.unit}
-            {output.residual_tolerance !== null
-              ? `; residual tolerance: ${output.residual_tolerance} ${captured.scalar.y.unit}`
-              : ""}
-            .
-          </p>
+          <details>
+            <summary>Numerical work and tolerances</summary>
+            <p>
+              Evaluations: {output.evaluations ?? "unknown"}/
+              {output.limits.evaluations}; iterations:{" "}
+              {output.iterations ?? "unknown"}/{output.limits.iterations}; wall
+              limit: {output.limits.wall_ms} ms. Input tolerance:{" "}
+              {output.x_tolerance} {captured.scalar.x.unit}
+              {output.residual_tolerance !== null
+                ? `; residual tolerance: ${output.residual_tolerance} ${captured.scalar.y.unit}`
+                : ""}
+              .
+            </p>
+          </details>
           <details>
             <summary>Captured model, sources and numerical provenance</summary>
             <p>
@@ -545,6 +633,24 @@ function OptimizationCard({
           initial={body}
           close={() => setEditing(false)}
         />
+      )}
+      {runtimeMissing && (
+        <details open>
+          <summary>Optional numerical runtime setup</summary>
+          <p>
+            Settings stay editable and the rest of the canvas remains usable. A
+            local developer can enable the supported CPython 3.12 / NumPy 2.2.6
+            / SciPy 1.15.3 profile using the repository’s hash-locked setup.
+            Nothing is installed automatically.
+          </p>
+          <textarea
+            readOnly
+            aria-label="Copy optional runtime setup"
+            value={
+              "make setup-optimizer OPTIMIZER_PYTHON=python3.12\nmake canvas PYTHON=.venv/optimizer/bin/python"
+            }
+          />
+        </details>
       )}
       {error && <p role="alert">{error}</p>}
     </section>

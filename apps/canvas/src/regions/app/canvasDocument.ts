@@ -6,7 +6,10 @@ import {
 } from "../drawing.ts";
 import { analysisMethodRef } from "../modelAnalysis.ts";
 import { optimizationMethodRef } from "../modelOptimization.ts";
-import { validateOptimizationViews } from "../modelOptimizationCommands.ts";
+import {
+  validateOptimizationViews,
+  validateOptimizationResponses,
+} from "../modelOptimizationCommands.ts";
 import { validateAnalysisViews } from "../modelAnalysisCommands.ts";
 import {
   modelOutputsExecutor,
@@ -1144,6 +1147,7 @@ export class CanvasDocument {
           scheduler,
           validateDocument: validateCanvasDocument,
           validateState: (state) => {
+            validateOptimizationResponses(state.document, state.receipts);
             this.#storageBudget.check(state, canvasSchemas);
           },
         },

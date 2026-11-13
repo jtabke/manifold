@@ -16,6 +16,8 @@ import {
   applyOptimizationCandidate,
   keepModelOptimization,
   reviseModelOptimization,
+  computeOptimizationResponse,
+  undoOptimizationApply,
 } from "../src/regions/modelOptimizationCommands.ts";
 import {
   modelOptimizations,
@@ -28,6 +30,17 @@ import {
 import { archive } from "../src/regions/artifacts.ts";
 import { stageWorkspaceFile } from "../src/regions/app/workspaceFiles.ts";
 import { canvasLocalStore } from "../src/regions/app/canvasLocalStore.ts";
+import {
+  optimizationQuantity,
+  optimizationConvert,
+} from "../src/regions/optimizationQuantities.ts";
+assert.equal(optimizationQuantity("10 mm", "m"), 0.01);
+assert.equal(optimizationQuantity("5 cm", "mm"), 50);
+assert.equal(optimizationQuantity("10", "mm"), 10);
+assert.equal(optimizationQuantity("1e-8 m", "mm"), 0.00001);
+assert.equal(optimizationConvert(10, "mm", "cm"), 1);
+for (const text of ["5 s", "x", "sin(1)", "1 + 2", "1;process.exit()"])
+  assert.throws(() => optimizationQuantity(text, "mm"));
 const python = process.env.PYTHON || "python3";
 const py = (code, input) =>
   JSON.parse(
@@ -100,6 +113,22 @@ function fixture(text = "y = (x - 2)^2", extra = []) {
   const loaded = await stageWorkspaceFile(archive(s.native()));
   assert.equal(loaded.executionDiagnostics.running, 0);
   loaded.dispose();
+  const unchanged = f.current(s.document, item).body;
+  reviseModelOptimization(s, item, {
+    ...spec,
+    displayUnits: { input: "1", output: "1" },
+  });
+  assert.equal(f.current(s.document, item).body.low, unchanged.low);
+  assert.equal(
+    f.current(s.document, item).body.xTolerance,
+    unchanged.xTolerance,
+  );
+  const withDisplay = await stageWorkspaceFile(archive(s.native()));
+  assert.deepEqual(f.current(withDisplay.document, item).body.displayUnits, {
+    input: "1",
+    output: "1",
+  });
+  withDisplay.dispose();
   s.dispose();
 }
 const capability = py(
@@ -127,6 +156,18 @@ if (!capability) {
     const a = fixture(),
       { s, instance, item, target, view } = a;
     reviewOptimizationRuntime(s, item, capability, s.document);
+    const authored = f.current(s.document, item);
+    s.applyCommands([
+      {
+        kind: "revise",
+        item,
+        revision: {
+          ...authored,
+          id: "legacy-optimization-settings",
+          schema: "canvas-model-optimization@1",
+        },
+      },
+    ]);
     const initial = f.current(s.document, instance),
       before = s.document;
     const settled = await s.compute(target).completion;
@@ -169,6 +210,101 @@ if (!capability) {
     const badInput = structuredClone(input);
     badInput.request.program.nodes[0] = { op: "const", value: 5 };
     assert.throws(() => modelOptimizations.validateInput(badInput));
+    // Sampling is an explicit ordinary request from the exact reviewed capture, not live inputs.
+    const callsBeforeResponse = calls;
+    setModelInput(s, instance, "x", 123);
+    const sampled = computeOptimizationResponse(s, view, receipt);
+    const responseDone = await sampled.job.completion;
+    assert.equal(responseDone.status, "retained", responseDone.reason);
+    const responseRef = modelReference(s.document, sampled.item);
+    const responseResult = s.foundation.result(responseRef);
+    assert.equal(responseResult.status, "current");
+    const responseReceipt = responseResult.receipt;
+    assert.deepEqual(responseReceipt.snapshot.input.body, {
+      ...input.scalar,
+      points: 41,
+    });
+    assert.equal(
+      calls,
+      callsBeforeResponse,
+      "native captured sampling never launches SciPy",
+    );
+    assert.equal(responseReceipt.outcome.output.body.points.length, 41);
+    assert.equal(responseReceipt.outcome.output.body.points[0][1], 25);
+    const tamperedSeries = structuredClone(responseReceipt.outcome.output.body);
+    tamperedSeries.points.pop();
+    assert.throws(() =>
+      modelAnalyses.method.validateOutput(
+        responseReceipt.snapshot.input.body,
+        tamperedSeries,
+      ),
+    );
+    // Native annotations are evidence, not free-standing UI hints. Rewriting only
+    // markers leaves the projected sweep input unchanged and must still reject.
+    for (const mutate of [
+      (b) => {
+        b.target = b.target === null ? 1 : b.target + 1;
+      },
+      (b) => {
+        b.candidate =
+          b.candidate === b.capture.low ? b.capture.high : b.capture.low;
+      },
+      (b) => {
+        b.receipt = "missing-optimization-receipt";
+      },
+      (b) => {
+        b.source.item = sampled.item;
+      },
+      (b) => {
+        b.source.selection.revision = responseReceipt.snapshot.origin.revision;
+      },
+      (b) => {
+        b.capture.high += 1;
+      },
+      (b) => {
+        b.capture.inputs[b.capture.x.port].value += 1;
+        b.current += 1;
+      },
+    ]) {
+      const envelope = structuredClone(s.native());
+      const revision = Object.values(envelope.document.revisions).find(
+        (r) =>
+          r.item === sampled.item && r.schema === "canvas-model-response@1",
+      );
+      assert(revision);
+      mutate(revision.body);
+      await assert.rejects(() => stageWorkspaceFile(archive(envelope)));
+      assert.throws(() =>
+        s.applyCommands([
+          {
+            kind: "revise",
+            item: sampled.item,
+            revision: {
+              ...revision,
+              id: "tampered-response-" + crypto.randomUUID(),
+            },
+          },
+        ]),
+      );
+    }
+    const sampledNative = await stageWorkspaceFile(archive(s.native()));
+    assert.equal(sampledNative.executionDiagnostics.running, 0);
+    assert.deepEqual(
+      sampledNative.foundation.result(
+        modelReference(sampledNative.document, sampled.item),
+      ).receipt.outcome.output.body,
+      responseReceipt.outcome.output.body,
+    );
+    sampledNative.dispose();
+    const responseDb = canvasLocalStore(f.memoryBackend());
+    await responseDb.load();
+    await responseDb.save(s);
+    const responseRecovered = await responseDb.load();
+    assert(responseRecovered);
+    await responseDb.close();
+    s.undo(); // Explicit response request creation is one ordinary authored step.
+    s.undo(); // Restore pre-sampling live input.
+    assert.equal(f.current(s.document, instance), initial);
     const beforeApply = s.document;
     applyOptimizationCandidate(s, view, receipt, beforeApply);
     assert(
@@ -178,6 +314,13 @@ if (!capability) {
     assert.throws(() =>
       applyOptimizationCandidate(s, view, receipt, s.document),
     );
+    undoOptimizationApply(s, s.document);
+    assert.equal(f.current(s.document, instance), initial);
+    applyOptimizationCandidate(s, view, receipt, s.document);
+    const afterApply = s.document;
+    setModelInput(s, instance, "x", 7);
+    assert.throws(() => undoOptimizationApply(s, afterApply), /Later work/);
+    s.undo();
     s.undo();
     assert.equal(f.current(s.document, instance), initial);
     assert.equal(s.foundation.result(target).status, "current");
@@ -307,6 +450,19 @@ if (!capability) {
             modelOptimizations.validateOutput(r.snapshot.input.body, bad),
           );
         }
+      }
+      if (expectedCode === "domain_error") {
+        const stopped = computeOptimizationResponse(b.s, b.view, r);
+        assert.equal((await stopped.job.completion).status, "retained");
+        const failure = b.s.foundation.result(
+          modelReference(b.s.document, stopped.item),
+        );
+        assert.equal(failure.receipt.outcome.status, "failed");
+        assert.equal(
+          "output" in failure.receipt.outcome,
+          false,
+          "Failed sampling never fabricates a partial series",
+        );
       }
       if (!out.success)
         assert.throws(() =>

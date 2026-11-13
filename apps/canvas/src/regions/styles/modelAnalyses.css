@@ -33,3 +33,38 @@
 .ma-card details {
   overflow-wrap: anywhere;
 }
+/* Optimization uses measured native view frames, not hover-only controls. */
+[data-model-optimization] {
+  overflow-wrap: anywhere;
+}
+[data-model-optimization] header > strong {
+  min-width: 0;
+}
+[data-model-optimization] output {
+  font-size: 15px;
+}
+[data-model-optimization] textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 5em;
+}
+.optimization-editor label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.optimization-editor select,
+.optimization-editor input:not([type="checkbox"]) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.optimization-editor small {
+  overflow-wrap: anywhere;
+}
+.optimization-editor [aria-invalid="true"] {
+  border-color: #a43122;
+}
+.optimization-controls > summary {
+  cursor: pointer;
+}

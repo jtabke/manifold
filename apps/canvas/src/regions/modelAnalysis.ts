@@ -188,6 +188,49 @@ export function analysisInput(value: unknown): asserts value is AnalysisInput {
   );
   if (f.deeplyFrozen(value)) validated.add(value);
 }
+export type ResponseRequest = {
+  source: f.Reference;
+  receipt: string;
+  capture: AnalysisInput;
+  target: number | null;
+  current: number;
+  candidate: number | null;
+};
+export function responseRequest(v: unknown): asserts v is ResponseRequest {
+  f.assert(f.object(v), "Invalid response request");
+  f.fields(v, [
+    "source",
+    "receipt",
+    "capture",
+    "target",
+    "current",
+    "candidate",
+  ]);
+  f.validateReference(v.source);
+  f.assert(
+    v.source.selection.kind === "pin" &&
+      same(v.source.selector, f.wholeSelector),
+    "Response source must be pinned",
+  );
+  analysisInput(v.capture);
+  f.assert(
+    v.current === v.capture.inputs[v.capture.x.port]!.value &&
+      (v.candidate === null ||
+        (typeof v.candidate === "number" &&
+          v.candidate >= v.capture.low &&
+          v.candidate <= v.capture.high)),
+    "Response markers differ from capture",
+  );
+  f.assert(
+    typeof v.receipt === "string" &&
+      typeof v.current === "number" &&
+      Number.isFinite(v.current) &&
+      [v.target, v.candidate].every(
+        (n) => n === null || (typeof n === "number" && Number.isFinite(n)),
+      ),
+    "Invalid response markers",
+  );
+}
 export function createModelAnalyses(
   adapter: ReturnType<typeof f.createScalarModels>,
 ) {
@@ -451,5 +494,33 @@ export function createModelAnalyses(
       points,
     };
   };
-  return { schema, method, execute, evaluator };
+  // Fixed optimization-response requests contain the exact reviewed scalar capture.
+  // They use the existing sweep method/executor and ordinary receipt/native closure.
+  const frozenSchema: f.Schema = {
+    id: "canvas-model-response@1",
+    validate: responseRequest,
+    evidence(body) {
+      responseRequest(body);
+      return [body.receipt];
+    },
+    references(body) {
+      responseRequest(body);
+      return [body.source];
+    },
+    assets: () => [],
+    project(body, selector) {
+      responseRequest(body);
+      if (!same(selector, f.wholeSelector))
+        return { status: "unsupported", reason: "Inspect the whole response" };
+      return {
+        type: "typed-request@1",
+        value: {
+          method: analysisMethodRef,
+          input: { schema: method.input, body: json(body.capture) },
+          output: method.output,
+        },
+      };
+    },
+  };
+  return { schema, frozenSchema, method, execute, evaluator };
 }

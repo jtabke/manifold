@@ -5,6 +5,7 @@ import {
   CANVAS_NATIVE_LIMITS,
 } from "./app/canvasStorageBudget.ts";
 import { SharedMap } from "@manifold/foundation";
+import { validateOptimizationResponses } from "./modelOptimizationCommands.ts";
 import { validArtifactReceipt } from "./artifactRecords.ts";
 import {
   legacyCanvasLoaded,
@@ -615,6 +616,10 @@ async function readWorkspace(
   );
   foundation = preparedScene.loaded;
   validateCanvasDocument(foundation.document);
+  validateOptimizationResponses(
+    foundation.document,
+    new Map(foundation.receipts.map((receipt) => [receipt.id, receipt])),
+  );
   canvasSerial(foundation.document);
   if (admit)
     new CanvasStorageBudget().check(

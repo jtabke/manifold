@@ -13,7 +13,11 @@ import {
   OPTIMIZER_VERSION,
   type NumericProgram,
 } from "./optimizationLowering.ts";
-export const MODEL_OPTIMIZATION = "canvas-model-optimization@1";
+import { optimizationConvert } from "./optimizationQuantities.ts";
+export const MODEL_OPTIMIZATION = "canvas-model-optimization@2";
+export const LEGACY_OPTIMIZATION = "canvas-model-optimization@1";
+export const isOptimizationSchema = (schema: string | undefined) =>
+  schema === MODEL_OPTIMIZATION || schema === LEGACY_OPTIMIZATION;
 export const OPTIMIZATION_RENDERER = "canvas-model-optimization-view@1";
 export const optimizationMethodRef = {
   id: "manifold.model-optimization",
@@ -32,6 +36,7 @@ export type OptimizationSpec = Omit<Sweep, "points"> & {
   target: number | null;
   xTolerance: number;
   residualTolerance: number | null;
+  displayUnits?: { input: string; output: string };
 };
 export type OptimizationRequest = OptimizationSpec &
   Pick<AnalysisRequest, "instance" | "inputs"> & { backend: Backend | null };
@@ -134,7 +139,19 @@ export function optimizationRequest(
     "instance",
     "inputs",
     "backend",
+    ...(Object.hasOwn(v, "displayUnits") ? ["displayUnits"] : []),
   ]);
+  if (v.displayUnits !== undefined) {
+    f.assert(f.object(v.displayUnits), "Invalid display units");
+    f.fields(v.displayUnits, ["input", "output"]);
+    f.assert(
+      typeof v.displayUnits.input === "string" &&
+        typeof v.displayUnits.output === "string",
+      "Invalid display units",
+    );
+    optimizationConvert(1, v.displayUnits.input, v.displayUnits.input);
+    optimizationConvert(1, v.displayUnits.output, v.displayUnits.output);
+  }
   const body = v as OptimizationRequest;
   analysisRequest({
     input: body.input,
@@ -148,11 +165,21 @@ export function optimizationRequest(
   if (body.backend !== null) backendIdentity(body.backend);
 }
 export async function optimizationCapability(): Promise<Backend> {
+  const unavailable = () => {
+    throw Error(
+      "Runtime unavailable. Start the optional supported numerical server, then Run again; settings remain editable.",
+    );
+  };
   const response = await fetch("/api/optimizer/capability", {
     cache: "no-store",
-  });
-  const body = await response.json();
-  f.assert(response.ok, body.error || "Numerical environment unavailable");
+  }).catch(unavailable);
+  const body = await response.json().catch(unavailable);
+  f.assert(
+    response.ok,
+    response.status === 429
+      ? "Numerical workers are busy; try Run again later."
+      : "Runtime unavailable. The optional supported SciPy environment is required; settings remain editable.",
+  );
   backendIdentity(body.backend);
   return body.backend;
 }
@@ -400,6 +427,10 @@ export function createModelOptimizations(
       const scalar = (
         projected.value as unknown as { input: { body: AnalysisInput } }
       ).input.body;
+      if (body.displayUnits) {
+        optimizationConvert(1, scalar.x.unit, body.displayUnits.input);
+        optimizationConvert(1, scalar.y.unit, body.displayUnits.output);
+      }
       const program = lowerOptimization(scalar);
       const input: OptimizationInput = {
         scalar,
@@ -473,5 +504,23 @@ export function createModelOptimizations(
       signal.removeEventListener("abort", cancel);
     }
   };
-  return { schema, method, execute, validateInput, validateOutput };
+  const legacySchema: f.Schema = {
+    ...schema,
+    id: LEGACY_OPTIMIZATION,
+    validate(v) {
+      f.assert(
+        f.object(v) && !Object.hasOwn(v, "displayUnits"),
+        "Legacy settings cannot contain display units",
+      );
+      optimizationRequest(v);
+    },
+  };
+  return {
+    schema,
+    legacySchema,
+    method,
+    execute,
+    validateInput,
+    validateOutput,
+  };
 }

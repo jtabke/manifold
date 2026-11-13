@@ -424,20 +424,36 @@ function AnalysisCapture({
     </details>
   );
 }
-function AnalysisSeries({
+export function AnalysisSeries({
   series,
   receipt,
+  markers,
 }: {
   series: AnalysisOutput;
   receipt: string;
+  markers?: {
+    current: number;
+    candidate: number | null;
+    target: number | null;
+  };
 }) {
   const [selected, setSelected] = useState(0),
     page = Math.floor(selected / 25),
     start = page * 25;
   const maxAbs = Math.max(1, ...series.points.map((p) => Math.abs(p[1]))),
     ys = series.points.map((p) => p[1] / maxAbs);
-  const min = Math.min(...ys),
-    max = Math.max(...ys),
+  const min = Math.min(
+      ...ys,
+      ...(markers?.target !== null && markers?.target !== undefined
+        ? [markers.target / maxAbs]
+        : []),
+    ),
+    max = Math.max(
+      ...ys,
+      ...(markers?.target !== null && markers?.target !== undefined
+        ? [markers.target / maxAbs]
+        : []),
+    ),
     span = max - min || 1;
   const x = (n: number) =>
     52 +
@@ -468,12 +484,66 @@ function AnalysisSeries({
         }}
       >
         <path d="M52 30V180H462" fill="none" stroke="currentColor" />
-        <polyline
-          fill="none"
-          stroke="#267f78"
-          strokeWidth="2"
-          points={series.points.map((p) => `${x(p[0])},${y(p[1])}`).join(" ")}
-        />
+        {markers ? (
+          <>
+            {series.points.map((p, i) => (
+              <circle
+                key={i}
+                cx={x(p[0])}
+                cy={y(p[1])}
+                r="2.5"
+                fill="#267f78"
+              />
+            ))}
+            {(
+              [
+                ["Current", markers.current],
+                ["Candidate", markers.candidate],
+              ] as const
+            ).map(
+              ([label, value], i) =>
+                value !== null &&
+                value >= series.points[0]![0] &&
+                value <= series.points.at(-1)![0] && (
+                  <g key={label}>
+                    <path
+                      d={`M${x(value)} 40V180`}
+                      stroke="currentColor"
+                      strokeDasharray="4 4"
+                    />
+                    <text
+                      x={Math.max(52, Math.min(390, x(value)))}
+                      y={48 + i * 16}
+                    >
+                      {label}
+                    </text>
+                  </g>
+                ),
+            )}
+            {markers.target !== null && (
+              <g>
+                <path
+                  d={`M52 ${y(markers.target)}H462`}
+                  stroke="currentColor"
+                  strokeDasharray="2 4"
+                />
+                <text
+                  x="390"
+                  y={Math.max(70, Math.min(175, y(markers.target)))}
+                >
+                  Target
+                </text>
+              </g>
+            )}
+          </>
+        ) : (
+          <polyline
+            fill="none"
+            stroke="#267f78"
+            strokeWidth="2"
+            points={series.points.map((p) => `${x(p[0])},${y(p[1])}`).join(" ")}
+          />
+        )}
         <circle cx={x(point[0])} cy={y(point[1])} r="4" fill="#ad542c" />
         <text x="52" y="20">
           {series.y.label} ({series.y.unit})

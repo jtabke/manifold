@@ -502,37 +502,73 @@ for the design rationale.
 
 Choose **Optimize model** on a self-contained authored-model instance. Explicitly upgrade its
 arithmetic/function equations to scientific math v3 first; legacy v1/v2 semantics are not changed.
-Select one public numeric input/output, finite increasing closed bounds, and **Minimize**,
-**Maximize**, or **Solve target**. Bounds/input tolerance use the displayed input unit;
-target/residual tolerance use the displayed output unit. Equivalent authored unit literals normalize
-through the existing scalar engine. Source connections retain the existing exact-unit binding rules.
+Choose **Reach a target value**, **Make an output smaller**, or **Make an output larger**,
+then the output (and target), one public input to change, and its permitted closed range.
+The input's current effective value appears beside setup. Suggested bounds are not safe engineering
+bounds: edit or explicitly review them before saving. All other effective inputs stay fixed;
+additional constraints and multiple variables are not supported.
 
-**Create optimization** only authors settings. **Run optimization** explicitly reviews the optional
+Bounds, target and the numerical tolerances under **Advanced** accept quantity literals such as
+`10 mm` or `5 cm`. Bare numbers use the selected display unit. References, functions and arbitrary
+expressions are refused by the worksheet's literal-only grammar. Each field shows the value and
+admitted model unit that will be used; incompatible dimensions and invalid ranges are identified
+inline. Changing a compatible display unit preserves the physical settings; original checked receipts
+are not rewritten. Display choices travel in new version-2 settings; version-1 requests and receipts
+remain readable. Older readers must refuse required unknown version-2 settings, not reinterpret them.
+Input tolerance controls numerical search termination; target error tolerance is numerical, **not
+engineering acceptance or physical-validity proof**. Work limits are fixed at 500 evaluations,
+200 iterations and 5 seconds, not configurable controls.
+
+**Create optimization** only authors settings. Expand **Settings and actions** to Run or edit.
+**Run optimization** explicitly reviews the optional
 [SciPy runtime](../development/README.md#optional-numerical-runtime), freezes its identity in the
 request, and computes a fixed captured model and all other effective inputs/observations. Open,
-reload and rendering never launch numerical work. Missing/incompatible runtimes and busy workers
-are explicit refusals, with no installation or alternate solver. **Cancel optimization** cancels
-through the shared scheduler and explicitly signals the owned numerical worker.
+reload and rendering never probe the runtime or launch work. Missing/incompatible runtimes leave
+the card editable with copyable optional setup guidance; no installation or alternate solver occurs.
+Busy workers are an explicit refusal. **Cancel optimization** cancels through the shared scheduler
+and explicitly signals the owned numerical worker.
 
-Inspect the candidate input/output/units, residual, convergence or controlled termination, work
-counts/limits, captured inputs/dependency revisions, program digest and runtime provenance.
-Min/max is a bounded **local search, not a global-optimum proof**, including closed endpoints.
-Solve target requires opposite endpoint residual signs or a satisfactory endpoint; there is no
-unbracketed root heuristic. Discontinuous sign changes that fail the actual residual tolerance
-are not successes. Domain and budget failures may retain a partial candidate, never an applicable
-success. No interval-wide continuity/domain or physical-validity proof is provided.
+The result leads with current-at-Run and proposed input values, resulting output and target error.
+A best candidate at a selected limit is identified, without automatic range expansion.
+Numerical work, tolerances, source revisions, program digest and runtime identity remain inspectable
+in disclosures. Min/max is a bounded **local search, not a global-optimum proof**.
+Target solving requires opposite endpoint residual signs or a satisfactory endpoint; a no-bracket
+result does not establish that no solution exists. **Check endpoint outputs** explicitly evaluates
+both selected limits using the same captured scalar model. Discontinuous sign changes that fail the
+actual residual tolerance are not successes. Domain/work-limit failures may retain an **unconfirmed**
+candidate, never an applicable success. Domain failure messages do not invent a failed expression
+when the runtime has not identified one. No continuity/domain or physical-validity proof is provided.
 
-**Apply candidate** is a separate undoable edit after independent evaluation through the captured
-scalar engine. It requires the same current baseline receipt and exact reviewed work, no preview
-and finished valid edit buffers. If connected, **Replace source with candidate** explicitly warns
-that a literal replaces the source connection; Undo restores the exact prior connection. Applying
-makes the prior result noncurrent but retains its evidence. Edited/deleted inputs, sources, requests,
-changed references and kept results cannot authorize stale Apply. **Keep optimization** preserves
-the capture/evidence without applying. Native export and local reload retain evidence, not jobs.
+**Apply change** is a separate undoable edit after independent captured scalar evaluation.
+The adjacent note gives the exact literal replacement and warns if it disconnects a source.
+It requires the same current baseline receipt and exact reviewed work, no preview and finished valid
+edit buffers. The confirmation offers **Undo this change**, restoring the exact former literal or
+connection through ordinary history, in one authored step. Later authored work, preview or a changed
+document disables that local shortcut and directs you to global Undo; it never undoes unrelated work.
+The result remains inspectable as evidence from before the change. After reload, noncurrent evidence
+is described as captured before current settings; no new session-local direct Undo is invented.
+Edited/deleted inputs, sources, requests, changed references and kept results cannot authorize stale
+Apply. **Keep result** preserves capture/evidence without applying.
 
-Phase 1 supports at most 16 optimization views, one variable, no constraints or new statistics scope,
-and only reviewed v3 scalar method families that lower to the bounded numeric DAG. Unrecognized
-or native method families are refused rather than approximated.
+**Compute response plot** is an additional explicit action, not a by-product of Run, selection,
+zoom or Open. It samples 41 points over the reviewed range with the installed scalar evaluator,
+from the **exact model, effective inputs and interpretation in the reviewed optimization receipt**,
+even if the live model has since changed. Current-at-Run, candidate, selected bounds and target are
+indicated; out-of-range current values remain in text rather than being drawn inside the bounds.
+Dots are checked samples, not a continuous curve, solver evaluation history or a global-optimality
+claim. If any sample fails, sampling stops and no partial curve is presented. A keyboard-accessible
+point table and selected-point output accompany the SVG. Sampling requests and checked evidence use
+the existing document/computation/native closure, not a renderer cache or sidecar. Local reload and
+native export preserve them without starting jobs. Creating a new response capture is an ordinary
+authored operation; repeating the same capture reuses its request. Viewing retained evidence does
+not make a stale optimization candidate applicable.
+
+At most 16 optimization views, one variable, no constraints or new statistics scope, and only
+reviewed v3 scalar method families that lower to the bounded numeric DAG are supported. Unrecognized
+or native method families are refused rather than approximated. Cards wrap long labels and use
+ordinary scrollable measured view frames; keyboard-accessible disclosures reveal controls without
+hover. Automated checks cover interaction mechanics, not human ease of use; human usability
+evaluation remains unperformed.
 
 ## Analyze a reusable model
 

@@ -44,6 +44,32 @@ captured input, 32 KiB output, 25 visible table rows and at most 201 curve point
 retained-document, receipt and native/recovery limits continue to apply. Requests whose interfaces
 become unavailable after a model update remain repairable and explicitly blocked.
 
+## Fixed optimization-response capture
+
+The optimization UX also installs required `canvas-model-response@1` requests. These
+contain the exact scalar capture from a reviewed optimization receipt, its receipt identifier,
+a pinned source-request revision, and current/candidate/target markers. The response schema
+projects that fixed capture directly to the **existing sweep method**, not through live instance
+references. Its ordinary receipt currency follows the fixed request; live model changes never
+substitute a different graph or effective input. Original optimization currency and Apply guards
+remain independent and authoritative.
+
+Creating/sampling is explicit (41 response points or two endpoints); Open, rendering, selection
+and point inspection never schedule it. Identical requests are reused. Failure at any point stops
+the whole series. The representation uses sample dots with a paged keyboard table, not an invented
+continuous curve or solver evaluation history. Requests, captures and receipts travel in the normal
+native/local closure; no sidecar, result cache, extra storage or history owner is introduced.
+A new capture request is one ordinary authored operation; computation does not mutate model inputs.
+
+Optimization settings use required `canvas-model-optimization@2` to retain compatible input/output
+display units alongside physical values in admitted model units. The installed legacy @1 schema
+continues to validate old settings strictly; numerical input/output method versions and old receipt
+semantics are unchanged. Literal entry reuses worksheet parsing, literal admission, dimension matching
+and scientific quantities. Unit display changes preserve stored physical values, including binary64
+values untouched by editing. The direct post-Apply Undo shortcut is session-local and requires the
+exact after-Apply document and no preview; later changes disable it rather than invoking unrelated
+global Undo. Ordinary Undo remains the sole history authority.
+
 ## Alternatives and costs
 
 Copying source equations into the worksheet loses instance identity and creates competing revisions.

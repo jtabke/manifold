@@ -1,5 +1,6 @@
 /** Guarded authored operations; Apply is separate from computation and one Undo step. */
 import * as f from "@manifold/foundation";
+import { canvasSchemas } from "./app/canvasDocument.ts";
 import type { RegionSession, Point } from "./document.ts";
 import {
   inspectModel,
@@ -9,6 +10,7 @@ import {
 import { AUTHORED_MODEL } from "./authoredModels.ts";
 import {
   MODEL_OPTIMIZATION,
+  isOptimizationSchema,
   OPTIMIZATION_RENDERER,
   optimizationRequest,
   optimizationSpec,
@@ -18,6 +20,155 @@ import {
   type OptimizationOutput,
 } from "./modelOptimization.ts";
 import { modelOptimizations } from "./foundationModels.ts";
+import type { OptimizationInput } from "./modelOptimization.ts";
+import { responseRequest, type ResponseRequest } from "./modelAnalysis.ts";
+import { optimizationConvert } from "./optimizationQuantities.ts";
+
+/** Bind authored and imported response annotations to independently checked retained evidence. */
+export function validateOptimizationResponses(
+  document: f.Document,
+  receipts: { get(id: string): f.Receipt | undefined },
+) {
+  const same = (a: unknown, b: unknown) =>
+    f.canonical(a as f.Json) === f.canonical(b as f.Json);
+  for (const [, revision] of document.revisions.entries()) {
+    if (revision.schema !== "canvas-model-response@1") continue;
+    responseRequest(revision.body);
+    const body = revision.body;
+    const receipt = receipts.get(body.receipt);
+    f.assert(
+      receipt?.kind === "typed@1" && receipt.outcome.status === "success",
+      "Response optimization evidence unavailable",
+    );
+    f.assert(
+      f.methodKey(receipt.snapshot.method) ===
+        f.methodKey(modelOptimizations.method.requirements) &&
+        body.source.document === document.document &&
+        body.source.document === receipt.snapshot.origin.document &&
+        body.source.item === receipt.snapshot.origin.item &&
+        body.source.selection.kind === "pin" &&
+        body.source.selection.revision === receipt.snapshot.origin.revision &&
+        same(body.source.selector, receipt.snapshot.origin.selector),
+      "Response source differs from optimization evidence",
+    );
+    const source = f.resolve(document, body.source);
+    f.assert(
+      source.status === "resolved" &&
+        isOptimizationSchema(source.revision.schema),
+      "Response optimization source unavailable",
+    );
+    modelOptimizations.validateOutput(
+      receipt.snapshot.input.body,
+      receipt.outcome.output.body,
+    );
+    const capture = receipt.snapshot.input.body as unknown as OptimizationInput;
+    const output = receipt.outcome.output.body as unknown as OptimizationOutput;
+    f.assert(
+      same(body.capture, { ...capture.scalar, points: body.capture.points }) &&
+        body.target === capture.request.target &&
+        body.current === capture.scalar.inputs[capture.scalar.x.port]!.value &&
+        body.candidate === (output.candidate?.x ?? null),
+      "Response capture or markers differ from optimization evidence",
+    );
+  }
+}
+
+/** Explicit sampling authors an immutable capture request, then uses the session scheduler. */
+export function computeOptimizationResponse(
+  session: RegionSession,
+  view: f.View,
+  receipt: f.TypedReceipt,
+  points = 41,
+) {
+  f.assert(
+    session.document.views.get(view.id) === view &&
+      !session.foundation.preview(),
+    "Close preview before computing a response",
+  );
+  f.assert(
+    [...session.foundation.evidence().entries()].some(
+      ([, r]) => r === receipt,
+    ) &&
+      receipt.snapshot.origin.item === view.reference.item &&
+      receipt.outcome.status === "success",
+    "Reviewed optimization evidence unavailable",
+  );
+  f.assert(
+    receipt.snapshot.origin.document === view.reference.document &&
+      f.methodKey(receipt.snapshot.method) ===
+        f.methodKey(modelOptimizations.method.requirements),
+    "Wrong optimization response source",
+  );
+  modelOptimizations.validateOutput(
+    receipt.snapshot.input.body,
+    receipt.outcome.output.body,
+  );
+  const capture = receipt.snapshot.input.body as unknown as OptimizationInput;
+  const output = receipt.outcome.output.body as unknown as OptimizationOutput;
+  const item = uid();
+  const body: ResponseRequest = {
+    source: {
+      ...view.reference,
+      selection: { kind: "pin", revision: receipt.snapshot.origin.revision },
+    },
+    receipt: receipt.id,
+    capture: { ...capture.scalar, points },
+    target: capture.request.target,
+    current: capture.scalar.inputs[capture.scalar.x.port]!.value,
+    candidate: output.candidate?.x ?? null,
+  };
+  responseRequest(body);
+  const existing = [...session.document.items.entries()].find(([id]) => {
+    const r = f.current(session.document, id);
+    return (
+      r?.schema === "canvas-model-response@1" &&
+      f.canonical(r.body) === f.canonical(body as unknown as f.Json)
+    );
+  });
+  if (existing)
+    return {
+      item: existing[0],
+      job: session.compute(
+        modelReference(session.document, existing[0]),
+        "baseline",
+      ),
+    };
+  session.applyCommands(
+    [
+      {
+        kind: "create",
+        item,
+        label: "Checked optimization response",
+        revision: {
+          item,
+          id: uid(),
+          schema: "canvas-model-response@1",
+          required: true,
+          body: body as unknown as f.Json,
+        },
+      },
+    ],
+    session.document,
+  );
+  return {
+    item,
+    job: session.compute(modelReference(session.document, item), "baseline"),
+  };
+}
+
+/** Never turn a result-local Undo into an unrelated global Undo. */
+export function undoOptimizationApply(
+  session: RegionSession,
+  applied: f.Document,
+) {
+  f.assert(
+    session.document === applied &&
+      session.canUndo &&
+      !session.foundation.preview(),
+    "Later work exists. Use global Undo to review history instead.",
+  );
+  session.undo();
+}
 const uid = () => "optimization-" + crypto.randomUUID();
 function bodyFor(
   session: RegionSession,
@@ -34,6 +185,23 @@ function bodyFor(
       definition.outputs[spec.output],
     "Select public ports of a self-contained authored model",
   );
+  if (spec.displayUnits) {
+    const inputNode = definition.nodes[definition.inputs[spec.input]!.node];
+    f.assert(inputNode?.kind === "input", "Input unavailable");
+    optimizationConvert(1, inputNode.unit, spec.displayUnits.input);
+    const got = f.project(
+      session.document,
+      modelReference(session.document, instance, f.modelPort(spec.output)),
+      canvasSchemas,
+      session.foundation.resources(),
+    );
+    f.assert(
+      got.status === "resolved",
+      "Output units unavailable; view the model",
+    );
+    f.scalar(got.projection.value);
+    optimizationConvert(1, got.projection.value.unit, spec.displayUnits.output);
+  }
   return {
     input: spec.input,
     output: spec.output,
@@ -43,6 +211,7 @@ function bodyFor(
     target: spec.target,
     xTolerance: spec.xTolerance,
     residualTolerance: spec.residualTolerance,
+    ...(spec.displayUnits ? { displayUnits: spec.displayUnits } : {}),
     backend,
     instance: modelReference(session.document, instance),
     inputs: Object.fromEntries(
@@ -104,7 +273,10 @@ export function reviseModelOptimization(
     "Work changed or preview active; reopen optimization settings",
   );
   const selected = f.current(expected, item);
-  f.assert(selected?.schema === MODEL_OPTIMIZATION, "Optimization unavailable");
+  f.assert(
+    selected && isOptimizationSchema(selected.schema),
+    "Optimization unavailable",
+  );
   optimizationRequest(selected.body);
   session.applyCommands(
     [
@@ -132,7 +304,10 @@ export function reviewOptimizationRuntime(
     "Work changed during runtime review; Run again",
   );
   const selected = f.current(expected, item);
-  f.assert(selected?.schema === MODEL_OPTIMIZATION, "Optimization unavailable");
+  f.assert(
+    selected && isOptimizationSchema(selected.schema),
+    "Optimization unavailable",
+  );
   optimizationRequest(selected.body);
   if (
     f.canonical(selected.body.backend as unknown as f.Json) !==
@@ -155,7 +330,10 @@ export function applyOptimizationCandidate(
     "Apply requires the exact reviewed baseline document and view, with no preview",
   );
   const selected = f.current(expected, view.reference.item);
-  f.assert(selected?.schema === MODEL_OPTIMIZATION, "Optimization deleted");
+  f.assert(
+    selected && isOptimizationSchema(selected.schema),
+    "Optimization deleted",
+  );
   optimizationRequest(selected.body);
   const result = session.foundation.result(view.reference, "baseline");
   f.assert(
@@ -213,7 +391,7 @@ export function validateOptimizationViews(document: f.Document) {
     const got = f.resolve(document, view.reference, context);
     f.assert(
       got.status === "resolved" &&
-        got.revision.schema === MODEL_OPTIMIZATION &&
+        isOptimizationSchema(got.revision.schema) &&
         view.reference.selection.kind === "follow" &&
         f.canonical(view.reference.selector) === f.canonical(f.wholeSelector),
       "Invalid optimization view",
