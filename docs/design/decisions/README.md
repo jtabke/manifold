@@ -88,7 +88,7 @@ contexts require retained identity, and a reliable Keep/Undo requires one owner.
 | [0036: Model-backed analysis requests](0036-model-backed-analysis-requests.md) | Bounded scalar sweeps over exact instance/source captures, shared typed execution, table/curve representations and portable kept analyses. | Accepted for single-input self-contained model analysis, 2026-10-28. |
 | [0037: Bounded incremental worksheet derivation](0037-bounded-incremental-worksheet-derivation.md) | Shared prepared expression evaluation, bounded disposable projections/curves, immutable results and current-handler mathematical subtree reuse. | Accepted for the existing 256-region application, 2026-10-28. |
 
-| [0038: Versioned scientific scalar math](0038-versioned-scientific-scalar-math.md) | Restricted Math.js numerical/unit operations, explicit source versions and plain quantities across worksheets, models, sampling and native V8. | Accepted for the bounded scientific scalar slice. |
+| [0038: Versioned scientific scalar math](0038-versioned-scientific-scalar-math.md) | Restricted Math.js numerical/unit operations, explicit source versions and plain quantities across worksheets, models, sampling and native V9 and approved v3 authoring/explicit upgrades. | Accepted for the bounded scientific scalar slice. |
 
 | [0039: Live canvas assistant](0039-live-canvas-assistant.md) | Optional restricted Pi companion, browser-owned proposals and approval-only atomic live edits. | Accepted for the experimental local assistant slice. |
 

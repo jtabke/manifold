@@ -52,6 +52,7 @@ const ownedSchemas = new Set([
   "canvas-workspace@1",
   "canvas-workspace@2",
   "canvas-record@1",
+  "canvas-record@2",
   "canvas-artifact@1",
   "canvas-artifact@2",
   "canvas-sampling-plan@1",
@@ -362,6 +363,16 @@ export const canvasSchemas = f.createSchemas([
     },
   },
   {
+    id: "canvas-record@2",
+    validate: record,
+    references: () => [],
+    assets: () => [],
+    project(body) {
+      record(body);
+      return { type: "canvas-record", value: body.value! };
+    },
+  },
+  {
     id: "canvas-record@1",
     validate: record,
     references(body) {
@@ -421,7 +432,9 @@ export function canvasPage(doc: f.Document): Page {
           r?.schema ===
             (group === "calculations"
               ? "canvas-calculation@1"
-              : "canvas-record@1"),
+              : r?.schema === "canvas-record@2"
+                ? "canvas-record@2"
+                : "canvas-record@1"),
           "Missing canvas record",
         );
         if (group === "calculations") calculationRecord(r.body);
@@ -793,7 +806,11 @@ function commands(
                 : "canvas-artifact@1"
               : id.startsWith("sampling:")
                 ? samplingPlanSchema.id
-                : "canvas-record@1",
+                : f.object(body) &&
+                    f.object(body.value) &&
+                    body.value.mathVersion === 3
+                  ? "canvas-record@2"
+                  : "canvas-record@1",
       required: true,
       body,
     };

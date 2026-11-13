@@ -51,9 +51,7 @@ const raw = {
     ],
     code_sha256: createHash("sha256").update(job.code).digest("hex"),
     runtime: {
-      adapter: job.definitions.some((r) => r.mathVersion === 2)
-        ? "bounded-python-sampler/2"
-        : "bounded-python-sampler/1",
+      adapter: `bounded-python-sampler/${Math.max(1, ...job.definitions.map((r) => r.mathVersion ?? 1))}`,
       python: "test",
     },
   },
@@ -149,7 +147,7 @@ const pin = receipt.sources[0].reference;
 assert.equal(f.resolve(owner.document, pin).status, "resolved");
 assert.throws(() => prepare(owner.page, a, owner.document), /source revision/);
 const wire = archive(owner.native());
-assert.equal(JSON.parse(wire).version, 8);
+assert.equal(JSON.parse(wire).version, 9);
 assert.equal((wire.match(/zzzzzzzzzz/g) || []).length > 0, true);
 const portable = await decodeWorkspace(wire),
   reopened = testSession(

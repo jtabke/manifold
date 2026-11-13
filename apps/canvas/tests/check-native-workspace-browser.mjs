@@ -147,7 +147,7 @@ try {
   const download = await downloadEvent;
   expect(download.suggestedFilename()).toBe("manifold-workspace.manifold");
   const bytes = await readFile(await download.path(), "utf8");
-  expect(JSON.parse(bytes).version).toBe(8);
+  expect(JSON.parse(bytes).version).toBe(9);
   expect((await decodeWorkspace(bytes)).document.document).toBe(
     opened.document.document,
   );

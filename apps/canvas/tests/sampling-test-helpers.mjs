@@ -39,9 +39,7 @@ export async function sampleOutput(job) {
     points,
     code_sha256: await sourceHash(job.code),
     runtime: {
-      adapter: job.definitions.some((r) => r.mathVersion === 2)
-        ? "bounded-python-sampler/2"
-        : "bounded-python-sampler/1",
+      adapter: `bounded-python-sampler/${Math.max(1, ...job.definitions.map((r) => r.mathVersion ?? 1))}`,
       python: "test",
     },
   };

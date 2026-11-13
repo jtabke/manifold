@@ -314,6 +314,11 @@ function host(session: RegionSession, ownsSession = true) {
         edits.enableScientificMath(item),
       );
     },
+    enableScientificMathV3(item: string, expectedDocumentId: string) {
+      return transaction(expectedDocumentId, (edits) =>
+        edits.enableScientificMathV3(item),
+      );
+    },
     createNote(
       text: string,
       expectedDocumentId: string,

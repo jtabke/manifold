@@ -25,7 +25,7 @@ try {
   const capabilities = agentCapabilities();
   roundtrip(capabilities);
   assert.equal(capabilities.execution.sampling, false);
-  assert.equal(capabilities.editSchema.properties.edits.items.oneOf.length, 7);
+  assert.equal(capabilities.editSchema.properties.edits.items.oneOf.length, 8);
   assert.ok(
     capabilities.editSchema.properties.edits.items.oneOf.some(
       (s) => s.properties.operation.const === "enableScientificMath",

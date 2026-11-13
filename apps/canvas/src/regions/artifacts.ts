@@ -236,7 +236,7 @@ export function prepare(
     // Lower complete v2 literals in canonical units, including affine Celsius offsets.
     // Keep historical emitted code and checked captures byte-for-byte unchanged.
     if (
-      p.statements.get(owner)?.mathVersion === 2 &&
+      (p.statements.get(owner)?.mathVersion ?? 1) >= 2 &&
       (quantityLiteral(node) ||
         (node.kind === "name" && references(node).length === 0))
     )
@@ -453,9 +453,7 @@ export function acceptCapturedData(
     data.points.length > 501 ||
     !/^[a-f0-9]{64}$/.test(data.code_sha256) ||
     data.runtime?.adapter !==
-      (job.definitions.some((r) => r.mathVersion === 2)
-        ? "bounded-python-sampler/2"
-        : "bounded-python-sampler/1") ||
+      `bounded-python-sampler/${Math.max(1, ...job.definitions.map((r) => r.mathVersion ?? 1))}` ||
     typeof data.runtime.python !== "string"
   )
     throw Error("Unsupported Python result.");
@@ -564,7 +562,10 @@ async function readWorkspace(
     results: ArtifactResult[] = [];
   if (
     object(value) &&
-    (value.version === 6 || value.version === 7 || value.version === 8)
+    (value.version === 6 ||
+      value.version === 7 ||
+      value.version === 8 ||
+      value.version === 9)
   ) {
     fields(
       value,
@@ -767,7 +768,8 @@ export function validateWorkspaceData(
         id(r.id) &&
         typeof r.text === "string" &&
         r.text.length <= 5000 &&
-        (r.mathVersion === undefined || r.mathVersion === 2) &&
+        (r.mathVersion === undefined ||
+          [2, 3].includes(r.mathVersion as number)) &&
         (r.label === undefined ||
           (typeof r.label === "string" && r.label.length <= 160)) &&
         (r.provisional === undefined || typeof r.provisional === "boolean") &&

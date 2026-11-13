@@ -32,6 +32,9 @@ try {
       "Fx := F*cos(theta)",
       "Fx >= 400 N",
       "L := sqrt(9 m^2)",
+      "C := cbrt(-8 m^3)",
+      "a := asin(0.5)",
+      "R := round(-1.5)",
     ]) {
       await editor.fill(text);
       await editor.press("Enter");
@@ -40,8 +43,15 @@ try {
     const result = page.locator('[data-result-for="Fx"]');
     await expect(result).toContainText("433.013 N");
     await expect(page.locator('[data-result-for="L"]')).toContainText("3 m");
+    await expect(page.locator('[data-result-for="C"]')).toContainText("-2 m");
+    await expect(page.locator('[data-result-for="R"]')).toContainText("-2");
+    await expect(page.locator("mroot")).toHaveCount(1);
+    await expect(page.locator("mroot mn").last()).toHaveText("3");
+    await expect(
+      page.locator("mi").filter({ hasText: /^arcsin$/ }),
+    ).toHaveCount(1);
     const saved = await readWorkspace(page);
-    expect(saved.page.regions.every((r) => r.mathVersion === 2)).toBe(true);
+    expect(saved.page.regions.every((r) => r.mathVersion === 3)).toBe(true);
     const theta = saved.page.regions.find(
       (r) => r.text === "theta := 30 deg",
     ).id;

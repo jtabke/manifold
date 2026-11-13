@@ -60,6 +60,7 @@ const names = [
   "check-linking.mjs",
   "check-math.mjs",
   "check-scientific-math.mjs",
+  "check-scientific-v3.mjs",
   "check-scientific-math-browser.mjs",
   "check-math-typesetting-browser.mjs",
   "check-incremental-worksheet.mjs",

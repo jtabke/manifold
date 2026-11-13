@@ -10,7 +10,7 @@ import type { HeadlessWorkspace } from "./headless.ts";
 import { HeadlessError } from "./headlessErrors.ts";
 import { modelFamilies } from "./regions/foundationModels.ts";
 import {
-  scientificFunctions,
+  functionsForVersion,
   scientificConstants,
   scientificUnits,
 } from "./notebook/scientific.ts";
@@ -29,6 +29,7 @@ const operations = {
   createEquation: { text, as: alias, at: position },
   updateEquation: { region: string, text },
   enableScientificMath: { region: string },
+  enableScientificMathV3: { region: string },
   createNote: { text, as: alias, at: position },
   updateNote: { region: string, text },
   createModel: { family: { enum: Object.keys(modelFamilies) }, as: alias },
@@ -42,6 +43,7 @@ const required = {
   createEquation: ["text"],
   updateEquation: ["region", "text"],
   enableScientificMath: ["region"],
+  enableScientificMathV3: ["region"],
   createNote: ["text"],
   updateNote: ["region", "text"],
   createModel: ["family"],
@@ -74,9 +76,10 @@ export function agentCapabilities() {
     },
     execution: { explicit: true, sampling: false, arbitraryCode: false },
     mathematics: {
-      defaultVersion: 2,
+      defaultVersion: 3,
+      supportedVersions: [1, 2, 3],
       historicalVersion: 1,
-      functions: Object.keys(scientificFunctions),
+      functions: Object.keys(functionsForVersion(3)),
       constants: Object.keys(scientificConstants),
       units: [...scientificUnits],
       realScalarsOnly: true,
@@ -227,6 +230,9 @@ export function editWorkspace(workspace: HeadlessWorkspace, payload: unknown) {
             target(edit.region as string),
             edit.text as string,
           );
+          break;
+        case "enableScientificMathV3":
+          editor.enableScientificMathV3(target(edit.region as string));
           break;
         case "enableScientificMath":
           editor.enableScientificMath(target(edit.region as string));

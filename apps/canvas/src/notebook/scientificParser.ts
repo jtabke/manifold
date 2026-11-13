@@ -2,7 +2,7 @@
 import type { Expression, Statement } from "./math.ts";
 import {
   scientificUnits,
-  scientificFunctions,
+  functionsForVersion,
   scientificConstants,
 } from "./scientific.ts";
 const oldUnits = new Set([
@@ -48,7 +48,8 @@ const literal = (e: Expression): boolean =>
     ["*", "/"].includes(e.op) &&
     literal(e.left) &&
     unitTree(e.right));
-export function parseScientific(text: string): Statement {
+export function parseScientific(text: string, version: 2 | 3 = 2): Statement {
+  const scientificFunctions = functionsForVersion(version);
   const raw = text
     .trim()
     .replaceAll("≤", "<=")
@@ -130,6 +131,19 @@ export function parseScientific(text: string): Statement {
           );
         return { kind: "call", name: token, args };
       }
+      if (version === 3 && Object.hasOwn(scientificFunctions, token))
+        throw Error(`Use parentheses and arguments for ${token}.`);
+      if (version === 3 && tokens[i] === "(") {
+        // Empty/multi-argument adjacency cannot be a scalar product. A single
+        // grouped expression remains ordinary juxtaposition, including x(y+1).
+        let nesting = 0;
+        for (let j = i; j < tokens.length; j++) {
+          if (tokens[j] === "(") nesting++;
+          if (tokens[j] === ")" && --nesting === 0) break;
+          if ((tokens[j] === "," && nesting === 1) || tokens[i + 1] === ")")
+            throw Error(`Unsupported scientific function ${token}.`);
+        }
+      }
       if (Object.hasOwn(scientificConstants, token))
         return { kind: "constant", name: token };
       return { kind: "name", name: token };
@@ -179,6 +193,6 @@ export function parseScientific(text: string): Statement {
     relation: relation as Statement["relation"],
     expression,
     raw: text,
-    mathVersion: 2,
+    mathVersion: version,
   };
 }

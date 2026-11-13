@@ -69,7 +69,7 @@ export type Point = { x: number; y: number };
 export type Region = {
   id: string;
   text: string;
-  mathVersion?: 2;
+  mathVersion?: 2 | 3;
   label?: string;
   provisional?: boolean;
   requirement?: boolean;
@@ -631,7 +631,7 @@ export class RegionSession {
       id = `region-${crypto.randomUUID()}`;
     if (!next.regions.length && at) next.origin = at;
     else if (at) edit.layout[id] = at;
-    next.regions = [...next.regions, { id, text: "", mathVersion: 2 }];
+    next.regions = [...next.regions, { id, text: "", mathVersion: 3 }];
     if (scope) edit.model(scope)?.members.push(id);
     this.apply(next);
     return id;
@@ -828,13 +828,20 @@ export class RegionSession {
     this.apply(next);
     return id;
   }
+  /** Compatibility API: explicitly enables v2, never downgrades v3. */
   enableScientificMath(id: string) {
+    this.upgradeMath(id, 2);
+  }
+  enableScientificMathV3(id: string) {
+    this.upgradeMath(id, 3);
+  }
+  private upgradeMath(id: string, version: 2 | 3) {
     const edit = new PageEdit(this.state),
       region = edit.region(id);
     if (!region || region.data || region.external || region.source)
       throw Error("Choose a plain worksheet equation.");
-    if (region.mathVersion === 2) return;
-    region.mathVersion = 2;
+    if ((region.mathVersion ?? 1) >= version) return;
+    region.mathVersion = version;
     this.apply(edit.page, true);
   }
   quantityFromCell(
@@ -860,7 +867,7 @@ export class RegionSession {
       {
         id,
         text: value.text,
-        mathVersion: 2,
+        mathVersion: 3,
         source: { dataset, row, column, raw: value.raw, unit: value.unit },
       },
     ];
@@ -935,8 +942,11 @@ export class RegionSession {
       !!effective(next)
         .find((r) => r.id === id)
         ?.text.trim() &&
-      (mathematical(text) ||
-        mathematical(effective(next).find((r) => r.id === id)?.text || ""))
+      (mathematical(text, region.mathVersion ?? 1) ||
+        mathematical(
+          effective(next).find((r) => r.id === id)?.text || "",
+          region.mathVersion ?? 1,
+        ))
     ) {
       const p = project(next);
       const before = p.statements.get(id);
@@ -975,7 +985,9 @@ export class RegionSession {
               text: text.trim(),
               x: 0,
               y: 0,
-              ...(region.mathVersion === 2 ? { mathVersion: 2 as const } : {}),
+              ...(region.mathVersion
+                ? { mathVersion: region.mathVersion }
+                : {}),
             },
           ]).values.get(after.name);
         if (
@@ -1067,7 +1079,7 @@ export class RegionSession {
         next.regions.splice(index + 1, 0, {
           id: nextId,
           text: "",
-          mathVersion: 2,
+          mathVersion: 3,
         });
       }
       if (next.layout[id]) {

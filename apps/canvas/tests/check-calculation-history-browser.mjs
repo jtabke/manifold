@@ -157,7 +157,7 @@ try {
   const download = await event,
     bytes = await readFile(await download.path(), "utf8"),
     decoded = await decodeWorkspace(bytes);
-  expect(JSON.parse(bytes).version).toBe(8);
+  expect(JSON.parse(bytes).version).toBe(9);
   expect(
     decoded.page.calculations
       .map((c) => c.snapshot.values.F.value)

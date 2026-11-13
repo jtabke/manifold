@@ -11,6 +11,11 @@ import {
   mathSource,
 } from "../src/notebook/math.ts";
 import { mathSource as spans } from "../src/regions/editing.ts";
+import {
+  scientificScalarCall,
+  v3ScalarFunctions,
+  scientificFunctions,
+} from "../src/notebook/scientific.ts";
 import { engineeringValue } from "../src/regions/systemExploration.ts";
 import { RegionSession, project, curve } from "../src/regions/document.ts";
 import { proposeValue, previewPage } from "../src/regions/exploration.ts";
@@ -77,6 +82,92 @@ for (const [text, expected, dimension] of [
   close(q.value, expected);
   assert.ok(same(q.dimension, dimension), text);
 }
+// Staged numerical kernels. These names MUST NOT enter the saved v2 grammar:
+// existing source uses them as ordinary variables and juxtaposition products.
+const candidate = (name, text) =>
+  evaluate(
+    parse(`result = ${name}(${text})`, undefined, 3).expression,
+    resolveNone,
+    3,
+  );
+for (const [name, input, expected, dimension] of [
+  ["asin", "0.5", Math.PI / 6, [0, 0, 0, 0, 0, 0, 0, 1]],
+  ["asin", "-1", -Math.PI / 2, [0, 0, 0, 0, 0, 0, 0, 1]],
+  ["acos", "-1", Math.PI, [0, 0, 0, 0, 0, 0, 0, 1]],
+  ["acos", "1", 0, [0, 0, 0, 0, 0, 0, 0, 1]],
+  ["atan", "1", Math.PI / 4, [0, 0, 0, 0, 0, 0, 0, 1]],
+  ["atan", "-1", -Math.PI / 4, [0, 0, 0, 0, 0, 0, 0, 1]],
+  ["sinh", "1", Math.sinh(1), [0, 0, 0, 0]],
+  ["cosh", "-1", Math.cosh(-1), [0, 0, 0, 0]],
+  ["tanh", "-2", Math.tanh(-2), [0, 0, 0, 0]],
+  ["tanh", "1000", 1, [0, 0, 0, 0]],
+  ["floor", "-1.2", -2, [0, 0, 0, 0]],
+  ["ceil", "-1.2", -1, [0, 0, 0, 0]],
+  ["round", "-1.5", -2, [0, 0, 0, 0]],
+  ["round", "1.5", 2, [0, 0, 0, 0]],
+  ["round", "-0.5", -1, [0, 0, 0, 0]],
+  ["round", "2.49", 2, [0, 0, 0, 0]],
+  ["cbrt", "-8", -2, [0, 0, 0, 0]],
+  ["cbrt", "0", 0, [0, 0, 0, 0]],
+  ["cbrt", "-8 m^3", -2, [0, 1, 0, 0]],
+  ["cbrt", "8 cm^3", 0.02, [0, 1, 0, 0]],
+  ["cbrt", "8 m", 2, [0, 1 / 3, 0, 0]],
+  ["cbrt", "8 m^3/s^3", 2, [0, 1, -1, 0]],
+  ["cbrt", "8 K^3", 2, [0, 0, 0, 1]],
+]) {
+  const q = candidate(name, input);
+  close(q.value, expected);
+  assert.ok(same(q.dimension, dimension), `${name}(${input})`);
+}
+for (const name of Object.keys(v3ScalarFunctions)) {
+  assert.equal(Object.hasOwn(scientificFunctions, name), false);
+  assert.throws(() => candidate(name, "25 degC"), /absolute Celsius/);
+  for (const value of [Infinity, -Infinity, NaN])
+    assert.throws(
+      () => scientificScalarCall(name, { value, dimension: [0, 0, 0, 0] }),
+      /finite real/,
+    );
+  if (name !== "cbrt")
+    for (const input of ["1 m", "1 rad", "1 deg", "1 K"])
+      assert.throws(() => candidate(name, input), /dimensionless/);
+  const saved = parse(`y = ${name}(x+1)`, undefined, 2);
+  assert.deepEqual(references(saved.expression), [name, "x"]);
+  assert.equal(saved.expression.kind, "binary");
+  assert.equal(saved.expression.op, "*");
+  const locations = spans(saved, saved.raw);
+  const productLocation = locations.expressions.get(saved.expression);
+  assert.equal(productLocation.operator.start, productLocation.operator.end);
+  assert.equal(
+    saved.raw.slice(
+      locations.expressions.get(saved.expression.left).span.start,
+      locations.expressions.get(saved.expression.left).span.end,
+    ),
+    name,
+  );
+  for (const mathVersion of [1, 2]) {
+    const solved = calculate(
+      [`${name} = 2`, "x = 3", `y = ${name}(x+1)`].map((text, i) => ({
+        id: String(i),
+        text,
+        x: 0,
+        y: 0,
+        ...(mathVersion === 2 ? { mathVersion } : {}),
+      })),
+    );
+    assert.equal(solved.errors.size, 0, `${name}, v${mathVersion}`);
+    assert.equal(solved.values.get("y").value, 8);
+  }
+}
+for (const name of ["asin", "acos"])
+  for (const input of ["1.000000000001", "-1.000000000001"])
+    assert.throws(() => candidate(name, input), /from −1 to 1/);
+for (const name of ["sinh", "cosh"])
+  assert.throws(() => candidate(name, "1000"), /finite real/);
+assert.throws(
+  () => scientificScalarCall("constructor", expression("1")),
+  /Unsupported scalar function/,
+);
+
 for (const text of [
   "ln(0)",
   "sqrt(-1)",
@@ -181,8 +272,12 @@ const sampler = (job) =>
         input: JSON.stringify({
           code: job.code,
           inputs: job.inputs,
-          ...(job.definitions.some((r) => r.mathVersion === 2)
-            ? { mathVersion: 2 }
+          ...(job.definitions.some((r) => r.mathVersion)
+            ? {
+                mathVersion: Math.max(
+                  ...job.definitions.map((r) => r.mathVersion ?? 1),
+                ),
+              }
             : {}),
         }),
         encoding: "utf8",
@@ -197,12 +292,24 @@ for (const rows of [
   ],
   ["x = 60 degC", "y = x-25 degC"],
   ["A = 2 m^2", "y = 1 W/m^2*A"],
+  ...Object.keys(v3ScalarFunctions).map((name) => [
+    "x = 1",
+    `y = ${name}(x+1)`,
+    `${name} = 2`,
+  ]),
 ]) {
-  const fixture = new RegionSession();
-  for (const text of rows) {
-    const id = fixture.create();
-    assert.equal(fixture.write(id, text).ok, true);
-  }
+  const fixture = new RegionSession({
+    regions: rows.map((text, i) => ({
+      id: `saved-${i}`,
+      text,
+      mathVersion: 2,
+    })),
+    contexts: [{ id: "original", label: "Original", base: {}, overrides: {} }],
+    active: "original",
+    plots: [],
+    layout: {},
+    origin: { x: 0, y: 0 },
+  });
   const output = fixture.state.regions.find((r) => r.text === rows[1]).id;
   const artifact = makeArtifact(
     fixture.state,
@@ -235,6 +342,35 @@ for (const rows of [
   if (rows[0].startsWith("A")) {
     close(receipt.points[0][1], artifact.low);
     close(receipt.points.at(-1)[1], artifact.high);
+  }
+  if (rows.length === 3) {
+    // Persisted v2 names survive worksheet projection, model compilation and
+    // canonical Python lowering without being mistaken for new function calls.
+    close(receipt.points[0][1], 3);
+    close(receipt.points.at(-1)[1], 4);
+    assert.doesNotMatch(
+      captured.code,
+      /\b(?:asin|acos|atan|sinh|cosh|tanh|floor|ceil|round|cbrt)\(/,
+    );
+    const input = fixture.state.regions.find((r) => r.text === rows[0]).id;
+    const definition = publishModel(fixture, "Saved v2 name", {
+      rows: fixture.state.regions.map(mathSource),
+      inputs: [input],
+      outputs: [output],
+    });
+    const instance = instantiateModel(
+      fixture,
+      modelReference(fixture.document, definition),
+      { x: 0, y: 500 },
+    );
+    const projected = f.project(
+      fixture.document,
+      modelReference(fixture.document, instance, f.modelPort(output)),
+      canvasSchemas,
+      fixture.foundation.resources(),
+    );
+    assert.equal(projected.status, "resolved");
+    close(projected.projection.value.value, 4);
   }
   fixture.dispose();
 }
@@ -290,7 +426,7 @@ close(sampled.points[0].y, 500);
 close(sampled.points.at(-1).y, 0);
 const receipt = s.currentCalculation();
 validateWorksheetReceipt(receipt);
-assert.equal(receipt.method, "manifold-worksheet/2");
+assert.equal(receipt.method, "manifold-worksheet/3");
 const kept = s.keepCurrentCalculation("Original force projection");
 const corrupt = structuredClone(receipt);
 corrupt.method = "manifold-worksheet/1";
@@ -310,11 +446,11 @@ const samplingTarget = samplingReference(
 assert.equal((await s.compute(samplingTarget).completion).status, "retained");
 assert.equal(
   s.foundation.result(samplingTarget).receipt.snapshot.method.version,
-  "2",
+  "3",
 );
 assert.equal(
   s.artifacts[0].receipt.runtime.adapter,
-  "bounded-python-sampler/2",
+  "bounded-python-sampler/3",
 );
 close(s.artifacts[0].receipt.points[0][1], 500);
 close(s.artifacts[0].receipt.points.at(-1)[1], 0);
@@ -393,7 +529,7 @@ close(
 );
 assert.equal(
   reopened.state.calculations.find((c) => c.id === kept).snapshot.method,
-  "manifold-worksheet/2",
+  "manifold-worksheet/3",
 );
 assert.equal(
   reopened.foundation.result(modelReference(reopened.document, analysis))
@@ -412,7 +548,7 @@ close(
 );
 assert.equal(
   recovered.page.calculations.find((c) => c.id === kept).snapshot.version,
-  2,
+  3,
 );
 const oldDecoded = await decodeWorkspace(archive(historical.native()));
 const oldReopened = new RegionSession(
@@ -443,7 +579,7 @@ assert.ok(agentCapabilities().mathematics.functions.includes("cos"));
 const apiRound = await openHeadlessWorkspace(api.export());
 assert.equal(
   apiRound.worksheet().regions.find((r) => r.name === "Fx").mathVersion,
-  2,
+  3,
 );
 const oldApi = await openHeadlessWorkspace(archive(historical.native()));
 assert.equal(

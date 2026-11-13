@@ -154,7 +154,7 @@ assert.equal(
 
 // Real file staging and warm local recovery retain evidence/alternatives and start no computation.
 const bytes = archive(s.native());
-assert.equal(JSON.parse(bytes).version, 8);
+assert.equal(JSON.parse(bytes).version, 9);
 const loaded = await decodeWorkspace(bytes),
   opened = await stageWorkspaceFile(bytes);
 assert.equal(scalar(opened, a), 40);

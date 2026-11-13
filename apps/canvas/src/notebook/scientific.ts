@@ -18,6 +18,16 @@ import {
   minDependencies,
   maxDependencies,
   atan2Dependencies,
+  asinDependencies,
+  acosDependencies,
+  atanDependencies,
+  sinhDependencies,
+  coshDependencies,
+  tanhDependencies,
+  floorDependencies,
+  ceilDependencies,
+  roundDependencies,
+  cbrtDependencies,
   isUnit,
   type Unit,
 } from "mathjs";
@@ -41,6 +51,16 @@ const math = create(
     minDependencies,
     maxDependencies,
     atan2Dependencies,
+    asinDependencies,
+    acosDependencies,
+    atanDependencies,
+    sinhDependencies,
+    coshDependencies,
+    tanhDependencies,
+    floorDependencies,
+    ceilDependencies,
+    roundDependencies,
+    cbrtDependencies,
   },
   { number: "number", predictable: true, matrix: "Array" },
 );
@@ -96,6 +116,19 @@ export const scientificFunctions: Readonly<
   max: [2, 16],
   atan2: [2, 2],
 });
+export const v3ScalarFunctions = Object.freeze({
+  asin: true,
+  acos: true,
+  atan: true,
+  sinh: true,
+  cosh: true,
+  tanh: true,
+  floor: true,
+  ceil: true,
+  round: true,
+  cbrt: true,
+});
+
 export const scientificConstants: Readonly<Record<string, number>> =
   Object.freeze({ pi: Math.PI, e: Math.E });
 export function canonicalUnit(dimension: Dimension): string {
@@ -176,18 +209,49 @@ export function scientificBinary(
   }
   throw Error("Unsupported arithmetic operation.");
 }
+export function scientificScalarCall(
+  name: keyof typeof v3ScalarFunctions,
+  argument: Quantity,
+): Quantity {
+  if (!Object.hasOwn(v3ScalarFunctions, name))
+    throw Error("Unsupported scalar function.");
+  if (argument.absolute)
+    throw Error(
+      "Use temperature differences in functions, not absolute Celsius temperatures.",
+    );
+  finite(argument.value);
+  if (name === "cbrt") return plain(math.cbrt(operand(argument)));
+  if (argument.dimension.some((n) => n !== 0))
+    throw Error(`${name} needs a dimensionless argument.`);
+  const n = argument.value;
+  if ((name === "asin" || name === "acos") && (n < -1 || n > 1))
+    throw Error(`${name} needs an argument from −1 to 1.`);
+  const call = math[name] as unknown as (value: number) => unknown;
+  const result = plain(call(n));
+  return name === "asin" || name === "acos" || name === "atan"
+    ? plain(math.unit(result.value, "rad"))
+    : result;
+}
+
 export function scientificCall(
   name: string,
   args: readonly Quantity[],
+  version: 2 | 3 = 2,
 ): Quantity {
-  const arity = scientificFunctions[name];
+  const functions = functionsForVersion(version);
+  const arity = functions[name];
   if (
-    !Object.hasOwn(scientificFunctions, name) ||
+    !Object.hasOwn(functions, name) ||
     args.length < arity[0] ||
     args.length > arity[1]
   )
     throw Error(
       `Use ${arity?.[0] === arity?.[1] ? arity?.[0] : "2–16"} arguments for ${name}.`,
+    );
+  if (version === 3 && Object.hasOwn(v3ScalarFunctions, name))
+    return scientificScalarCall(
+      name as keyof typeof v3ScalarFunctions,
+      args[0],
     );
   if (args.some((q) => q.absolute))
     throw Error(
@@ -219,3 +283,15 @@ export function scientificCall(
   ) => unknown;
   return plain(call(...args.map(operand)));
 }
+
+/** v2 remains frozen: names added in v3 must not rebind saved juxtaposition. */
+const v3Functions = Object.freeze({
+  ...scientificFunctions,
+  ...Object.fromEntries(
+    Object.keys(v3ScalarFunctions).map((name) => [name, [1, 1] as const]),
+  ),
+});
+export const functionsForVersion = (
+  version: number,
+): typeof scientificFunctions =>
+  version >= 3 ? v3Functions : scientificFunctions;

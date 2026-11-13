@@ -47,9 +47,7 @@ function result(session, time = new Date().toISOString()) {
     ],
     code_sha256: createHash("sha256").update(job.code).digest("hex"),
     runtime: {
-      adapter: job.definitions.some((r) => r.mathVersion === 2)
-        ? "bounded-python-sampler/2"
-        : "bounded-python-sampler/1",
+      adapter: `bounded-python-sampler/${Math.max(1, ...job.definitions.map((r) => r.mathVersion ?? 1))}`,
       python: "test",
     },
   };
@@ -144,7 +142,7 @@ for (const text of [
     native = archive(staged.native()),
     wire = JSON.parse(native),
     decoded = await decodeWorkspace(native);
-  assert.equal(wire.version, 8);
+  assert.equal(wire.version, 9);
   assert.equal(wire.artifacts, undefined);
   assert.equal(wire.page, undefined);
   assert.deepEqual(decoded.page, initial.page);

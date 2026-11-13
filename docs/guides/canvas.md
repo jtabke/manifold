@@ -175,7 +175,8 @@ when the recipient needs the engineering document.
 ## Scientific scalar math
 
 New equations support `sqrt`, `abs`, `sin`, `cos`, `tan`, `exp`, `ln`, `log10`,
-`min`, `max`, `atan2`, and constants `pi` and `e`. For example:
+`min`, `max`, `atan2`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`,
+`floor`, `ceil`, `round`, `cbrt`, and constants `pi` and `e`. For example:
 
 ```text
 theta := 30 deg
@@ -186,7 +187,12 @@ Fx >= 400 N
 
 The projected force is about 433.013 N. Angles are explicit quantities (`deg` or `rad`);
 trigonometric functions also accept dimensionless radians. `atan2(y, x)` accepts
-compatible quantities and returns radians. `sqrt(9 m^2)` returns 3 m. Functions reject
+compatible quantities and returns radians. Inverse trig functions require dimensionless
+inputs and return radians (`asin`/`acos` require [-1, 1]). Hyperbolic and rounding
+functions require dimensionless inputs; `round` ties go away from zero. Floor, ceil
+and round retain Math.js's numerical tolerance near integer/half boundaries
+(`relTol=1e-12`, `absTol=1e-15`), including in Python sampling.
+`cbrt(-8 m^3)` returns -2 m and divides dimension exponents by three. `sqrt(9 m^2)` returns 3 m. Functions reject
 incompatible units, non-real/non-finite results and absolute Celsius temperatures.
 The unit catalog includes the original engineering units plus `rad`, `deg`, `in`,
 `ft`, `lbf`, `Hz`, `ms`, `min`, `h`, `g`, `A`, `V`, `ohm`, `mol` and `cd`.
@@ -200,11 +206,14 @@ reusable models, model analyses and headless/CLI authoring—not just rendered n
 Arrays, complex numbers, user functions, solvers and symbolic operations are not supported.
 
 Saved equations retain their original mathematics rules. To opt an existing equation in,
-select it and choose **Use scientific math (v2)** in its context/search commands.
+select it and choose **Use scientific math (v3)** in its context/search commands.
 For reusable models, use the explicit scientific-math action on the equation row.
 Undo restores the old rules; already kept calculations retain their original interpretation.
-Automation exposes `mathVersion` in worksheet inspection and an `enableScientificMath`
-edit operation. New native files require a V8-capable reader; older files remain readable.
+Automation exposes `mathVersion` in worksheet inspection and an `enableScientificMathV3`
+edit operation. The older `enableScientificMath` operation remains a v2 opt-in,
+never a downgrade. Ordinary edits preserve the source version. V3 reserves its
+expanded function names; explicit upgrades can expose name collisions as diagnostics.
+New native files require a V9-capable reader; older files remain readable.
 
 ## Selection and overlapping work
 
@@ -288,7 +297,7 @@ alternatives, retained Undo and results for restorable artifacts.
 **Calculation history** separates temporary Recent states (128 entries / 8 MiB of accounted
 data) from explicitly Kept calculations. Keep/Remove use normal Undo, sources remain
 inspectable, and Kept data travels in native files. Opening or importing a workspace never
-starts computation. Current native captures use V8; older V1–V7 files are supported at import.
+starts computation. Current native captures use V9; older V1–V8 files are supported at import.
 
 ## Drawing and diagrams
 
@@ -357,7 +366,7 @@ a comparison through the card; Undo first reverts an active preview. Connect an 
 input to a reviewed public model port or an exact CSV observation (data row/column/declared unit).
 Connections do not establish physical equivalence or validity. Existing visual groups remain unchanged.
 
-Model-containing files use application V8, carrying scalar and sampler evidence/resources through the same core receipts;
+Model-containing files use application V9, carrying scalar and sampler evidence/resources through the same core receipts;
 local Save and recovery use the same capture. Open validates before adoption and starts no jobs.
 V1–V7 remain readable at import. Unfinished numeric drafts participate in
 file-transition finishing and guards; submitted previews stay transient.
@@ -366,7 +375,7 @@ file-transition finishing and guards; submitted previews stay transient.
 
 The application admits at most 256 worksheet regions and 64 model views, including kept
 comparisons. Retained document/evidence/resources are limited to 64 MiB conservative weight
-and 4,096 receipts. Local recovery is bounded to 64 MiB physical bytes; native V8 transport
+and 4,096 receipts. Local recovery is bounded to 64 MiB physical bytes; native V9 transport
 permits 128 MiB, with admission checked before Open. These are rejection limits, not heap,
 latency or engineering-validity promises.
 

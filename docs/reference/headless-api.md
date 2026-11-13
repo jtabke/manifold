@@ -47,6 +47,8 @@ to an open browser tab. Export returns the same native archive format used by th
 | `items()` | List current items with their current revision (not all historical revisions). |
 | `worksheet()` | Inspect effective worksheet text, classification, quantities, diagnostics, constraints and positions in the active worksheet context. |
 | `createEquation(text, expectedDocumentId, at?)` / `updateEquation(region, text, expectedDocumentId)` | Create/update mathematical worksheet source, including retained drafts. |
+| `enableScientificMath(region, expectedDocumentId)` | Explicit, undoable v2 opt-in; never downgrade v3. |
+| `enableScientificMathV3(region, expectedDocumentId)` | Explicit, undoable v3 opt-in; reserved-name collisions remain diagnostics. |
 | `createNote(text, expectedDocumentId, at?)` / `updateNote(region, text, expectedDocumentId)` | Create/update plain worksheet prose without silently interpreting it as mathematics. |
 | `transaction(expectedDocumentId, edits => value)` | Compose synchronous high-level worksheet/model edits into one publication and one Undo. Return the callback's value after successful publication. |
 | `models()` | Discover all current scalar model instances with public input/output metadata and computation requests. |
@@ -118,8 +120,12 @@ source. Both reject empty text and text over 5,000 characters. Updates target pl
 regions, not dataset/source-backed or external-reference records. An explicit update can
 convert a plain region between prose and mathematics; it does not create a new record type.
 
-The transaction callback receives only `createEquation`, `updateEquation`, `createNote`,
-`updateNote`, `createModel`, and `setModelInput`. They use the staged document and need no
+New equations use mathematics v3. Updates and imports preserve each region's version;
+`worksheet()` exposes `mathVersion` (1, 2 or 3). The agent/CLI/MCP edit schema exposes
+the same distinct `enableScientificMath` and `enableScientificMathV3` operations.
+
+The transaction callback receives `createEquation`, `updateEquation`, `createNote`,
+`updateNote`, `enableScientificMath`, `enableScientificMathV3`, `createModel`, and `setModelInput`. They use the staged document and need no
 individual document IDs. Do not call the live workspace, perform I/O, or start execution
 inside the callback. Calls to the live workspace (including nested transactions/disposal)
 are rejected. Returned promises/thenables are rejected as `INVALID_INPUT`; scoped editor

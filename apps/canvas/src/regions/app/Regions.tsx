@@ -2931,6 +2931,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         if (target.id) {
           session.enableScientificMath(target.id);
           setMessage(
+            "Scientific math v2 enabled. Undo restores its earlier rules.",
+          );
+        }
+        break;
+      case "mathematics.enable-v3":
+        if (target.id) {
+          session.enableScientificMathV3(target.id);
+          setMessage(
             "Scientific math enabled for this equation. Undo restores its earlier rules.",
           );
         }
@@ -3138,7 +3146,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 {
                   id: r.id,
                   text,
-                  ...(r.mathVersion === 2 ? { mathVersion: 2 as const } : {}),
+                  ...(r.mathVersion ? { mathVersion: r.mathVersion } : {}),
                 },
               ];
             } catch {
@@ -3160,7 +3168,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   {
                     id: "equation-" + crypto.randomUUID(),
                     text: "",
-                    mathVersion: 2,
+                    mathVersion: 3,
                   },
                 ],
             inputs,

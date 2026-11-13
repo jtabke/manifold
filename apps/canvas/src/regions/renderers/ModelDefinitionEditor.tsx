@@ -121,22 +121,23 @@ export function ModelDefinitionEditor({
         return (
           <fieldset key={row.id}>
             <legend>{name}</legend>
-            {row.mathVersion !== 2 && (
+            {row.mathVersion !== 3 && (
               <label>
                 <input
                   type="checkbox"
-                  aria-label={`Use scientific math for equation ${index + 1}`}
+                  aria-label={`Use scientific math v3 for equation ${index + 1}`}
                   checked={false}
                   onChange={() =>
                     setSource((s) => ({
                       ...s,
                       rows: s.rows.map((r) =>
-                        r.id === row.id ? { ...r, mathVersion: 2 } : r,
+                        r.id === row.id ? { ...r, mathVersion: 3 } : r,
                       ),
                     }))
                   }
                 />
-                Use scientific math (changes function and constant name rules)
+                Use scientific math v3 (changes function and constant name
+                rules)
               </label>
             )}
             <label>
@@ -198,7 +199,7 @@ export function ModelDefinitionEditor({
               {
                 id: "equation-" + crypto.randomUUID(),
                 text: "",
-                mathVersion: 2,
+                mathVersion: 3,
               },
             ],
           }))

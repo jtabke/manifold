@@ -47,9 +47,7 @@ function receipt(s, time = "2026-10-26T00:00:00.000Z") {
       ],
       code_sha256: createHash("sha256").update(job.code).digest("hex"),
       runtime: {
-        adapter: job.definitions.some((r) => r.mathVersion === 2)
-          ? "bounded-python-sampler/2"
-          : "bounded-python-sampler/1",
+        adapter: `bounded-python-sampler/${Math.max(1, ...job.definitions.map((r) => r.mathVersion ?? 1))}`,
         python: "test",
       },
     };

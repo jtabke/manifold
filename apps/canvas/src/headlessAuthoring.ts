@@ -75,14 +75,18 @@ export function createHeadlessEdits(
       throw error;
     }
   }
-  function textInput(text: string, kind: "equation" | "note") {
+  function textInput(
+    text: string,
+    kind: "equation" | "note",
+    version: 1 | 2 | 3 = 3,
+  ) {
     if (typeof text !== "string" || !text.trim() || text.length > 5000)
       throw new HeadlessError(
         "INVALID_INPUT",
         "Use nonempty worksheet text within 5,000 characters",
         { kind },
       );
-    if (mathematical(text) !== (kind === "equation"))
+    if (mathematical(text, version) !== (kind === "equation"))
       throw new HeadlessError(
         "INVALID_INPUT",
         kind === "note"
@@ -92,12 +96,12 @@ export function createHeadlessEdits(
       );
   }
   function write(item: string, text: string, kind: "equation" | "note") {
-    textInput(text, kind);
     const region = session.state.regions.find((region) => region.id === item);
     if (!region)
       throw new HeadlessError("ITEM_NOT_FOUND", "Worksheet region not found", {
         item,
       });
+    textInput(text, kind, region.mathVersion ?? 1);
     if (region.data || region.external || region.source)
       throw new HeadlessError(
         "UNSUPPORTED_CONTENT",
@@ -138,6 +142,11 @@ export function createHeadlessEdits(
     enableScientificMath(item: string) {
       return run("enableScientificMath", () =>
         session.enableScientificMath(item),
+      );
+    },
+    enableScientificMathV3(item: string) {
+      return run("enableScientificMathV3", () =>
+        session.enableScientificMathV3(item),
       );
     },
     createNote(text: string, at?: WorksheetPosition) {

@@ -153,7 +153,7 @@ export const samplingPlanSchema: f.Schema = {
             typeof definition.value.text === "string" &&
               definition.value.text.length <= 5000 &&
               (definition.value.mathVersion === undefined ||
-                definition.value.mathVersion === 2),
+                [2, 3].includes(definition.value.mathVersion as number)),
             "Invalid sampling text",
           );
         } else {

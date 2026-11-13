@@ -13,8 +13,11 @@ import {
 } from "./resultSnapshot.ts";
 export type WorksheetReceipt = Readonly<{
   id: string;
-  version: 1 | 2;
-  method: "manifold-worksheet/1" | "manifold-worksheet/2";
+  version: 1 | 2 | 3;
+  method:
+    | "manifold-worksheet/1"
+    | "manifold-worksheet/2"
+    | "manifold-worksheet/3";
   validation: "not-assessed";
   origin: { document: string; root: string };
   context: string;
@@ -67,7 +70,7 @@ const key = (
     | "links"
     | "sources"
     | "unavailableSources"
-  > & { version?: 1 | 2 },
+  > & { version?: 1 | 2 | 3 },
 ) =>
   f.canonical([
     v.version ?? 1,
@@ -121,7 +124,10 @@ export function captureWorksheet(
     validateSourceEvidence(document, [evidence]);
     sources.push(evidence);
   }
-  const version: 1 | 2 = definitions.some((r) => r.mathVersion === 2) ? 2 : 1;
+  const version = Math.max(1, ...definitions.map((r) => r.mathVersion ?? 1)) as
+    | 1
+    | 2
+    | 3;
   const data = {
     version,
     origin: { document: document.document, root: document.id },
@@ -133,7 +139,7 @@ export function captureWorksheet(
   };
   return f.retained({
     id: `calculation-${crypto.randomUUID()}`,
-    method: version === 2 ? "manifold-worksheet/2" : "manifold-worksheet/1",
+    method: `manifold-worksheet/${version}`,
     validation: "not-assessed",
     ...data,
     contextLabel: page.contexts.find((c) => c.id === page.active)!.label,
@@ -175,7 +181,8 @@ export function validateWorksheetReceipt(
   f.identity(value.origin.root);
   f.assert(
     ((value.version === 1 && value.method === "manifold-worksheet/1") ||
-      (value.version === 2 && value.method === "manifold-worksheet/2")) &&
+      (value.version === 2 && value.method === "manifold-worksheet/2") ||
+      (value.version === 3 && value.method === "manifold-worksheet/3")) &&
       value.validation === "not-assessed" &&
       typeof value.contextLabel === "string" &&
       value.contextLabel.length < 100 &&
@@ -194,7 +201,9 @@ export function validateWorksheetReceipt(
           typeof v.text === "string" &&
           v.text.length <= 5000 &&
           (v.mathVersion === undefined ||
-            (value.version === 2 && v.mathVersion === 2))
+            ((value.version === 2 || value.version === 3) &&
+              v.mathVersion === 2) ||
+            (value.version === 3 && v.mathVersion === 3))
         );
       }),
     "Invalid calculation definitions",

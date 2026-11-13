@@ -15,7 +15,7 @@ import {
 import {
   scientificQuantity,
   scientificCall,
-  scientificFunctions,
+  functionsForVersion,
 } from "../notebook/scientific.ts";
 export const AUTHORED_MODEL = "canvas-authored-model@1";
 export type ModelSource = Readonly<{
@@ -45,7 +45,7 @@ function quantity(
   value: { value: number; unit: string },
   version: MathVersion,
 ): Quantity {
-  if (version === 2) return scientificQuantity(value.value, value.unit);
+  if (version >= 2) return scientificQuantity(value.value, value.unit);
   return value.unit === "1"
     ? { value: value.value, dimension: [0, 0, 0, 0] }
     : evaluate(
@@ -73,12 +73,16 @@ const method = (op: string, version: MathVersion = 1) => ({
   runtime:
     version === 1 ? "manifold-equations@1" : "manifold-equations-mathjs@15.2.0",
 });
-const functionMethod = (name: string, count: number) => ({
+const functionMethod = (
+  name: string,
+  count: number,
+  version: MathVersion = 2,
+) => ({
   id: `manifold.equation.${name}.${count}`,
-  version: "2",
+  version: String(version),
   runtime: "manifold-equations-mathjs@15.2.0",
 });
-export const equationMethods: readonly f.NativeModelMethod[] = [1, 2]
+export const equationMethods: readonly f.NativeModelMethod[] = [1, 2, 3]
   .flatMap((v) =>
     operators.map(
       (op): f.NativeModelMethod => ({
@@ -110,26 +114,29 @@ export const equationMethods: readonly f.NativeModelMethod[] = [1, 2]
     ),
   )
   .concat(
-    Object.entries(scientificFunctions).flatMap(([name, [low, high]]) =>
-      Array.from({ length: high - low + 1 }, (_, i): f.NativeModelMethod => {
-        const count = low + i;
-        return {
-          requirements: functionMethod(name, count),
-          inputs: Object.fromEntries(
-            Array.from({ length: count }, (_, n) => [`arg${n}`, "*"]),
-          ),
-          output: "*",
-          evaluateScalar(inputs) {
-            const result = scientificCall(
-              name,
-              Array.from({ length: count }, (_, n) =>
-                quantity(inputs[`arg${n}`]!, 2),
-              ),
-            );
-            return { value: result.value, unit: unit(result) };
-          },
-        };
-      }),
+    ([2, 3] as const).flatMap((v) =>
+      Object.entries(functionsForVersion(v)).flatMap(([name, [low, high]]) =>
+        Array.from({ length: high - low + 1 }, (_, i): f.NativeModelMethod => {
+          const count = low + i;
+          return {
+            requirements: functionMethod(name, count, v),
+            inputs: Object.fromEntries(
+              Array.from({ length: count }, (_, n) => [`arg${n}`, "*"]),
+            ),
+            output: "*",
+            evaluateScalar(inputs) {
+              const result = scientificCall(
+                name,
+                Array.from({ length: count }, (_, n) =>
+                  quantity(inputs[`arg${n}`]!, v),
+                ),
+                v,
+              );
+              return { value: result.value, unit: unit(result) };
+            },
+          };
+        }),
+      ),
     ),
   );
 export function compileModel(source: ModelSource): f.ModelDefinition {
@@ -147,7 +154,9 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
     f.assert(f.object(row), "Invalid model equation");
     f.fields(row, ["id", "text", "mathVersion"]);
     f.assert(
-      row.mathVersion === undefined || row.mathVersion === 2,
+      row.mathVersion === undefined ||
+        row.mathVersion === 2 ||
+        row.mathVersion === 3,
       "Unsupported mathematics version",
     );
     f.assert(
@@ -200,7 +209,12 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
     id = `expression-${++serial}`,
     version: MathVersion = 1,
   ): f.ModelTarget {
-    if (quantityLiteral(e) || e.kind === "constant" || e.kind === "unit") {
+    if (
+      quantityLiteral(e) ||
+      e.kind === "constant" ||
+      e.kind === "unit" ||
+      (version === 3 && e.kind === "name" && references(e).length === 0)
+    ) {
       const q = evaluate(
         e,
         () => {
@@ -225,7 +239,7 @@ export function compileModel(source: ModelSource): f.ModelDefinition {
       return put(id, {
         kind: "method",
         label: e.name,
-        method: functionMethod(e.name, e.args.length),
+        method: functionMethod(e.name, e.args.length, version),
         inputs: Object.fromEntries(
           e.args.map((arg, i) => [
             `arg${i}`,

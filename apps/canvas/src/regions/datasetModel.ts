@@ -213,7 +213,7 @@ export function evaluateDataset(
       definitions.map((r) => [
         r.id,
         r.text,
-        ...(r.mathVersion === 2 ? [2] : []),
+        ...(r.mathVersion ? [r.mathVersion] : []),
       ]),
       relation.dataset,
       relation.output,

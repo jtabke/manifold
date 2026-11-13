@@ -18,8 +18,12 @@ export const samplerExecutor: ArtifactExecutor = async (job, signal) => {
   const body = JSON.stringify({
     code: job.code,
     inputs: job.inputs,
-    ...(job.definitions.some((r) => r.mathVersion === 2)
-      ? { mathVersion: 2 }
+    ...(job.definitions.some((r) => r.mathVersion)
+      ? {
+          mathVersion: Math.max(
+            ...job.definitions.map((r) => r.mathVersion ?? 1),
+          ),
+        }
       : {}),
   });
   if (byteLength(body) > MAX_TRANSPORT_BYTES)
@@ -84,8 +88,21 @@ export const scientificSamplingMethodRef = Object.freeze({
   version: "2",
   runtime: "manifold-scientific-sampler@2",
 });
+export const v3SamplingMethodRef = Object.freeze({
+  id: samplingMethodRef.id,
+  version: "3",
+  runtime: "manifold-scientific-sampler@3",
+});
+const captureVersion = (definitions: readonly { mathVersion?: 2 | 3 }[]) =>
+  Math.max(1, ...definitions.map((r) => r.mathVersion ?? 1));
+const methodForVersion = (version: number) =>
+  version === 3
+    ? v3SamplingMethodRef
+    : version === 2
+      ? scientificSamplingMethodRef
+      : samplingMethodRef;
 const isSamplingMethod = (method: Parameters<typeof f.methodKey>[0]) =>
-  [samplingMethodRef, scientificSamplingMethodRef].some(
+  [samplingMethodRef, scientificSamplingMethodRef, v3SamplingMethodRef].some(
     (ref) => f.methodKey(method) === f.methodKey(ref),
   );
 const json = (value: unknown) => value as f.Json;
@@ -145,9 +162,7 @@ export function jobFromSamplingInput(value: SamplingInput): ArtifactJob {
 }
 export function samplingInvocation(input: SamplingInput): f.TypedRequest {
   return {
-    method: input.capture.definitions.some((r) => r.mathVersion === 2)
-      ? scientificSamplingMethodRef
-      : samplingMethodRef,
+    method: methodForVersion(captureVersion(input.capture.definitions)),
     input: { schema: "canvas-sampling-input@1", body: json(input) },
     output: "canvas-sampled-points@1",
   };
@@ -219,17 +234,17 @@ const baseSamplingMethod: f.TypedMethod = {
     );
   },
 };
-function versionedSamplingMethod(scientific: boolean): f.TypedMethod {
+function versionedSamplingMethod(version: number): f.TypedMethod {
   const validate = (input: f.Json) => {
     samplingInput(input);
     f.assert(
-      input.capture.definitions.some((r) => r.mathVersion === 2) === scientific,
+      captureVersion(input.capture.definitions) === version,
       "Sampler mathematics version differs from its method",
     );
   };
   return {
     ...baseSamplingMethod,
-    requirements: scientific ? scientificSamplingMethodRef : samplingMethodRef,
+    requirements: methodForVersion(version),
     validateInput: validate,
     validateOutput(input, raw) {
       validate(input);
@@ -237,8 +252,9 @@ function versionedSamplingMethod(scientific: boolean): f.TypedMethod {
     },
   };
 }
-export const samplingMethod = versionedSamplingMethod(false);
-export const scientificSamplingMethod = versionedSamplingMethod(true);
+export const samplingMethod = versionedSamplingMethod(1);
+export const scientificSamplingMethod = versionedSamplingMethod(2);
+export const v3SamplingMethod = versionedSamplingMethod(3);
 export function samplingExecutor(
   execute: ArtifactExecutor | null = samplerExecutor,
 ): f.TypedExecutor | undefined {

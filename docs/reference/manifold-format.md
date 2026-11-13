@@ -13,7 +13,7 @@ The current canvas writer emits compact JSON with exactly these top-level fields
 ```json
 {
   "format": "manifold-region-artifacts",
-  "version": 8,
+  "version": 9,
   "foundation": {
     "format": "manifold-foundation",
     "version": 2,
@@ -28,12 +28,14 @@ The current canvas writer emits compact JSON with exactly these top-level fields
 
 The empty objects above illustrate the envelope, not a valid complete document.
 The outer canvas version and inner foundation version are independent. Do not
-infer an inner version from the outer version. V8 identifies scientific scalar
-math support; the inner writer selects V2, V3 or V4 according to retained evidence.
+infer an inner version from the outer version. V9 identifies v3 scientific scalar
+math support (V8 introduced v2); the inner writer selects V2, V3 or V4 according to retained evidence.
 
-Canvas Open reads outer V1–V8. V1–V5 use the legacy migration path; V6 additionally
-carries legacy artifact `results`; V7 and V8 contain only the foundation envelope.
-Unknown outer versions are rejected, not guessed or automatically downgraded.
+Canvas Open reads outer V1–V9. V1–V5 use the legacy migration path; V6 additionally
+carries legacy artifact `results`; V7–V9 contain only the foundation envelope.
+V3 worksheet records use required `canvas-record@2`; source versions are preserved on
+import and ordinary edits. Worksheet receipts and sampler methods carry their own
+v1/v2/v3 identities. Unknown outer versions are rejected, not guessed or automatically downgraded.
 Legacy import migrates data before establishing a live owner. Loaded code and
 execution requests never grant permission to run themselves.
 

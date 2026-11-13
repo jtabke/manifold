@@ -3,12 +3,12 @@ import {
   scientificBinary,
   scientificCall,
   scientificUnit,
-  scientificFunctions,
+  functionsForVersion,
   scientificConstants,
 } from "./scientific.ts";
 import { parseScientific } from "./scientificParser.ts";
-export type MathVersion = 1 | 2;
-export type MathSource = { id: string; text: string; mathVersion?: 2 };
+export type MathVersion = 1 | 2 | 3;
+export type MathSource = { id: string; text: string; mathVersion?: 2 | 3 };
 export const mathSource = ({
   id,
   text,
@@ -16,7 +16,7 @@ export const mathSource = ({
 }: MathSource): MathSource => ({
   id,
   text,
-  ...(mathVersion === 2 ? { mathVersion } : {}),
+  ...(mathVersion !== undefined && mathVersion >= 2 ? { mathVersion } : {}),
 });
 const work = { parses: 0, expressions: 0, assignments: 0, constraints: 0 };
 export function evaluationWork() {
@@ -47,7 +47,7 @@ export type Statement = Readonly<{
   raw: string;
   relation: "=" | "<=" | ">=" | "<" | ">";
   anonymous?: boolean;
-  mathVersion?: 2;
+  mathVersion?: 2 | 3;
 }>;
 const scalar: Dimension = [0, 0, 0, 0];
 const temperature: Dimension = [0, 0, 0, 1];
@@ -81,7 +81,7 @@ export const same = (a: Dimension, b: Dimension) =>
  * A trailing equals sign requests evaluation; a named, unfinished x = stays a draft. */
 export function expressionBody(
   text: string,
-  mathVersion: MathVersion = 2,
+  mathVersion: MathVersion = 3,
 ): string | undefined {
   const value = text.trim();
   if (/^[A-Za-z_][A-Za-z_0-9]*\s*(?::=|<=|>=|<|>|=|≤|≥)/.test(value)) return;
@@ -90,9 +90,9 @@ export function expressionBody(
   if (!body || /[=:<>≤≥]/.test(body)) return;
   if (explicit) return body;
   if (
-    mathVersion === 2 &&
+    mathVersion >= 2 &&
     new RegExp(
-      `^(?:${Object.keys(scientificFunctions).join("|")})\\s*\\(`,
+      `^(?:${Object.keys(functionsForVersion(mathVersion)).join("|")})\\s*\\(`,
     ).test(body)
   )
     return body;
@@ -108,8 +108,10 @@ export function expressionBody(
   try {
     if (
       quantityLiteral(
-        (mathVersion === 2 ? parseScientific : parseNamed)(`value = ${body}`)
-          .expression,
+        (mathVersion >= 2
+          ? parseScientific(`value = ${body}`, mathVersion as 2 | 3)
+          : parseNamed(`value = ${body}`)
+        ).expression,
       )
     )
       return body;
@@ -123,7 +125,10 @@ export function parse(
   mathVersion: MathVersion = 1,
 ): Statement {
   work.parses++;
-  const named = mathVersion === 2 ? parseScientific : parseNamed;
+  const named =
+    mathVersion >= 2
+      ? (text: string) => parseScientific(text, mathVersion as 2 | 3)
+      : parseNamed;
   const body = expressionBody(text, mathVersion);
   if (body !== undefined && expressionId !== undefined) {
     // Stable private identities allow several anonymous results to coexist.
@@ -237,22 +242,23 @@ export function evaluate(
   work.expressions++;
   const child = (e: Expression) => evaluate(e, resolve, mathVersion);
   if (expression.kind === "unit") {
-    if (mathVersion !== 2 || expression.name === "degC")
+    if (mathVersion < 2 || expression.name === "degC")
       throw Error("Write an absolute temperature as a number followed by °C.");
     return scientificUnit(expression.name);
   }
   if (expression.kind === "constant") {
-    if (
-      mathVersion !== 2 ||
-      !Object.hasOwn(scientificConstants, expression.name)
-    )
+    if (mathVersion < 2 || !Object.hasOwn(scientificConstants, expression.name))
       throw Error("Unsupported scientific constant.");
     return { value: scientificConstants[expression.name], dimension: scalar };
   }
   if (expression.kind === "call") {
-    if (mathVersion !== 2)
+    if (mathVersion < 2)
       throw Error("Scientific functions require mathematics version 2.");
-    return scientificCall(expression.name, expression.args.map(child));
+    return scientificCall(
+      expression.name,
+      expression.args.map(child),
+      mathVersion as 2 | 3,
+    );
   }
   if (expression.kind === "number") {
     if (!Number.isFinite(expression.value))
@@ -263,7 +269,7 @@ export function evaluate(
     if (expression.name === "degC")
       throw Error("Write an absolute temperature as a number followed by °C.");
     const quantity = Object.hasOwn(units, expression.name)
-      ? mathVersion === 2
+      ? mathVersion >= 2
         ? scientificUnit(expression.name)
         : units[expression.name]
       : resolve(expression.name);
@@ -305,7 +311,7 @@ export function evaluate(
       );
     result = {
       value:
-        mathVersion === 2
+        mathVersion >= 2
           ? scientificBinary(op, a, b).value
           : op === "+"
             ? a.value + b.value
@@ -319,7 +325,7 @@ export function evaluate(
       throw Error(
         "Use temperature differences in K in products and quotients.",
       );
-    if (mathVersion === 2) return scientificBinary(op, a, b);
+    if (mathVersion >= 2) return scientificBinary(op, a, b);
     if (op === "^") {
       if (
         !same(b.dimension, scalar) ||
@@ -353,7 +359,7 @@ export type Calculation = {
   text: string;
   x: number;
   y: number;
-  mathVersion?: 2;
+  mathVersion?: 2 | 3;
 };
 /** Display assignments quietly; show the result of actual arithmetic, even
  * when it has no variable references (e.g. answer = 2 + 3). */

@@ -39,6 +39,7 @@ type SimpleOperation =
   | "selection.save-png"
   | "definition.edit"
   | "mathematics.enable"
+  | "mathematics.enable-v3"
   | "quantity.vary"
   | "quantity.trace"
   | "context.compare"
@@ -356,10 +357,10 @@ export function resolveCommands(
             "Preview a bound value and its consequences; accept, keep an alternative or cancel without changing the baseline.",
           undo: editUndo,
         });
-      if (page.regions.find((r) => r.id === t.id)?.mathVersion !== 2)
+      if (page.regions.find((r) => r.id === t.id)?.mathVersion !== 3)
         add(
-          "mathematics.enable",
-          "Use scientific math (v2)",
+          "mathematics.enable-v3",
+          "Use scientific math (v3)",
           "edit",
           undefined,
           {
@@ -367,6 +368,20 @@ export function resolveCommands(
               "Explicitly change this equation’s function/constant rules. Existing saved calculations retain their original interpretation. Undo restores the old rules.",
             undo: editUndo,
             keywords: ["math", "functions", "scientific", "upgrade"],
+          },
+        );
+      // Keep the original v2 command available for historical source.
+      if (!page.regions.find((r) => r.id === t.id)?.mathVersion)
+        add(
+          "mathematics.enable",
+          "Use scientific math (v2)",
+          "edit",
+          undefined,
+          {
+            preview:
+              "Explicitly opt this equation into the fixed v2 rules. Undo restores its earlier interpretation.",
+            undo: editUndo,
+            keywords: ["math", "scientific", "v2", "upgrade"],
           },
         );
       const choices = t.id ? plotChoices(page, t.id) : [];

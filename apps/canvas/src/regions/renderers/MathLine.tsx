@@ -409,6 +409,8 @@ function MathLineContent({
       // arguments retain their own precise source spans and interactions.
       const operator = sourceProps(mapped.operator);
       if (e.name === "sqrt") return m("msqrt", expression(e.args[0]), operator);
+      if (e.name === "cbrt")
+        return m("mroot", [expression(e.args[0]), m("mn", "3")], operator);
       if (e.name === "abs")
         return m("mrow", [
           m("mo", "|", { key: "open", ...operator }),
@@ -434,11 +436,20 @@ function MathLineContent({
               ],
               { key: "fn" },
             )
-          : m("mi", e.name, {
-              key: "fn",
-              mathvariant: "normal",
-              ...operator,
-            }),
+          : m(
+              "mi",
+              (
+                { asin: "arcsin", acos: "arccos", atan: "arctan" } as Record<
+                  string,
+                  string
+                >
+              )[e.name] ?? e.name,
+              {
+                key: "fn",
+                mathvariant: "normal",
+                ...operator,
+              },
+            ),
         m("mo", "⁡", { key: "apply" }),
         m("mo", "(", { key: "open" }),
         ...e.args.flatMap((arg, i) => [

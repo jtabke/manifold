@@ -15,6 +15,7 @@ import {
 import {
   samplingMethod,
   scientificSamplingMethod,
+  v3SamplingMethod,
 } from "./samplingExecution.ts";
 import { readCsv, numericCell, type CsvData } from "./dataSources.ts";
 const spring = {
@@ -98,6 +99,7 @@ export const canvasMethods = f.createMethods(
   [
     samplingMethod,
     scientificSamplingMethod,
+    v3SamplingMethod,
     modelOutputsMethod,
     modelAnalyses.method,
   ],

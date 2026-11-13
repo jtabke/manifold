@@ -25,7 +25,7 @@ export type Projection = Readonly<{
   sources: Readonly<Record<string, readonly string[]>>;
   texts: Readonly<Record<string, string>>;
 }>;
-export const mathematical = (text: string, mathVersion: MathVersion = 2) =>
+export const mathematical = (text: string, mathVersion: MathVersion = 3) =>
   /^\s*[A-Za-z_][A-Za-z_0-9]*\s*(?::=|<=|>=|<|>|=|≤|≥)/.test(text) ||
   expressionBody(text, mathVersion) !== undefined;
 const incompleteNumber = (text: string) =>
@@ -380,7 +380,12 @@ export function createWorksheetProjection() {
           .filter((r) => r.kind !== "note")
           .map((r) => {
             const s = r.semantic?.statement;
-            if (!s) return [r.id, r.text, ...(r.mathVersion === 2 ? [2] : [])];
+            if (!s)
+              return [
+                r.id,
+                r.text,
+                ...(r.mathVersion > 1 ? [r.mathVersion] : []),
+              ];
             return [
               r.id,
               s.name,
@@ -395,7 +400,7 @@ export function createWorksheetProjection() {
                   ].includes(name),
                 )
                 .sort(([a], [b]) => a.localeCompare(b)),
-              ...(s.mathVersion === 2 ? [2] : []),
+              ...(s.mathVersion ? [s.mathVersion] : []),
             ];
           })
           .sort(([a], [b]) => String(a).localeCompare(String(b))),

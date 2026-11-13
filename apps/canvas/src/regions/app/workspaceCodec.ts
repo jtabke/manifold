@@ -40,7 +40,7 @@ export function archive(foundation: Envelope): string {
   // Compact JSON keeps the transport below the conservative retained-state bound.
   const text = JSON.stringify({
     format: "manifold-region-artifacts",
-    version: 8,
+    version: 9,
     foundation,
   });
   checkWorkspaceFileSize(byteLength(text));
