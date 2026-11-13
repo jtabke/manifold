@@ -137,6 +137,32 @@ layouts. `check-capacity-fixture` compares small generated cases with genuine re
 and verifies decoding and retired identities. The full MAX/MAX+1 admission and unchanged rescue
 checks remain in `check-canvas-capacity`; they are not duplicated in the fixture-equivalence test.
 
+### Installed agent tooling
+
+`packages/cli` builds the standalone distribution from the existing headless and live
+MCP adapters. `npm run build:tools` creates ignored JavaScript/HTML outputs; `npm pack
+--workspace @manifold/cli` rebuilds before packing. No registry publication is required.
+The build rejects inclusion of the Pi assistant runtime. The canvas application is
+not included. Shared tool descriptors live in `apps/assistant/src/canvas-tools.mjs`.
+
+```sh
+make check-tools
+MANIFOLD_BROWSER_EXECUTABLE=/absolute/path/to/chromium node packages/cli/test/preview-browser.mjs
+```
+
+`check-tools` installs an actual tarball into an isolated temporary directory and exercises
+CLI authoring, errors, diagnostics, absolute client configuration, real stdio MCP,
+resource reads, explicit browser grants and read-only rejection. It needs npm access
+or a populated cache for the package's `ws` dependency. The browser check uses the
+actual MCP Apps bridge, verifies rendering and safe failure, and rejects unexpected
+tool/network calls. `make verify` includes both. No external provider calls are made.
+
+The manually dispatched **Release agent tools** workflow builds/tests and uploads a
+tarball. Its optional publish input is false by default. Registry publication requires
+explicit maintainer selection, the `npm` GitHub environment and npm trusted-publisher
+configuration for `@manifold/cli`; the first publish may require separate registry setup.
+Neither a push nor ordinary CI publishes a package or deploys a service.
+
 ### Live canvas assistant
 
 The optional companion is the `apps/assistant` npm workspace. The normal Python canvas server

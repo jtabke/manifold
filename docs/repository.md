@@ -1,6 +1,6 @@
 # Repository organization and maintenance
 
-Manifold is a three-package npm workspace with one lockfile and shared development tools.
+Manifold is a four-package npm workspace with one lockfile and shared development tools.
 The [extension guide](design/canvas-extension-patterns.md) defines implemented feature patterns;
 the [product plan](product-plan.md) owns priorities and [ADRs](design/decisions/README.md)
 record architecture choices.
@@ -10,6 +10,7 @@ record architecture choices.
 | Location | Responsibility |
 | --- | --- |
 | `packages/foundation/src` | UI-independent immutable records, atomic operations, computation evidence, resources and storage. No application, experiment, React or Node imports. |
+| `packages/cli` | Built standalone CLI/MCP distribution, lazy installed launcher, local diagnostics, clean-install and MCP Apps browser checks. |
 | `packages/foundation/workbench` | Executable examples of foundation contracts. |
 | `apps/canvas/src/regions/app` | Composition, coordination, admission, file/storage lifecycle and renderer buffers. |
 | `apps/canvas/src/regions/renderers` | Canvas representations and controls; transient input and intents through application ports. |
@@ -26,7 +27,7 @@ record architecture choices.
 | `apps/canvas/tools/manifold.mjs` | File-based agent CLI over the headless owner; explicit computation and no-clobber candidate publication. |
 | `apps/canvas/tools`, `scripts` | Other diagnostics, check orchestration and repository policy. |
 | `docs/images` | Curated, real application screenshots used by the README. |
-| `.agents/skills/manifold` | Checkout-scoped Manifold product skill; links to public guides/reference rather than duplicating the CLI. |
+| `.agents/skills/manifold` | Manifold product skill, also bundled into installed tooling; links to public guides/reference rather than duplicating the CLI. |
 | `apps/canvas/tests/fixtures/agent-spring`, `agent-conduction`, `agent-recovery` | Native baselines and bounded skill acceptance tasks for editing/computation, worksheet authoring/revision and diagnosis/recovery; generated candidates/reports are not checked in. |
 | `docs/guides` | Task-oriented canvas and agent usage. |
 | `docs/reference` | Exact CLI and headless/agent API contracts. |

@@ -28,10 +28,10 @@ canvas-dev:
 build:
 	npm --prefix apps/canvas run build
 
-check: check-repo check-docs check-python check-canvas check-assistant check-foundation-package
+check: check-repo check-docs check-python check-canvas check-assistant check-foundation-package check-tools
 
 check-repo:
-	node_modules/.bin/prettier --check package.json scripts/check_repo.mjs scripts/repo_policy.test.mjs scripts/browser.mjs .github/workflows/ci.yml
+	node_modules/.bin/prettier --check package.json scripts/check_repo.mjs scripts/repo_policy.test.mjs scripts/browser.mjs .github/workflows/ci.yml .github/workflows/release-tools.yml
 	node --test scripts/repo_policy.test.mjs
 	node scripts/check_repo.mjs
 
@@ -53,6 +53,11 @@ check-canvas:
 check-assistant:
 	node_modules/.bin/prettier --check apps/assistant/package.json apps/assistant/src/*.mjs apps/assistant/test/*.mjs
 	npm --workspace manifold-assistant test
+
+.PHONY: check-tools
+check-tools:
+	node_modules/.bin/prettier --check packages/cli/*.mjs packages/cli/package.json packages/cli/test/*.mjs apps/assistant/build-preview.mjs
+	npm run test:tools
 
 # Uses a temporary server on port 58312. Requires installed Chromium.
 check-browser:
@@ -79,6 +84,7 @@ verify:
 	node packages/foundation/test/composition-browser.mjs
 	# check-canvas already built the canvas; do not rebuild it for the browser phase.
 	npm --prefix apps/canvas run test:all-browser
+	node packages/cli/test/preview-browser.mjs
 
 # Retain the documented entry point, without requiring private evaluation archives.
 verify-application-foundation: verify

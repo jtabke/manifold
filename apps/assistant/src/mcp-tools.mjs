@@ -1,4 +1,4 @@
-import { canvasTools } from "./pi.mjs";
+import { canvasTools } from "./canvas-tools.mjs";
 import { MCP_MUTATIONS } from "../../canvas/src/regions/mcpProtocol.ts";
 
 const string = { type: "string", minLength: 1, maxLength: 160 };
@@ -157,6 +157,9 @@ export const mcpTools = [
   ),
 ].map((entry) => ({
   ...entry,
+  ...(entry.name === "look_at_canvas"
+    ? { _meta: { ui: { resourceUri: "ui://manifold/canvas-preview.html" } } }
+    : {}),
   annotations: {
     readOnlyHint:
       !MCP_MUTATIONS.includes(entry.name) && entry.name !== "prepare_edit",

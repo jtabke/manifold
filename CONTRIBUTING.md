@@ -22,9 +22,9 @@ Leave the Python server running and use `make canvas-dev` in another terminal fo
 frontend development. See the [development guide](docs/development/README.md) for setup
 variants and focused checks, or the [canvas guide](docs/guides/canvas.md) for product usage.
 
-The root `package-lock.json` owns both npm workspaces. Use `npm install` at the root
+The root `package-lock.json` owns all four npm workspaces. Use `npm install` at the root
 when updating dependencies and include the lockfile. `npm ci` installs shared tools
-and both workspaces.
+and all workspaces.
 
 ## Checks
 

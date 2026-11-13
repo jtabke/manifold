@@ -1,0 +1,30 @@
+{
+  "name": "@manifold/cli",
+  "version": "0.1.0",
+  "description": "Local engineering workspace CLI and permission-scoped canvas MCP server",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jtabke/manifold.git",
+    "directory": "packages/cli"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "bin": {
+    "manifold": "dist/main.mjs",
+    "manifold-mcp": "dist/mcp.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepack": "node build.mjs"
+  },
+  "dependencies": {
+    "ws": "8.21.0"
+  }
+}
