@@ -62,7 +62,7 @@ Requires Node 22.18+ and `npm ci` at the repository root. From that root:
 
 ```sh
 node apps/canvas/tools/manifold.mjs --help
-node_modules/.bin/manifold capabilities
+node apps/canvas/tools/manifold.mjs capabilities
 ```
 
 The two paths run the same executable; no global installation is required. Commands return
@@ -72,9 +72,9 @@ an empty one with `manifold create --output design.json` using the executable pa
 ## 1. Discover and inspect
 
 ```sh
-node_modules/.bin/manifold inspect design.json --compact
-node_modules/.bin/manifold worksheet design.json --compact
-node_modules/.bin/manifold models design.json --compact
+node apps/canvas/tools/manifold.mjs inspect design.json --compact
+node apps/canvas/tools/manifold.mjs worksheet design.json --compact
+node apps/canvas/tools/manifold.mjs models design.json --compact
 ```
 
 Read the current `documentId`, worksheet source, diagnostics and model metadata. Discover
@@ -116,7 +116,7 @@ Prepare `edits.json` with the document ID you inspected:
 ```
 
 ```sh
-node_modules/.bin/manifold edit design.json --changes edits.json --output candidate.json
+node apps/canvas/tools/manifold.mjs edit design.json --changes edits.json --output candidate.json
 ```
 
 This example creates independent worksheet calculations and a spring model; sharing a label
@@ -131,8 +131,8 @@ a newer revision. Output files must not already exist, so the baseline stays unt
 ## 3. Check consequences
 
 ```sh
-node_modules/.bin/manifold diff design.json candidate.json
-node_modules/.bin/manifold validate candidate.json --strict
+node apps/canvas/tools/manifold.mjs diff design.json candidate.json
+node apps/canvas/tools/manifold.mjs validate candidate.json --strict
 ```
 
 Review changed source, quantities, input bindings, constraints and computation currency.
@@ -168,10 +168,10 @@ corrections from newly admitted evidence.
 Discover the candidate's requests, then select one explicitly:
 
 ```sh
-node_modules/.bin/manifold models candidate.json
-node_modules/.bin/manifold compute candidate.json \
+node apps/canvas/tools/manifold.mjs models candidate.json
+node apps/canvas/tools/manifold.mjs compute candidate.json \
   --request '<discovered-request-id>' --output computed.json --timeout-ms 60000
-node_modules/.bin/manifold validate computed.json --strict
+node apps/canvas/tools/manifold.mjs validate computed.json --strict
 ```
 
 Reading, editing and opening files never start jobs. A derived projection is not checked

@@ -3,12 +3,19 @@
 The experimental local MCP server gives an external MCP client scoped access to one
 open Manifold canvas. It needs no Pi model, provider credentials or built-in assistant.
 The browser remains the only workspace writer; accepted edits use normal validation,
-autosave and shared Undo/Redo. This is a repository-local interface, not a published service.
+autosave and shared Undo/Redo. This is a local interface, not a hosted service. It is available in the standalone
+built tools package as well as the source checkout.
 
 ## Configure a client
 
-Requires Node 22.18+, `npm ci` and a running canvas (`make canvas`). Add this stdio
-server to your client's configuration, replacing the absolute checkout path:
+Requires Node 22.18+ and a separately running canvas (`make canvas` from a checkout).
+For the built package, follow the [installation guide](../guides/agent-tools.md), run
+`manifold doctor`, then copy the output of `manifold mcp-config` into your client.
+The generated entry launches Node directly, not npm, with absolute installation paths.
+`manifold-mcp` and `manifold mcp` run the same stdio server without startup chatter.
+
+For source-checkout use, run `npm ci` and `npm --workspace manifold-assistant run build:preview`.
+Add this stdio server to your client's configuration, replacing the absolute checkout path:
 
 ```json
 {
@@ -231,6 +238,21 @@ and reopens through normal Manifold Open/import. Existing native capacity/export
 One snapshot is retained per connection. A new capture invalidates the previous snapshot;
 disconnect releases it. Reads remain stable if the live canvas changes or a human starts a
 draft after capture. Capture itself requires no unaccepted draft and a matching document ID.
+
+## Read-only MCP App preview
+
+`look_at_canvas` advertises `ui://manifold/canvas-preview.html` through MCP Apps
+`_meta.ui.resourceUri`. The server lists and serves this static HTML resource with MIME
+`text/html;profile=mcp-app`. Supporting hosts deliver the existing image tool result
+to the embedded view. Other hosts still receive ordinary text/image content.
+
+The widget displays only a bounded JPEG capture, with a visible warning that it is
+not a live view or engineering validation. A failed capture clears the previous image.
+It makes no tool calls, grants no permissions, performs no computation or mutation,
+and uses no external resources. No second document state or history is created.
+Reading the static resource grants no canvas access; capturing an image still requires
+the normal browser grant. Resource CSP metadata declares no remote connection/resource
+domains. Hosts remain responsible for sandboxing the UI.
 
 ## Structured errors and limits
 

@@ -96,6 +96,8 @@ contexts require retained identity, and a reliable Keep/Undo requires one owner.
 
 | [0041: Scoped agent recovery and jobs](0041-scoped-agent-recovery-and-jobs.md) | Focused MCP reads, typed errors, tab-session guarded mutation recovery, nonblocking jobs, human-selected scopes/activity and chunked native snapshots. | Accepted for the experimental local MCP adapter. |
 
+| [0042: Installable agent tools](0042-installable-agent-tools.md) | Built CLI/MCP distribution, no-provider runtime, local diagnostics and read-only MCP Apps presentation over existing image responses. | Accepted for the experimental local tooling slice. |
+
 ## Record lifecycle and template
 
 Create `NNNN-short-title.md` using the structure below. Begin as proposed. Record

@@ -1,0 +1,59 @@
+name: Release agent tools
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the tested version to npm (requires trusted publisher setup)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-agent-tools
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:tools
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: node packages/cli/test/preview-browser.mjs
+      - run: mkdir -p .manifold/release && npm pack --workspace @manifold/cli --pack-destination .manifold/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifold-agent-tools
+          path: .manifold/release/*.tgz
+          if-no-files-found: error
+  publish:
+    if: ${{ inputs.publish }}
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: manifold-agent-tools
+          path: release
+      - name: Publish the exact tested tarball
+        run: |
+          set -- release/*.tgz
+          test "$#" -eq 1
+          tag=latest
+          version=$(tar -xOf "$1" package/package.json | node -e 'let text="";process.stdin.on("data",chunk=>text+=chunk).on("end",()=>console.log(JSON.parse(text).version))')
+          case "$version" in *-*) tag=next ;; esac
+          npm publish "$1" --access public --provenance --tag "$tag"

@@ -7,9 +7,6 @@
     "./headless": "./src/headless.ts",
     "./agent": "./src/agent.ts"
   },
-  "bin": {
-    "manifold": "./tools/manifold.mjs"
-  },
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 58311",
     "build": "tsc --noEmit && vite build",
