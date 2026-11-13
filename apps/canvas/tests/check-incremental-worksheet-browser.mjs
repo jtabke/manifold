@@ -1,11 +1,16 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { cpus, release } from "node:os";
 import { RegionSession } from "../src/regions/document.ts";
 import { archive } from "../src/regions/artifacts.ts";
 import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
 import { canvasSourceDigest } from "../tools/canvas-source-digest.mjs";
+import {
+  timingDistribution,
+  timeWorksheetInteraction,
+} from "./worksheet-timing.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
 const rows = [];
@@ -132,6 +137,61 @@ try {
     await page.reload();
     await expect(page.locator('[data-result-for="v1"]')).toContainText("6 m");
     assert.deepEqual((await readWorkspace(page)).page, beforeReload.page);
+
+    // Keep trusted Playwright correctness actions above; these repeated timing probes
+    // dispatch DOM events through the same real handlers entirely on the page clock.
+    const warmups = 5,
+      observations = 30,
+      edits = [],
+      variations = [];
+    let current = 2;
+    for (let sample = 0; sample < warmups + observations; sample++) {
+      const next = 10 + sample;
+      await r0
+        .getByRole("button", { name: `Edit value ${current}`, exact: true })
+        .dblclick();
+      const timing = await timeWorksheetInteraction(editor, {
+        kind: "edit",
+        value: `v0 = ${next} m`,
+        expected: `${3 * next} m`,
+      });
+      if (sample >= warmups) edits.push(timing);
+      current = next;
+    }
+    // Durable storage is checked outside event-to-result timing windows.
+    const timedBaseline = await readWorkspace(page);
+    await r0.click({ position: { x: 400, y: 25 } });
+    await revealRegionActions(page);
+    await page
+      .getByRole("toolbar", { name: "Quantity v0 actions", exact: true })
+      .locator('[data-command-id="quantity.vary"]')
+      .click();
+    const timingControls = page.getByLabel("Explore v0", { exact: true }),
+      slider = timingControls.getByLabel("Vary v0", { exact: true });
+    await expect(slider).toBeVisible();
+    for (let sample = 0; sample < warmups + observations; sample++) {
+      const next = 20 + sample,
+        timing = await timeWorksheetInteraction(slider, {
+          kind: "vary",
+          value: String(next),
+          expected: `${3 * next} m`,
+        });
+      if (sample >= warmups) variations.push(timing);
+    }
+    await timingControls
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await expect(page.locator('[data-result-for="v1"]')).toContainText(
+      `${3 * current} m`,
+    );
+    assert.deepEqual((await readWorkspace(page)).page, timedBaseline.page);
+    const summarize = (samples) =>
+      Object.fromEntries(
+        Object.keys(samples[0]).map((key) => [
+          key,
+          timingDistribution(samples.map((sample) => sample[key])),
+        ]),
+      );
     assert.deepEqual(errors, []);
     rows.push({
       regions: count,
@@ -145,21 +205,38 @@ try {
       ),
       independentRows: unrelated.length,
       renderedMathRows: Object.keys(changed).length,
+      interactionTiming: {
+        warmups,
+        observations,
+        edit: summarize(edits),
+        vary: summarize(variations),
+      },
     });
     await context.close();
   }
+  const output = new URL(
+    "../../../evidence/current/canvas/worksheet-rendering-results.json",
+    import.meta.url,
+  );
+  await mkdir(new URL("./", output), { recursive: true });
   await writeFile(
-    new URL(
-      "../../../evidence/current/canvas/worksheet-rendering-results.json",
-      import.meta.url,
-    ),
+    output,
     JSON.stringify(
       {
         date: new Date().toISOString(),
         sourceDigest: canvasSourceDigest(),
         browser: await browser.version(),
+        environment: {
+          node: process.version,
+          platform: process.platform,
+          arch: process.arch,
+          osRelease: release(),
+          cpu: cpus()[0]?.model,
+          headless: true,
+          viewport: { width: 1700, height: 1100 },
+        },
         method:
-          "Real 64/256-row canvases. Count committed MathLine content renders from DOM diagnostics across accepted pointer layout and a sparse edit. Independent rows reuse mathematical subtrees; current-handler editing, hot preview/cancel/Undo and cold reload preserve results. Counts do not cover the entire React application shell or imply virtualization/latency SLOs.",
+          "Real 64/256-row canvases. Count committed MathLine content renders from DOM diagnostics across accepted pointer layout and a sparse edit. Independent rows reuse mathematical subtrees; current-handler editing, hot preview/cancel/Undo and cold reload preserve results. Five warmups and 30 measured sparse edits and Vary slider events per size use programmatically dispatched DOM input/Escape events through real application handlers. Page-side performance.now timestamps input and commit, MutationObserver checks the expected dependent-result DOM, and two subsequent RAF callbacks mark an intervening rendering opportunity, not compositor paint. Edit input-to-result includes two RAF callbacks for controlled-draft settling; commit-to-result starts after that settling. Autosave runs normally, but durable reads/reload checks are outside these timing windows. Raw observations plus median/p95/max are device-specific diagnostics without a latency SLO. Counts do not cover the entire React application shell or imply virtualization.",
         rows,
       },
       null,
@@ -167,7 +244,7 @@ try {
     ) + "\n",
   );
   console.log(
-    "Incremental worksheet Chrome: layout/independent math subtree reuse, current-handler editing, live dependent results, hot preview/cancel/Undo and cold reload at 64/256 rows pass.",
+    "Incremental worksheet Chrome: layout/independent math subtree reuse, current-handler editing, live dependent results, hot preview/cancel/Undo, cold reload and page-clock edit/Vary rendering-opportunity observations at 64/256 rows pass.",
   );
 } finally {
   await browser.close();

@@ -126,6 +126,13 @@ async function setup(options = {}) {
   };
 }
 
+async function download(workspace, edits) {
+  const text = await workspace.export(edits);
+  assert.equal(typeof text, "string");
+  assert.equal(workspace.acknowledgeExport(text), true);
+  return text;
+}
+
 // Names are authored metadata, survive recovery, and never depend on a transport filename.
 {
   assert.equal(documentTitle("  Pump sizing  "), "Pump sizing");
@@ -233,15 +240,102 @@ async function setup(options = {}) {
   assert.match(h.errors.at(-1), /retry or export/);
   assert.equal(
     project(
-      (await decodeWorkspace(await h.workspace.export(h.edits))).page,
+      (await decodeWorkspace(await download(h.workspace, h.edits))).page,
     ).solved.values.get("x").value,
     0.003,
   );
+  assert.match(
+    await h.workspace.newCanvas(h.edits),
+    /^\?canvas=/,
+    "an exact exported copy preserves work when local Save is unavailable",
+  );
+  assert.deepEqual(await h.backend.head(), head);
+  h.session.write(h.session.artifacts[0].input, "x := 4 mm");
   await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
   fail = false;
   assert.equal(await h.workspace.save(), true);
   assert.equal(h.errors.at(-1), "");
   assert.match(await h.workspace.newCanvas(h.edits), /^\?canvas=/);
+}
+
+// An exported snapshot permits recovery from blocked storage, but only while it is exact.
+for (const blocked of [false, true]) {
+  const h = await setup({
+    configure: () => ({ blocked, error: "Injected unavailable local save" }),
+  });
+  await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
+  await assert.rejects(h.workspace.open(file, h.edits), /Export current work/);
+  assert.equal(h.destinations.size, 0);
+  const bytes = await h.workspace.export(h.edits);
+  await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
+  await assert.rejects(h.workspace.open(file, h.edits), /Export current work/);
+  assert.equal(h.workspace.acknowledgeExport("not the emitted bytes"), false);
+  assert.equal(h.workspace.acknowledgeExport(bytes), true);
+  assert.equal(h.workspace.acknowledgeExport(bytes), false);
+  h.buffer.draft = "new unaccepted text";
+  await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
+  h.buffer.draft = "";
+  assert.match(await h.workspace.newCanvas(h.edits), /^\?canvas=/);
+  await h.workspace.open(file, h.edits);
+  assert.equal(h.destinations.size, 1);
+  assert.equal(
+    await h.backend.head(),
+    null,
+    "the original store stays untouched",
+  );
+}
+
+// Finishing a pending edit rechecks its accepted result; failed exports grant no handoff.
+{
+  const h = await setup({
+    configure: () => ({ error: "Injected unavailable local save" }),
+  });
+  await download(h.workspace, h.edits);
+  h.buffer.editing = h.session.artifacts[0].input;
+  h.buffer.draft = "x := 5 mm";
+  const edits = {
+    ...h.edits,
+    finish: () => {
+      h.session.write(h.buffer.editing, h.buffer.draft);
+      h.buffer.editing = undefined;
+      h.buffer.draft = "";
+      return true;
+    },
+  };
+  await assert.rejects(h.workspace.newCanvas(edits), /Export current work/);
+  assert.equal(project(h.session.state).solved.values.get("x").value, 0.005);
+  h.session.native = () => {
+    throw Error("Injected serialization failure");
+  };
+  await assert.rejects(h.workspace.export(h.edits), /serialization failure/);
+  await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
+  assert.equal(await h.backend.head(), null);
+}
+
+// Evidence arriving after export needs a fresh exported copy, even without authored changes.
+{
+  const h = await setup({
+    configure: () => ({ error: "Injected unavailable local save" }),
+  });
+  await download(h.workspace, h.edits);
+  const artifact = h.session.artifacts[0],
+    job = prepare(h.session.state, artifact),
+    receipt = acceptData(h.session.state, artifact, job, {
+      points: [
+        [artifact.low, 10000 * artifact.low],
+        [artifact.high, 10000 * artifact.high],
+      ],
+      code_sha256: createHash("sha256").update(job.code).digest("hex"),
+      runtime: {
+        adapter: `bounded-python-sampler/${Math.max(1, ...job.definitions.map((r) => r.mathVersion ?? 1))}`,
+        python: "test",
+      },
+    }).receipt;
+  assert.equal(await deliver(h.session, artifact.id, receipt), true);
+  await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
+  await download(h.workspace, h.edits);
+  assert.match(await h.workspace.newCanvas(h.edits), /^\?canvas=/);
+  assert.equal(await h.backend.head(), null);
 }
 
 // Refused buffer commits and serialization faults cannot navigate or mark work saved.

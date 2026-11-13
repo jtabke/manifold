@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { RegionSession, project } from "../src/regions/document.ts";
+import { archive, decodeWorkspace } from "../src/regions/artifacts.ts";
 import {
   proposeValue,
   previewPage,
@@ -111,3 +112,82 @@ assert.ok(Math.abs(variationRange(temperatureQ).step - 0.2) < 1e-10);
 console.log(
   "Exploration: transient linked values and requirements, atomic alternative/Undo, invalid and stale recovery, finite bounds and affine units pass.",
 );
+
+// Vary writes canonical SI labels back to source. Compound labels must retain
+// explicit unit meaning, including a symbol also used by a worksheet variable.
+for (const unit of ["A*ohm", "1/(V*A)", "rad/s", "A*s", "min", "V*A", "°C"]) {
+  const imported = new RegionSession();
+  try {
+    const area = imported.create();
+    imported.write(area, "A := 50 m^2");
+    const output = imported.create();
+    imported.write(output, "result := measured");
+    const data = imported.importData("vary.csv", "reading\n2", { x: 0, y: 0 });
+    const input = imported.quantityFromCell(data, 0, 0, "measured", unit, {
+      x: 0,
+      y: 100,
+    });
+    const baseline = imported.state,
+      original = project(baseline).solved.values.get("measured"),
+      value = original.value + 1;
+    assert.equal(
+      proposeValue(baseline, input, original.value).text,
+      baseline.regions.find((r) => r.id === input).text,
+    );
+    const proposal = proposeValue(baseline, input, value),
+      preview = project(previewPage(baseline, proposal));
+    assert.equal(preview.errors.size, 0, unit);
+    assert.equal(preview.kinds[input], "quantity", unit);
+    for (const name of ["measured", "result"]) {
+      const actual = preview.solved.values.get(name);
+      assert.ok(Math.abs(actual.value - value) < 1e-12, unit);
+      assert.deepEqual(actual.dimension, original.dimension, unit);
+      assert.equal(!!actual.absolute, !!original.absolute, unit);
+    }
+    assert.equal(imported.state, baseline, "preview cannot publish");
+    imported.branchValue(input, proposal.text);
+    assert.ok(
+      Math.abs(
+        project(imported.state).solved.values.get("result").value - value,
+      ) < 1e-12,
+      unit,
+    );
+    assert.equal(
+      project({ ...imported.state, active: "original" }).solved.values.get(
+        "result",
+      ).value,
+      original.value,
+      unit,
+    );
+    imported.undo();
+    assert.deepEqual(imported.state, baseline, unit);
+    imported.redo();
+    assert.ok(
+      Math.abs(
+        project(imported.state).solved.values.get("result").value - value,
+      ) < 1e-12,
+      unit,
+    );
+    const decoded = await decodeWorkspace(archive(imported.native()));
+    const reopened = new RegionSession(decoded.page);
+    try {
+      assert.ok(
+        Math.abs(
+          project(reopened.state).solved.values.get("result").value - value,
+        ) < 1e-12,
+        unit,
+      );
+      assert.equal(
+        project({ ...reopened.state, active: "original" }).solved.values.get(
+          "result",
+        ).value,
+        original.value,
+        unit,
+      );
+    } finally {
+      reopened.dispose();
+    }
+  } finally {
+    imported.dispose();
+  }
+}

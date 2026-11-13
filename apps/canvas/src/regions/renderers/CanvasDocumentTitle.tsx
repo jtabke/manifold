@@ -39,6 +39,7 @@ export function CanvasDocumentTitle({
       onChange={(event) => change(event.target.value)}
       onBlur={finish}
       onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
         if (event.key === "Enter" || event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();

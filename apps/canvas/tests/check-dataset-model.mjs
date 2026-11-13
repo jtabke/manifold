@@ -76,7 +76,9 @@ console.log(
 );
 
 // Reproduction from a clean document, context changes, archived identities and failure recovery.
-const { archive, restore } = await import("../src/regions/artifacts.ts");
+const { archive, restore, decodeWorkspace } = await import(
+  "../src/regions/artifacts.ts"
+);
 const { measurementOverlay } = await import("../src/regions/datasetModel.ts");
 const saved = legacyWorkspace(s.state, []),
   loaded = new RegionSession(restore(saved).page);
@@ -171,3 +173,135 @@ const ambiguous = new RegionSession(s.state),
   duplicate = ambiguous.create();
 ambiguous.write(duplicate, "P = force+speed");
 assert.throws(() => evaluateDataset(ambiguous.state, binding), /ambiguous/);
+
+// Unit fields describe a measurement, not an equation. Both use paths must
+// retain the same independently calculated SI value and dimensions.
+for (const [unit, raw, value, dimension, absolute = false] of [
+  ["V*A", 2, 2, [1, 2, -3, 0]],
+  ["A*ohm", 3, 3, [1, 2, -3, 0, -1]],
+  ["1/A", 4, 4, [0, 0, 0, 0, -1]],
+  ["V/(A*s)", 5, 5, [1, 2, -4, 0, -2]],
+  ["cm^2", 2, 0.0002, [0, 2, 0, 0]],
+  ["in*ft", 2, 2 * 0.0254 * 0.3048, [0, 2, 0, 0]],
+  ["min", 2, 120, [0, 0, 1, 0]],
+  ["degC", -20, 253.15, [0, 0, 0, 1], true],
+  ["°C", 25, 298.15, [0, 0, 0, 1], true],
+  ["1", 7, 7, [0, 0, 0, 0]],
+]) {
+  const session = new RegionSession();
+  try {
+    const output = session.create();
+    session.write(output, "result := observed");
+    const area = session.create();
+    session.write(area, "A := 50 m^2");
+    const dataset = session.importData("units.csv", `reading\n${raw}`, {
+      x: 0,
+      y: 0,
+    });
+    const relation = {
+      id: "data-relation-units",
+      dataset,
+      output,
+      bindings: [{ symbol: "observed", column: 0, unit }],
+      scope: { kind: "all" },
+      paired: true,
+    };
+    const fromTable = evaluateDataset(session.state, relation).records[0].value;
+    const input = session.quantityFromCell(dataset, 0, 0, "observed", unit, {
+      x: 0,
+      y: 100,
+    });
+    const projection = project(session.state);
+    assert.equal(projection.kinds[input], "quantity", unit);
+    for (const quantity of [
+      fromTable,
+      projection.solved.values.get("observed"),
+      projection.solved.values.get("result"),
+    ]) {
+      assert.ok(Math.abs(quantity.value - value) < 1e-12, unit);
+      assert.deepEqual(quantity.dimension, dimension, unit);
+      assert.equal(!!quantity.absolute, absolute, unit);
+    }
+    assert.deepEqual(projection.bindings[input] || {}, {}, unit);
+    session.bindDataset(relation);
+    const decoded = await decodeWorkspace(archive(session.native()));
+    const reopened = new RegionSession(decoded.page);
+    try {
+      assert.deepEqual(
+        evaluateDataset(reopened.state, reopened.state.dataRelations[0])
+          .records,
+        evaluateDataset(session.state, session.state.dataRelations[0]).records,
+        unit,
+      );
+      assert.deepEqual(
+        project(reopened.state).solved.values.get("observed"),
+        projection.solved.values.get("observed"),
+        unit,
+      );
+    } finally {
+      reopened.dispose();
+    }
+  } finally {
+    session.dispose();
+  }
+}
+
+for (const unit of ["m+1m", "2*m", "pi", "sin(1)", "unknown", "degC*m"]) {
+  const session = new RegionSession();
+  try {
+    const output = session.create();
+    session.write(output, "result := observed");
+    const dataset = session.importData("units.csv", "reading\n2", {
+      x: 0,
+      y: 0,
+    });
+    const before = session.document;
+    assert.throws(() =>
+      session.bindDataset({
+        id: "data-relation-invalid-unit",
+        dataset,
+        output,
+        bindings: [{ symbol: "observed", column: 0, unit }],
+        scope: { kind: "all" },
+        paired: true,
+      }),
+    );
+    assert.equal(session.document, before, unit);
+  } finally {
+    session.dispose();
+  }
+}
+console.log(
+  "Compound CSV units: scalar/table SI parity, affine Celsius, independent variable names, atomic invalid-unit rejection and native reopen pass.",
+);
+
+// An alias output must not let overflowed unit conversion escape as Infinity.
+{
+  const session = new RegionSession();
+  try {
+    const output = session.create();
+    session.write(output, "result := observed");
+    const dataset = session.importData("overflow.csv", "reading\n1e12", {
+      x: 0,
+      y: 0,
+    });
+    const before = session.document;
+    assert.throws(
+      () =>
+        session.bindDataset({
+          id: "data-relation-overflow",
+          dataset,
+          output,
+          bindings: [
+            { symbol: "observed", column: 0, unit: "GPa^11*GPa^11*GPa^11" },
+          ],
+          scope: { kind: "all" },
+          paired: true,
+        }),
+      /Row 1.*finite real quantity/,
+    );
+    assert.equal(session.document, before);
+  } finally {
+    session.dispose();
+  }
+}

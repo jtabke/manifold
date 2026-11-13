@@ -97,7 +97,8 @@ export function parseScientific(text: string, version: 2 | 3 = 2): Statement {
     cursor = pattern.lastIndex;
   }
   let i = 0,
-    depth = 0;
+    depth = 0,
+    deferredFunction = false;
   const primary = (): Expression => {
     const token = tokens[i++];
     if (token === "-") return { kind: "unary", expression: power() };
@@ -131,8 +132,11 @@ export function parseScientific(text: string, version: 2 | 3 = 2): Statement {
           );
         return { kind: "call", name: token, args };
       }
-      if (version === 3 && Object.hasOwn(scientificFunctions, token))
-        throw Error(`Use parentheses and arguments for ${token}.`);
+      if (version === 3 && Object.hasOwn(scientificFunctions, token)) {
+        if (!scientificUnits.has(token))
+          throw Error(`Use parentheses and arguments for ${token}.`);
+        deferredFunction = true;
+      }
       if (version === 3 && tokens[i] === "(") {
         // Empty/multi-argument adjacency cannot be a scalar product. A single
         // grouped expression remains ordinary juxtaposition, including x(y+1).
@@ -160,6 +164,12 @@ export function parseScientific(text: string, version: 2 | 3 = 2): Statement {
     depth--;
     return left;
   };
+  const hasFunctionUnit = (e: Expression): boolean =>
+    (e.kind === "name" &&
+      scientificUnits.has(e.name) &&
+      Object.hasOwn(scientificFunctions, e.name)) ||
+    (e.kind === "binary" &&
+      (hasFunctionUnit(e.left) || hasFunctionUnit(e.right)));
   const product = (): Expression => {
     let left = power();
     while (i < tokens.length) {
@@ -171,7 +181,11 @@ export function parseScientific(text: string, version: 2 | 3 = 2): Statement {
         implicit = true;
       } else break;
       let right = power();
-      if (implicit && literal(left) && unitTree(right))
+      if (
+        (implicit || (deferredFunction && hasFunctionUnit(right))) &&
+        literal(left) &&
+        unitTree(right)
+      )
         right = markUnits(right);
       left = { kind: "binary", op, left, right };
     }
@@ -188,6 +202,21 @@ export function parseScientific(text: string, version: 2 | 3 = 2): Statement {
   const expression = sum();
   if (i !== tokens.length)
     throw Error("Unexpected notation after the expression.");
+  if (deferredFunction) {
+    // A name such as min can denote a numeric unit suffix or a function. Give
+    // suffix marking a chance first; an unmarked bare function is still invalid.
+    const check = (e: Expression): void => {
+      if (e.kind === "name" && Object.hasOwn(scientificFunctions, e.name))
+        throw Error(`Use parentheses and arguments for ${e.name}.`);
+      if (e.kind === "unary") check(e.expression);
+      if (e.kind === "binary") {
+        check(e.left);
+        check(e.right);
+      }
+      if (e.kind === "call") e.args.forEach(check);
+    };
+    check(expression);
+  }
   return {
     name,
     relation: relation as Statement["relation"],

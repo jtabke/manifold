@@ -42,6 +42,27 @@ connections to mathematical quantities require explicit review. Plot responses a
 compare alternatives through the existing quantities. The command palette opens
 with Ctrl/Cmd+K.
 
+Measurement unit fields accept supported unit names, products, quotients and numeric
+powers, such as `V*A`, `V/A`, `cm^2` and `1/s`. Use `1` for dimensionless data and
+keep numeric scale factors in the measurement cells. Scalar references and whole-column
+calculations use the same unit conversion. Absolute Celsius uses a standalone `°C` or
+`degC`; use `K` for temperature differences. The original cell value and declared unit
+remain available in the source trace.
+
+Calculated measurement plots retain global extrema and prioritize failing and selected
+records within a 1,000-point display limit. The caption reports the displayed count;
+when failures or selections exceed the limit, a notice identifies omitted records.
+**Show failing records** opens the filtered results table. A requirement's summary
+opens the records outside that specific requirement. **Previous failure** and
+**Next failure** cycle through every failure, including records beyond the current
+table page. **Show source record** reveals the original CSV row; Alt+Left returns to
+the result. Filtering and navigation preserve the calculation and saved source data.
+
+Numeric unit fields accept compound notation such as `2 V*A` and `2 min`. In general
+worksheet expressions, group compound unit suffixes explicitly, for example
+`power := 2 (V*A)`, so names such as `A` can also remain worksheet variables.
+`duration := 2 min` uses minutes, while `min(a, b)` remains the minimum function.
+
 ## Configure the workspace
 
 **View** in the document header is always available, even when the toolbar is hidden.
@@ -314,7 +335,8 @@ context menus; Space-drag still pans. The marking menu can also be found in sear
 
 ## Navigate and arrange work
 
-Wheel zooms. Middle-drag or Space-drag pans; double middle-click fits the work.
+Scroll or two-finger scroll pans; Shift+scroll pans sideways. Pinch or Ctrl/Cmd+scroll
+zooms at the pointer. Middle-drag or Space-drag also pans; double middle-click fits the work.
 Drag blank space or Shift-click to select several objects. Movement and arrangement
 preserve mathematical meaning. Guides use nearby work; hold Alt to bypass alignment and
 docking. Passing over another object does not replace it or immediately rearrange it.
@@ -367,7 +389,10 @@ tool attention remain personal; the document name is portable. Authored groups, 
 with the workspace, as described under [portable arrangements](#portable-arrangements).
 
 Local save failures show **Local save needs attention** and **Retry local save**. Saves detect conflicting
-changes from other tabs rather than silently overwriting them. **Review workspace cleanup**
+changes from other tabs rather than silently overwriting them. If local saving is unavailable,
+**Download** preserves current work before **New canvas** or **Open workspace**. Any later edits
+or computation results require another download before leaving. The previous browser copy stays
+intact. **Review workspace cleanup**
 reviews unused history and obsolete saved data separately; it preserves current work,
 alternatives, retained Undo and results for restorable artifacts.
 

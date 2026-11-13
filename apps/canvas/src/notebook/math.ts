@@ -638,7 +638,7 @@ export function display(q?: Quantity): string {
 }
 export function references(e: Expression): string[] {
   if (e.kind === "name")
-    return e.name in units || e.name === "degC" ? [] : [e.name];
+    return Object.hasOwn(units, e.name) || e.name === "degC" ? [] : [e.name];
   if (e.kind === "call") return [...new Set(e.args.flatMap(references))];
   if (e.kind === "unary") return references(e.expression);
   if (e.kind === "binary")

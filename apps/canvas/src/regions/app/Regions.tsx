@@ -146,7 +146,7 @@ import {
   type DataSelection,
 } from "../renderers/DatasetViews";
 import { evaluateDataset } from "../datasetModel";
-import { measurementText } from "../dataSources";
+import { matchesMeasurementText } from "../dataSources";
 import { placeDataResult } from "../dataFeedback";
 import { DataRelationshipOverlay } from "../renderers/DataRelationshipOverlay";
 import { useRelationshipNavigation } from "../interaction/useRelationshipNavigation";
@@ -215,6 +215,20 @@ import {
 } from "../artifacts";
 
 const label = (name: string) => (name === "T_inf" ? "T∞" : name);
+const measurementCaption = (
+  text: string,
+  name: string,
+  source: { raw: string; unit: string },
+) => {
+  try {
+    return matchesMeasurementText(text, name, source.raw, source.unit)
+      ? "Imported measurement"
+      : "Edited assumption";
+  } catch {
+    // Older files may retain a units field accepted before strict unit validation.
+    return "Source units need review";
+  }
+};
 
 export default function Regions({ initial }: { initial: InitialWorkspace }) {
   // Product authoring includes persistence; explicit research trials stay isolated.
@@ -2291,6 +2305,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         ? "manifold-saved-workspace.manifold"
         : documentFilename(session.state.title);
       link.click();
+      if (!savedWork) workspace.acknowledgeExport(text);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setMessage(
         "Workspace download started. Keep the .manifold file as a backup or to open on another device. Further edits autosave only in this browser, not to that file.",
@@ -5675,6 +5690,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         }
                         selection={activeData}
                         focus={() => spatial.focusObject(relation.id)}
+                        showSource={(row) =>
+                          relationshipNav.follow(relation, {
+                            kind: "source",
+                            row,
+                          })
+                        }
                         inspect={(row, column, additive) =>
                           chooseData({
                             dataset: relation.dataset,
@@ -6692,14 +6713,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                                 (r) => r.id === region.source!.dataset,
                               )?.data?.name || "Source unavailable"}{" "}
                               · row {region.source.row + 1} ·{" "}
-                              {effectiveText.trim() ===
-                              measurementText(
+                              {measurementCaption(
+                                effectiveText,
                                 s?.name || "q",
-                                region.source.raw,
-                                region.source.unit,
-                              )
-                                ? "Imported measurement"
-                                : "Edited assumption"}
+                                region.source,
+                              )}
                             </button>
                           )}
                         </section>

@@ -39,6 +39,26 @@ try {
   await writer.press("Escape");
   await expect(title).toHaveValue("Untitled document");
   await title.fill("Thermal balance");
+  // Composing Enter/Escape must keep the unaccepted name and text focus intact.
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    for (const key of ["Enter", "Escape"]) {
+      const untouched = await title.evaluate(
+        (node, options) =>
+          node.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              bubbles: true,
+              cancelable: true,
+              ...options,
+            }),
+          ),
+        { key, ...composition },
+      );
+      expect(untouched).toBe(true);
+      await expect(title).toBeFocused();
+      await expect(title).toHaveValue("Thermal balance");
+      expect((await current()).page.title).toBeUndefined();
+    }
+  }
   await title.press("Enter");
   await expect
     .poll(async () => (await current()).page.title)

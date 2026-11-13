@@ -1,6 +1,9 @@
 /** Actual parser/evaluator work and explicit retained derivation budgets, not a capacity promise. */
 import assert from "node:assert/strict";
-import { writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import {
   createWorksheetProjection,
   WORKSHEET_CACHE_LIMITS,
@@ -9,6 +12,30 @@ import { evaluationWork, resetEvaluationWork } from "../src/notebook/math.ts";
 import { immutable } from "../src/notebook/immutable.ts";
 import { referenceProject } from "../tests/worksheet-reference.mjs";
 import { canvasSourceDigest } from "./canvas-source-digest.mjs";
+const { values } = parseArgs({
+  options: {
+    output: { type: "string" },
+    baseline: { type: "string" },
+  },
+});
+const output = values.output
+  ? resolve(values.output)
+  : fileURLToPath(
+      new URL(
+        "../../../evidence/current/canvas/worksheet-evaluation-results.json",
+        import.meta.url,
+      ),
+    );
+// Historical reports are metadata only and are never an implicit input.
+const baselinePath = values.baseline ? resolve(values.baseline) : undefined;
+const baseline = baselinePath
+  ? JSON.parse(readFileSync(baselinePath, "utf8"))
+  : undefined;
+if (baselinePath)
+  assert.ok(
+    typeof baseline?.sourceDigest === "string" && baseline.sourceDigest,
+    "An explicit baseline must declare its sourceDigest",
+  );
 const make = (count, family) =>
   immutable({
     regions: Array.from({ length: count }, (_, i) => ({
@@ -114,19 +141,15 @@ for (const regions of [64, 256])
       curveMs: sweep.ms,
     });
   }
-const baseline = JSON.parse(
-  readFileSync(
-    new URL(
-      "../../../evidence/archive/canvas/incremental-worksheet-reference-results.json",
-      import.meta.url,
-    ),
-    "utf8",
-  ),
-);
 const result = {
   date: new Date().toISOString(),
   sourceDigest: canvasSourceDigest(),
-  baselineSourceDigest: baseline.sourceDigest,
+  ...(baselinePath
+    ? {
+        baselineSourceDigest: baseline.sourceDigest,
+        baseline: { path: baselinePath, sourceDigest: baseline.sourceDigest },
+      }
+    : {}),
   environment: {
     node: process.version,
     platform: process.platform,
@@ -137,11 +160,6 @@ const result = {
   bounds: WORKSHEET_CACHE_LIMITS,
   rows,
 };
-writeFileSync(
-  new URL(
-    "../../../evidence/current/canvas/worksheet-evaluation-results.json",
-    import.meta.url,
-  ),
-  JSON.stringify(result, null, 2) + "\n",
-);
+mkdirSync(dirname(output), { recursive: true });
+writeFileSync(output, JSON.stringify(result, null, 2) + "\n");
 console.log(JSON.stringify(result, null, 2));

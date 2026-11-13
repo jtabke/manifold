@@ -48,10 +48,15 @@ export function proposeValue(
   )
     throw Error("Choose a resolved assigned quantity to explore.");
   const shown = q.absolute ? value - 273.15 : value;
+  const scientific = (s.mathVersion ?? 1) >= 2,
+    unit = unitLabel(q),
+    // A grouped suffix marks every factor as a unit, including names such as
+    // A that are also valid worksheet variables. Historical v1 source stays fixed.
+    suffix = scientific && /[·*/]/.test(unit) ? `(${unit})` : unit;
   const text =
     value === q.value
       ? p.texts[input]
-      : `${s.name} := ${(s.mathVersion ?? 1) >= 2 ? String(shown) : Number(shown.toPrecision(7))} ${unitLabel(q)}`.trim();
+      : `${s.name} := ${scientific ? String(shown) : Number(shown.toPrecision(7))} ${suffix}`.trim();
   return { input, context: page.active, key: semanticKey(page), text, value };
 }
 /** Layout changes preserve proposals; scenario or semantic changes make them stale. */

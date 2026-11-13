@@ -132,7 +132,22 @@ test(
         text: "Inspect",
         selection: [],
       });
-      assert.match((await c.next()).message, /busy/);
+      const overlap = await c.next();
+      assert.match(overlap.message, /busy/);
+      assert.equal(overlap.requestId, "overlap");
+      c.send({
+        type: "prompt",
+        requestId: "one",
+        text: "Duplicate the active request",
+        selection: [],
+      });
+      const duplicate = await c.next();
+      assert.match(duplicate.message, /busy/);
+      assert.equal(
+        duplicate.requestId,
+        undefined,
+        "a duplicate must not signal completion of the active request",
+      );
       c.send({
         type: "tool_result",
         id: tool.id,
@@ -182,6 +197,75 @@ test(
       assert.equal(disposed, 1);
     } finally {
       c?.ws.terminate();
+      await companion.close();
+    }
+  },
+);
+
+test(
+  "rejected prompts release their own browser request and preserve the conversation quota",
+  { timeout: 15000 },
+  async () => {
+    let prompted = 0;
+    const companion = await startCompanion({
+      port: 0,
+      createSession: async () => ({
+        subscribe() {},
+        async prompt() {
+          prompted++;
+        },
+        async abort() {},
+        dispose() {},
+      }),
+    });
+    const c = client(companion.url);
+    try {
+      assert.equal((await c.next()).type, "ready");
+      for (const [requestId, invalid] of [
+        ["too-many-focused-objects", { selection: Array(257).fill("object") }],
+        ["too-long", { text: "x".repeat(10001) }],
+        ["empty", { text: " " }],
+      ]) {
+        c.send({
+          type: "prompt",
+          requestId,
+          text: "Explain",
+          selection: [],
+          ...invalid,
+        });
+        const rejected = await c.next();
+        assert.equal(rejected.type, "error");
+        assert.equal(
+          rejected.requestId,
+          requestId,
+          "the browser must be able to end the rejected request",
+        );
+      }
+      assert.equal(prompted, 0, "invalid input never reaches the model");
+      for (let i = 0; i < 100; i++) {
+        const requestId = `valid-${i}`;
+        c.send({ type: "prompt", requestId, text: "Explain", selection: [] });
+        assert.deepEqual(await c.next(), {
+          type: "done",
+          requestId,
+          cancelled: false,
+        });
+      }
+      assert.equal(prompted, 100, "rejected requests do not consume quota");
+      c.send({
+        type: "prompt",
+        requestId: "over-quota",
+        text: "Explain again",
+        selection: [],
+      });
+      const exhausted = await c.next();
+      assert.equal(exhausted.type, "error");
+      assert.equal(exhausted.requestId, "over-quota");
+      assert.match(exhausted.message, /disconnect and reconnect/);
+      assert.equal(prompted, 100, "the request limit still bounds model calls");
+      await c.close();
+    } finally {
+      c.ws.terminate();
       await companion.close();
     }
   },

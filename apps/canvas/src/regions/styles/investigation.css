@@ -538,6 +538,52 @@
   color: var(--canvas-muted, #97909c);
   margin-left: auto;
 }
+.er-data-failure-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  font-size: 11px;
+}
+.er-data-failure-controls [role="status"] {
+  flex: 1 1 150px;
+  color: var(--canvas-muted, #726b7b);
+}
+.er-data-failure-controls button,
+.er-data-source-record,
+.er-data-result .er-data-requirement {
+  border: 1px solid var(--canvas-border, #e6e0eb);
+  border-radius: 5px;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--canvas-accent, #695284);
+  font: inherit;
+  cursor: pointer;
+}
+.er-data-failure-controls button[aria-pressed="true"],
+.er-data-result .er-data-requirement[aria-pressed="true"] {
+  background: var(--canvas-accent-tint, #79639b0c);
+}
+.er-data-failure-controls button:disabled,
+.er-data-result .er-data-requirement:disabled {
+  cursor: default;
+  color: var(--canvas-muted, #827d88);
+}
+.er-data-source-record {
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+.er-data-sampling-notice,
+.er-data-filter-status {
+  margin: 8px 0;
+  color: var(--canvas-muted, #726b7b);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.er-data-result .er-data-requirement {
+  text-align: left;
+}
 .er-data-result svg {
   width: 100%;
   display: block;

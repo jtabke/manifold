@@ -78,7 +78,8 @@ export function CommandPalette({
         onKeyDown={(e) => {
           if (
             !["ArrowUp", "ArrowDown"].includes(e.key) ||
-            e.nativeEvent.isComposing
+            e.nativeEvent.isComposing ||
+            e.keyCode === 229
           )
             return;
           const items = [
@@ -92,10 +93,14 @@ export function CommandPalette({
           const active = items.indexOf(
             document.activeElement as HTMLButtonElement,
           );
-          items[
-            (active + (e.key === "ArrowDown" ? 1 : -1) + items.length) %
-              items.length
-          ].focus();
+          const next =
+            active === -1
+              ? e.key === "ArrowDown"
+                ? 0
+                : items.length - 1
+              : (active + (e.key === "ArrowDown" ? 1 : -1) + items.length) %
+                items.length;
+          items[next].focus();
         }}
       >
         <header>
@@ -111,6 +116,7 @@ export function CommandPalette({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
               if (e.key === "Escape") {
                 e.stopPropagation();
                 setPalette(undefined);

@@ -31,6 +31,7 @@ export async function startManagedCompanion({
   grantTimeoutMs = 60000,
 }) {
   const grants = new Map();
+  let configuring = 0;
   let companion;
   companion = await startCompanion({
     port,
@@ -74,15 +75,23 @@ export async function startManagedCompanion({
           throw Error(
             "Choose a provider and model, and optionally supply an API key",
           );
-        if (grants.size >= 4)
+        if (grants.size + configuring >= 4)
           throw Error("Too many pending connections. Wait a minute and retry.");
         // A separate runtime per connection keeps a supplied key scoped to this conversation.
         // The factory stores it in memory only, never in Pi's credential file or a native archive.
-        const createSession = await factory(
-          input.provider,
-          input.model,
-          input.apiKey || undefined,
-        );
+        // Reserve capacity before async setup so simultaneous tabs cannot all
+        // pass the pending-connection limit while their runtimes are loading.
+        configuring++;
+        let createSession;
+        try {
+          createSession = await factory(
+            input.provider,
+            input.model,
+            input.apiKey || undefined,
+          );
+        } finally {
+          configuring--;
+        }
         const ticket = randomBytes(32).toString("hex");
         const timer = setTimeout(() => grants.delete(ticket), grantTimeoutMs);
         timer.unref();

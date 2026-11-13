@@ -108,6 +108,83 @@ test(
 );
 
 test(
+  "concurrent managed setup reserves the connection limit and releases failed reservations",
+  { timeout: 10000 },
+  async () => {
+    let releaseFactory, fourStarted, extraStarted;
+    const factoryGate = new Promise((resolve) => {
+      releaseFactory = resolve;
+    });
+    const fourFactoriesStarted = new Promise((resolve) => {
+      fourStarted = resolve;
+    });
+    const extraFactoryStarted = new Promise((resolve) => {
+      extraStarted = resolve;
+    });
+    let factories = 0;
+    const companion = await startManagedCompanion({
+      origins: [origin],
+      configuration: async () => configuration,
+      factory: async (provider) => {
+        factories++;
+        if (provider === "fail") throw Error("Provider setup failed");
+        if (factories === 4) fourStarted();
+        if (factories > 4) extraStarted();
+        await factoryGate;
+        return async () => ({ subscribe() {}, dispose() {} });
+      },
+    });
+    const pending = [];
+    let socket;
+    try {
+      for (let i = 0; i < 4; i++)
+        pending.push(
+          request(companion, "/connect", { provider: "test", model: "small" }),
+        );
+      await fourFactoriesStarted;
+      const overflow = request(companion, "/connect", {
+        provider: "test",
+        model: "small",
+      });
+      pending.push(overflow);
+      // Settle even under the regression: an incorrectly admitted fifth setup
+      // signals its factory entry, rather than hanging this check on the gate.
+      await Promise.race([overflow, extraFactoryStarted]);
+      releaseFactory();
+      const responses = await Promise.all(pending);
+      assert.equal(responses[4].status, 400);
+      assert.equal(factories, 4, "overflow must not allocate another runtime");
+      const tickets = [];
+      for (const response of responses.slice(0, 4)) {
+        assert.equal(response.status, 200);
+        tickets.push((await response.json()).url);
+      }
+      socket = new WebSocket(tickets[0], { origin });
+      assert.equal(
+        JSON.parse((await once(socket, "message"))[0].toString()).type,
+        "ready",
+      );
+      const failed = await request(companion, "/connect", {
+        provider: "fail",
+        model: "small",
+      });
+      assert.equal(failed.status, 400);
+      const retry = await request(companion, "/connect", {
+        provider: "test",
+        model: "small",
+      });
+      assert.equal(retry.status, 200, "failed setup releases its reservation");
+      assert.equal(factories, 6);
+    } finally {
+      releaseFactory();
+      socket?.terminate();
+      await Promise.allSettled(pending);
+      await companion.close();
+    }
+  },
+);
+
+test(
   "managed setup failures are sanitized; unused tickets expire",
   { timeout: 10000 },
   async () => {

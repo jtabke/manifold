@@ -9,7 +9,16 @@ import {
   references,
   same,
   mathSource,
+  quantityLiteral,
 } from "../src/notebook/math.ts";
+import {
+  csvQuantity,
+  matchesMeasurementText,
+} from "../src/regions/dataSources.ts";
+import {
+  optimizationQuantity,
+  optimizationConvert,
+} from "../src/regions/optimizationQuantities.ts";
 import { mathSource as spans } from "../src/regions/editing.ts";
 import {
   scientificScalarCall,
@@ -57,6 +66,144 @@ const resolveNone = () => {
 };
 const expression = (text) =>
   evaluate(parse(`result = ${text}`, undefined, 2).expression, resolveNone, 2);
+// Unit-only entry fields share one bounded suffix grammar. Worksheet formulas
+// retain ordinary variable binding outside explicit numeric unit suffixes.
+for (const [unit, canonical, scale] of [
+  ["min", "s", 60],
+  ["min^-1", "s^-1", 1 / 60],
+  ["V*A", "W", 1],
+  ["A*ohm", "V", 1],
+  ["1/A", "A^-1", 1],
+  ["1/(V*A)", "W^-1", 1],
+  ["V/(A*s)", "kg*m^2*s^-4*A^-2", 1],
+  ["cm^2", "m^2", 0.0001],
+  ["in*ft", "m^2", 0.0254 * 0.3048],
+]) {
+  const expected = 2 * scale,
+    imported = csvQuantity(
+      { name: "entry.csv", csv: "reading\n2" },
+      0,
+      0,
+      "q",
+      unit,
+    ),
+    statement = parse(imported.text, undefined, 3),
+    q = evaluate(statement.expression, resolveNone, 3);
+  close(q.value, expected);
+  assert.equal(quantityLiteral(statement.expression), true, unit);
+  close(optimizationQuantity(`2 ${unit}`, canonical), expected);
+  close(optimizationQuantity(`2 (${unit})`, canonical), expected);
+  close(optimizationConvert(2, unit, canonical), expected);
+  close(optimizationQuantity("2", unit), 2);
+  const session = new RegionSession();
+  try {
+    const area = session.create();
+    session.write(area, "A := 50 m^2");
+    const input = session.create();
+    session.write(input, imported.text);
+    const proposal = proposeValue(session.state, input, expected + 1),
+      preview = project(previewPage(session.state, proposal));
+    assert.equal(preview.errors.size, 0, unit);
+    close(preview.solved.values.get("q").value, expected + 1);
+    assert.ok(same(preview.solved.values.get("q").dimension, q.dimension));
+    close(project(session.state).solved.values.get("q").value, expected);
+  } finally {
+    session.dispose();
+  }
+}
+for (const [body, expected, dimension] of [
+  ["2 min", 120],
+  ["2*min", 120, [0, 0, 1, 0]],
+  ["1/min", 1 / 60, [0, 0, -1, 0]],
+  ["2 m/min", 2 / 60, [0, 1, -1, 0]],
+  ["min(2 min,3 min)", 120],
+  ["2 (V*min)", 120],
+  ["2 min(1,3)", 2],
+  ["min(4,3)", 3],
+]) {
+  const statement = parse(`duration := ${body}`, undefined, 3);
+  const quantity = evaluate(statement.expression, resolveNone, 3);
+  close(quantity.value, expected);
+  if (dimension) assert.ok(same(quantity.dimension, dimension), body);
+}
+for (const body of ["min", "x*min"])
+  assert.throws(
+    () => parse(`duration := ${body}`, undefined, 3),
+    /parentheses/,
+  );
+for (const version of [1, 2]) {
+  const legacy = parse("duration := 2 min", undefined, version);
+  assert.deepEqual(references(legacy.expression), version === 1 ? ["min"] : []);
+  if (version === 1)
+    close(
+      evaluate(
+        legacy.expression,
+        () => ({ value: 3, dimension: [0, 0, 0, 0] }),
+        1,
+      ).value,
+      6,
+    );
+  else close(evaluate(legacy.expression, resolveNone, 2).value, 120);
+  for (const [body, value] of [
+    ["2*min", 6],
+    ["1/min", 1 / 3],
+  ]) {
+    const prior = parse(`duration := ${body}`, undefined, version);
+    assert.deepEqual(references(prior.expression), ["min"]);
+    close(
+      evaluate(
+        prior.expression,
+        () => ({ value: 3, dimension: [0, 0, 0, 0] }),
+        version,
+      ).value,
+      value,
+    );
+  }
+}
+assert.equal(matchesMeasurementText("q := 120 (s)", "q", "2", "min"), true);
+assert.equal(matchesMeasurementText("q := 180 (s)", "q", "2", "min"), false);
+assert.equal(matchesMeasurementText("q := 275.15 (K)", "q", "2", "°C"), false);
+close(optimizationQuantity("1e20", "m"), 1e20);
+close(optimizationQuantity("-2 V*A", "W"), -2);
+for (const text of [
+  "A",
+  "h",
+  "min(1,2)",
+  "floor(2)",
+  "sin(1)",
+  "pi",
+  "2*pi",
+  "2+3",
+  "2*3",
+  "2/3",
+  "2*1",
+  "2/1",
+  "2 m+1 m",
+  "2*3 m",
+  "2 (m+1m)",
+  "2 m^13",
+  "1e999",
+  "2 (GPa^12)^12",
+  "25 °C",
+]) {
+  assert.throws(() => optimizationQuantity(text, "m"), undefined, text);
+  assert.throws(() => optimizationQuantity(text, "1"), undefined, text);
+}
+for (const [text, unit] of [
+  ["2 s", "m"],
+  ["2 min", "m"],
+  ["2 V*A", "A"],
+  ["2", "°C"],
+])
+  assert.throws(() => optimizationQuantity(text, unit));
+for (const [value, from, to] of [
+  [Infinity, "m", "m"],
+  [1e308, "GPa", "Pa"],
+  [2, "s", "m"],
+  [2, "°C", "K"],
+  [2, "K", "°C"],
+])
+  assert.throws(() => optimizationConvert(value, from, to));
 for (const [text, expected, dimension] of [
   ["sin(30 deg)", 0.5, [0, 0, 0, 0]],
   ["cos(pi rad)", -1, [0, 0, 0, 0]],
@@ -212,25 +359,27 @@ assert.equal(
   nested.raw.length,
 );
 // New unit symbols do not consume common variable names or reciprocal expressions.
-const variables = calculate(
-  [
-    "A = 2 m^2",
-    "h = 3 W/(m^2 K)",
-    "R = 1/A",
-    "q = h*A",
-    "power = 1 W/m^2*A",
-  ].map((text, i) => ({
-    id: String(i),
-    text,
-    x: 0,
-    y: 0,
-    mathVersion: 2,
-  })),
-);
-assert.equal(variables.errors.size, 0);
-close(variables.values.get("R").value, 0.5);
-close(variables.values.get("power").value, 2);
-assert.ok(same(variables.values.get("power").dimension, [1, 2, -3, 0]));
+for (const mathVersion of [2, 3]) {
+  const variables = calculate(
+    [
+      "A = 2 m^2",
+      "h = 3 W/(m^2 K)",
+      "R = 1/A",
+      "q = h*A",
+      "power = 1 W/m^2*A",
+    ].map((text, i) => ({
+      id: String(i),
+      text,
+      x: 0,
+      y: 0,
+      mathVersion,
+    })),
+  );
+  assert.equal(variables.errors.size, 0);
+  close(variables.values.get("R").value, 0.5);
+  close(variables.values.get("power").value, 2);
+  assert.ok(same(variables.values.get("power").dimension, [1, 2, -3, 0]));
+}
 const mixed = calculate([
   { id: "angle", text: "angle=30 deg", x: 0, y: 0, mathVersion: 2 },
   { id: "old", text: "old=2*angle", x: 0, y: 0 },

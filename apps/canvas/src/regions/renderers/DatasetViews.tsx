@@ -4,6 +4,7 @@ import { display, references, unitLabel } from "../../notebook/math";
 import { project, type Page, type Point } from "../document";
 import { readCsv } from "../dataSources";
 import { evaluateDataset, type DatasetComputation } from "../datasetModel";
+import { sampleDatasetPlot } from "../datasetPlot";
 import {
   recordFeedback,
   selectionKind,
@@ -380,6 +381,7 @@ export function DatasetResult({
   remove,
   hidden,
   focus,
+  showSource,
 }: {
   page: Page;
   relation: DatasetComputation;
@@ -391,10 +393,12 @@ export function DatasetResult({
   remove: () => void;
   hidden?: boolean;
   focus: () => void;
+  showSource: (row: number) => void;
 }) {
   const [view, setView] = useState<"plot" | "table">("plot"),
     [axis, setAxis] = useState(relation.bindings.at(-1)?.symbol || ""),
-    [start, setStart] = useState(0);
+    [start, setStart] = useState(0),
+    [failureFilter, setFailureFilter] = useState<{ requirement?: string }>();
   const state = useMemo(() => {
     try {
       return { result: evaluateDataset(page, relation) };
@@ -402,12 +406,6 @@ export function DatasetResult({
       return { error: (e as Error).message };
     }
   }, [page, relation]);
-  useEffect(() => {
-    const index =
-      state.result?.records.findIndex((r) => selection?.rows.includes(r.row)) ??
-      -1;
-    if (index >= 0) setStart(Math.floor(index / 40) * 40);
-  }, [selection, state.result]);
   const { result, error } = state,
     source = page.regions.find((r) => r.id === relation.dataset)?.data;
   const symbol =
@@ -419,6 +417,66 @@ export function DatasetResult({
   const records = result?.records || [],
     xq = records[0]?.inputs[name],
     yq = records[0]?.value;
+  const failures = useMemo(
+      () => records.filter((r) => r.pass === false),
+      [records],
+    ),
+    filteredFailures = useMemo(
+      () =>
+        failureFilter?.requirement
+          ? records.filter(
+              (r) => r.conditions[failureFilter.requirement!] === false,
+            )
+          : failures,
+      [records, failures, failureFilter],
+    ),
+    tableRecords = failureFilter ? filteredFailures : records,
+    selectedRows =
+      selection?.dataset === relation.dataset &&
+      selectionKind(selection) !== "series"
+        ? selection.rows
+        : [],
+    activeRecord = records.find((r) => r.row === selectedRows.at(-1)),
+    activeFailure = filteredFailures.findIndex(
+      (r) => r.row === activeRecord?.row,
+    ),
+    pageStart = Math.min(
+      start,
+      Math.max(0, Math.floor((tableRecords.length - 1) / 40) * 40),
+    );
+  useEffect(() => {
+    const index = tableRecords.findIndex((r) => r.row === selectedRows.at(-1));
+    if (index >= 0) setStart(Math.floor(index / 40) * 40);
+  }, [selection, tableRecords]);
+  useEffect(() => {
+    if (
+      failureFilter?.requirement &&
+      !result?.requirements.some((r) => r.id === failureFilter.requirement)
+    ) {
+      setFailureFilter(undefined);
+      setStart(0);
+    }
+  }, [failureFilter, result]);
+  const showFailures = (requirement?: string) => {
+    const first = requirement
+      ? records.find((r) => r.conditions[requirement] === false)
+      : failures[0];
+    setFailureFilter({ requirement });
+    setView("table");
+    setStart(0);
+    if (first) inspect(first.row);
+  };
+  const nextFailure = (direction: -1 | 1) => {
+    if (!filteredFailures.length) return;
+    const index =
+      activeFailure < 0
+        ? direction === 1
+          ? 0
+          : filteredFailures.length - 1
+        : (activeFailure + direction + filteredFailures.length) %
+          filteredFailures.length;
+    inspect(filteredFailures[index].row);
+  };
   const xs = records.map((r) => r.inputs[name].value),
     ys = records.map((r) =>
       r.value.absolute ? r.value.value - 273.15 : r.value.value,
@@ -441,14 +499,8 @@ export function DatasetResult({
     maxY = Math.max(...ys, ...limits.map(([, l]) => scalar(l.bound))),
     dx = maxX - minX || Math.abs(maxX) * 0.2 || 1,
     dy = maxY - minY || 1;
-  const plotted =
-    records.length > 1000
-      ? records.filter(
-          (r, i) =>
-            i % Math.ceil(records.length / 1000) === 0 ||
-            selection?.rows.includes(r.row),
-        )
-      : records;
+  const sampled = sampleDatasetPlot(records, name, selectedRows),
+    plotted = sampled.records;
   const px = (x: number) => 65 + ((x - minX + dx * 0.1) / (dx * 1.2)) * 420,
     py = (y: number) => 240 - ((y - minY) / (dy * 1.15)) * 190;
   return (
@@ -476,7 +528,11 @@ export function DatasetResult({
         <span className="er-data-result-actions">
           <button
             aria-pressed={view === "plot"}
-            onClick={() => setView("plot")}
+            onClick={() => {
+              setView("plot");
+              setFailureFilter(undefined);
+              setStart(0);
+            }}
           >
             Plot
           </button>
@@ -511,8 +567,71 @@ export function DatasetResult({
                 : ""}
             </span>
           </div>
+          {!!result?.requirements.length && (
+            <div
+              className="er-data-failure-controls"
+              role="group"
+              aria-label="Requirement failures"
+            >
+              <button
+                aria-pressed={!!failureFilter}
+                disabled={!failures.length}
+                onClick={() => showFailures()}
+              >
+                Show failing records ({failures.length})
+              </button>
+              {failureFilter && (
+                <button
+                  onClick={() => {
+                    setFailureFilter(undefined);
+                    setStart(0);
+                  }}
+                >
+                  Show all records
+                </button>
+              )}
+              <button
+                aria-label="Previous failing record"
+                disabled={!filteredFailures.length}
+                onClick={() => nextFailure(-1)}
+              >
+                Previous failure
+              </button>
+              <span role="status" aria-live="polite">
+                {activeFailure >= 0
+                  ? `Failure ${activeFailure + 1} of ${filteredFailures.length} · Row ${activeRecord!.row + 1}`
+                  : `${filteredFailures.length} failing records`}
+              </span>
+              <button
+                aria-label="Next failing record"
+                disabled={!filteredFailures.length}
+                onClick={() => nextFailure(1)}
+              >
+                Next failure
+              </button>
+            </div>
+          )}
+          {activeRecord && (
+            <button
+              className="er-data-source-record"
+              aria-label={`Show source row ${activeRecord.row + 1}`}
+              onClick={() => showSource(activeRecord.row)}
+            >
+              Show source record · Row {activeRecord.row + 1}
+            </button>
+          )}
           {view === "plot" ? (
             <>
+              {!!(
+                sampled.omittedFailureCount || sampled.omittedSelectedCount
+              ) && (
+                <p className="er-data-sampling-notice" role="status">
+                  {sampled.omittedFailureCount > 0 &&
+                    `${sampled.omittedFailureCount} failing records are not shown individually. Use Show failing records to inspect every failure. `}
+                  {sampled.omittedSelectedCount > 0 &&
+                    `${sampled.omittedSelectedCount} selected records are not shown individually.`}
+                </p>
+              )}
               <svg
                 viewBox="0 0 530 295"
                 role="group"
@@ -620,14 +739,7 @@ export function DatasetResult({
                       }
                     }}
                   >
-                    <title>
-                      Row {r.row + 1} · {display(r.value)}
-                      {r.pass === undefined
-                        ? ""
-                        : r.pass
-                          ? " · Within limit"
-                          : " · Outside limit"}
-                    </title>
+                    <title>{`Row ${r.row + 1} · ${display(r.value)}${r.pass === undefined ? "" : r.pass ? " · Within limit" : " · Outside limit"}`}</title>
                   </circle>
                 ))}
               </svg>
@@ -648,6 +760,13 @@ export function DatasetResult({
             </>
           ) : (
             <>
+              {failureFilter && (
+                <p className="er-data-filter-status" role="status">
+                  {failureFilter.requirement
+                    ? `Showing ${tableRecords.length} records outside ${result?.requirements.find((r) => r.id === failureFilter.requirement)?.text || "this requirement"}.`
+                    : `Showing ${tableRecords.length} records outside one or more requirements.`}
+                </p>
+              )}
               <div className="er-data-scroll">
                 <table>
                   <thead>
@@ -661,7 +780,7 @@ export function DatasetResult({
                     </tr>
                   </thead>
                   <tbody>
-                    {records.slice(start, start + 40).map((r) => (
+                    {tableRecords.slice(pageStart, pageStart + 40).map((r) => (
                       <tr
                         key={r.row}
                         data-calculated-row={r.row}
@@ -717,21 +836,25 @@ export function DatasetResult({
                   </tbody>
                 </table>
               </div>
-              {records.length > 40 && (
+              {!tableRecords.length && (
+                <p role="status">No failing records for this filter.</p>
+              )}
+              {tableRecords.length > 40 && (
                 <div className="er-data-paging">
                   <button
-                    disabled={!start}
-                    onClick={() => setStart(Math.max(0, start - 40))}
+                    disabled={!pageStart}
+                    onClick={() => setStart(Math.max(0, pageStart - 40))}
                   >
                     Previous
                   </button>
                   <span>
-                    {start + 1}–{Math.min(start + 40, records.length)} of{" "}
-                    {records.length}
+                    {pageStart + 1}–
+                    {Math.min(pageStart + 40, tableRecords.length)} of{" "}
+                    {tableRecords.length}
                   </span>
                   <button
-                    disabled={start + 40 >= records.length}
-                    onClick={() => setStart(start + 40)}
+                    disabled={pageStart + 40 >= tableRecords.length}
+                    onClick={() => setStart(pageStart + 40)}
                   >
                     Next
                   </button>
@@ -741,11 +864,20 @@ export function DatasetResult({
           )}
           <footer>
             {result?.requirements.map((r) => (
-              <span key={r.id}>
+              <button
+                key={r.id}
+                className="er-data-requirement"
+                aria-label={`Show failing records for ${r.text}`}
+                aria-pressed={failureFilter?.requirement === r.id}
+                disabled={
+                  !records.some((row) => row.conditions[r.id] === false)
+                }
+                onClick={() => showFailures(r.id)}
+              >
                 {r.text} ·{" "}
                 {records.filter((row) => row.conditions[r.id]).length}/
                 {records.length} within limit
-              </span>
+              </button>
             ))}
             <details>
               <summary>Source & model</summary>

@@ -159,7 +159,6 @@ export async function startCompanion({
           msg.requestId.length > 100 ||
           !msg.requestId ||
           seen.has(msg.requestId) ||
-          seen.size >= 100 ||
           typeof msg.text !== "string" ||
           !msg.text.trim() ||
           msg.text.length > 10_000 ||
@@ -170,6 +169,10 @@ export async function startCompanion({
           )
         )
           throw Error("Invalid, duplicate or busy assistant request");
+        if (seen.size >= 100)
+          throw Error(
+            "Conversation request limit reached; disconnect and reconnect to start a new session",
+          );
         active = { id: msg.requestId, tools: 0 };
         seen.add(msg.requestId);
         stopped = false;
@@ -200,7 +203,20 @@ export async function startCompanion({
         tasks.add(run);
         void run.finally(() => tasks.delete(run));
       } catch (error) {
-        send({ type: "error", message: error.message });
+        send({
+          type: "error",
+          // A rejected prompt still needs a terminal response so its browser request
+          // releases busy/tool authority. Never terminate a running request when
+          // rejecting a duplicate that reuses its ID.
+          ...(msg?.type === "prompt" &&
+          typeof msg.requestId === "string" &&
+          msg.requestId.length > 0 &&
+          msg.requestId.length <= 100 &&
+          msg.requestId !== active?.id
+            ? { requestId: msg.requestId }
+            : {}),
+          message: error.message,
+        });
       }
     });
     const setup = (async () => {

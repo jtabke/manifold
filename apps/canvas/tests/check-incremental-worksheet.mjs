@@ -48,6 +48,41 @@ const maps = (value) => {
   return value;
 };
 const engine = createWorksheetProjection();
+// Inherited Object names are valid scientific variable names, not units. They
+// must participate in bindings and incremental invalidation just like other inputs.
+for (const mathVersion of [2, 3])
+  for (const name of [
+    "toString",
+    "hasOwnProperty",
+    "valueOf",
+    "isPrototypeOf",
+  ]) {
+    const source = make([`${name} := 2`, `result := ${name}*3`, "result <= 9"]);
+    source.regions = source.regions.map((r) => ({ ...r, mathVersion }));
+    const session = new RegionSession(source);
+    try {
+      const read = () => project(session.state);
+      assert.equal(read().kinds.r1, "equation");
+      assert.equal(read().bindings.r1[name], "r0");
+      assert.equal(read().solved.values.get("result").value, 6);
+      assert.equal(read().solved.constraints.get("r2").pass, true);
+      session.write("r0", `${name} := 4`);
+      assert.equal(read().solved.values.get("result").value, 12);
+      assert.equal(read().solved.constraints.get("r2").pass, false);
+      assert.deepEqual(
+        maps(read()),
+        maps(createWorksheetProjection().project(session.state)),
+      );
+      session.undo();
+      assert.equal(read().solved.values.get("result").value, 6);
+      assert.equal(read().solved.constraints.get("r2").pass, true);
+      session.redo();
+      assert.equal(read().solved.values.get("result").value, 12);
+      assert.equal(read().solved.constraints.get("r2").pass, false);
+    } finally {
+      session.dispose();
+    }
+  }
 const compare = (page) => {
   assert.deepEqual(
     maps(engine.project(page)),

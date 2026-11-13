@@ -9,7 +9,7 @@ import {
   type Statement,
 } from "../notebook/math.ts";
 import { project, effective, type Page } from "./document.ts";
-import { readCsv, measurementText, numericCell } from "./dataSources.ts";
+import { readCsv, measurementUnit, numericCell } from "./dataSources.ts";
 export type DatasetComputation = {
   id: string;
   dataset: string;
@@ -127,11 +127,7 @@ export function evaluateDataset(
       throw Error(
         `Specify units for ${table.headers[b.column]} (1 for dimensionless).`,
       );
-    const text = measurementText(symbols[i], "1", b.unit),
-      check = calculate([{ id: "unit", text, x: 0, y: 0, mathVersion: 2 }]);
-    const q = check.values.get(symbols[i]);
-    if (!q || check.errors.size)
-      throw Error(check.errors.get("unit") || "Unsupported units.");
+    const q = measurementUnit(b.unit);
     const existing = p.solved.values.get(symbols[i]);
     if (
       existing &&
@@ -152,11 +148,16 @@ export function evaluateDataset(
           `Row ${row + 1} · ${table.headers[b.column]}: a finite numeric measurement is required.`,
         );
       const u = units[i];
+      const value = u.one.absolute
+        ? Number(raw) + u.zero
+        : Number(raw) * u.one.value;
+      if (!Number.isFinite(value))
+        throw Error(
+          `Row ${row + 1} · ${table.headers[b.column]}: the measurement is not a finite real quantity.`,
+        );
       overrides[symbols[i]] = {
         ...u.one,
-        value: u.one.absolute
-          ? Number(raw) + u.zero
-          : Number(raw) * u.one.value,
+        value,
       };
     });
     const solved = calculate(definitions, overrides),

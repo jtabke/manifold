@@ -95,6 +95,58 @@ try {
       (r) => r.text === "Second writer remains in memory",
     ),
   ).toBe(false);
+  // A conflicted tab can leave after exporting its exact current work.
+  const conflictedURL = b.url();
+  await write(b, "A later edit must also be exported");
+  await b.getByRole("button", { name: "File", exact: true }).click();
+  await b.getByRole("button", { name: "New canvas", exact: true }).click();
+  await expect(
+    b.getByText("Export current work first; local save is unavailable.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(b.url()).toBe(conflictedURL);
+  // Creating archive bytes without delivering them must not authorize leaving.
+  await b.evaluate(() => {
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) {
+        HTMLAnchorElement.prototype.click = click;
+        throw Error("Injected download delivery failure");
+      }
+      return click.call(this);
+    };
+  });
+  await b.getByRole("button", { name: "Download file", exact: true }).click();
+  await expect(
+    b.getByText(
+      "Could not save workspace file: Injected download delivery failure",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await b.getByRole("button", { name: "File", exact: true }).click();
+  await b.getByRole("button", { name: "New canvas", exact: true }).click();
+  await expect(
+    b.getByText("Export current work first; local save is unavailable.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(b.url()).toBe(conflictedURL);
+  const freshExport = b.waitForEvent("download");
+  await b.getByRole("button", { name: "Download file", exact: true }).click();
+  const latest = await decodeWorkspace(
+    await readFile(await (await freshExport).path(), "utf8"),
+  );
+  expect(
+    latest.page.regions.some(
+      (r) => r.text === "A later edit must also be exported",
+    ),
+  ).toBe(true);
+  await b.getByRole("button", { name: "File", exact: true }).click();
+  await b.getByRole("button", { name: "New canvas", exact: true }).click();
+  await b.waitForURL(/\?canvas=/);
+  await expect(b.locator(".er-region")).toHaveCount(0);
+  expect(await readWorkspaceBytes(a)).toBe(accepted);
   await b.close();
   // Corrupting the current record must not cause fallback to the older legacy backup.
   const name = await canvasDatabaseName(key);

@@ -97,6 +97,16 @@ export function canvasWorkspace(config: {
     evidence: session.evidenceSequence,
     ...edits.read(),
   });
+  let exported: ReturnType<typeof capture> | undefined,
+    pendingExport:
+      | { text: string; capture: ReturnType<typeof capture> }
+      | undefined;
+  const matchesExport = (before: ReturnType<typeof capture>) =>
+    exported !== undefined &&
+    exported.document === before.document &&
+    exported.evidence === before.evidence &&
+    exported.editing === before.editing &&
+    exported.draft === before.draft;
   const unchanged = (
     before: ReturnType<typeof capture>,
     edits: WorkspaceEdits,
@@ -182,11 +192,12 @@ export function canvasWorkspace(config: {
     return promise;
   }
   async function readyToLeave(edits: WorkspaceEdits) {
-    if (config.blocked || error)
-      throw Error("Export current work first; local save is unavailable.");
     if (!(await finish(edits))) return;
     const before = capture(edits);
-    if (!(await save()))
+    if (config.blocked || error) {
+      if (!matchesExport(before))
+        throw Error("Export current work first; local save is unavailable.");
+    } else if (!(await save()) && !matchesExport(before))
       throw Error(
         "Current work could not be saved. Export it before opening another workspace.",
       );
@@ -213,9 +224,19 @@ export function canvasWorkspace(config: {
     export: (edits: WorkspaceEdits) =>
       transition(async () => {
         if (!(await finish(edits))) return;
-        const saved = session.capture();
-        return archive(session.native(saved));
+        const before = capture(edits),
+          saved = session.capture(),
+          text = archive(session.native(saved));
+        pendingExport = { text, capture: before };
+        return text;
       }),
+    /** The host acknowledges only after handing the emitted bytes to the download mechanism. */
+    acknowledgeExport(text: string) {
+      if (!pendingExport || pendingExport.text !== text) return false;
+      exported = pendingExport.capture;
+      pendingExport = undefined;
+      return true;
+    },
     newCanvas: (edits: WorkspaceEdits) =>
       transition(async () => {
         if (!(await readyToLeave(edits))) return;
@@ -226,8 +247,6 @@ export function canvasWorkspace(config: {
       edits: WorkspaceEdits,
     ) =>
       transition(async () => {
-        if (config.blocked || error)
-          throw Error("Export current work first; local save is unavailable.");
         checkWorkspaceFileSize(file.size);
         const before = capture(edits),
           incoming = await stageWorkspaceFile(await file.text());

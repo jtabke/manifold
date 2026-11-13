@@ -61,6 +61,7 @@ const names = [
   "check-data-feedback.mjs",
   "check-data-sources.mjs",
   "check-dataset-model.mjs",
+  "check-dataset-plot.mjs",
   "check-infinite-viewport.mjs",
   "check-linking.mjs",
   "check-math.mjs",
@@ -69,6 +70,7 @@ const names = [
   "check-scientific-math-browser.mjs",
   "check-math-typesetting-browser.mjs",
   "check-incremental-worksheet.mjs",
+  "check-worksheet-diagnostics.mjs",
   "check-models.mjs",
   "check-progressive-links.mjs",
   "check-regions.mjs",
@@ -111,6 +113,8 @@ const names = [
   "check-linking-browser.mjs",
   "check-connection-gestures-browser.mjs",
   "check-dataset-browser.mjs",
+  "check-dataset-failures-browser.mjs",
+  "check-data-units-browser.mjs",
   "check-models-browser.mjs",
 ];
 export const checks = names.map((name) => {

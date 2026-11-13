@@ -233,6 +233,48 @@ not prerequisites for ordinary checks. Read each tool's source for its workload 
 | `make measure-model-analyses` | Model-backed analysis workload. |
 | `make measure-worksheet-evaluation` | 64/256-row sparse, chain and fan-out derivation and cache limits. |
 
+The worksheet evaluator diagnostic runs on a clean checkout without historical reports and
+creates its ignored output directory:
+
+```sh
+node apps/canvas/tools/measure-worksheet-evaluation.mjs
+# Optional destination and explicit historical source metadata:
+node apps/canvas/tools/measure-worksheet-evaluation.mjs --output /tmp/worksheet/profile.json
+node apps/canvas/tools/measure-worksheet-evaluation.mjs --baseline /absolute/path/baseline.json
+```
+
+Its default report is `evidence/current/canvas/worksheet-evaluation-results.json`. An explicit
+baseline must exist and declare `sourceDigest`; it adds source metadata only, not a speedup
+comparison. With no `--baseline`, no historical file is read and no baseline identity is claimed.
+`check-worksheet-diagnostics` verifies this in a temporary working/output directory while rejecting
+all attempts to read ignored reports, including on machines that retain local history.
+
+For the worksheet browser rendering and interaction observations, build once and run:
+
+```sh
+npm run build
+npm run test:browser -- check-incremental-worksheet-browser
+```
+
+`evidence/current/canvas/worksheet-rendering-results.json` retains the existing mathematical-subtree
+reuse counts, correctness and reload checks. At both 64 and 256 rows, interaction timing uses five
+warmups and 30 measured sparse edits, then five warmups and 30 Vary slider updates. The timing
+probes programmatically dispatch DOM input and Escape events through the actual application
+handlers; the earlier correctness actions still use trusted Playwright interactions.
+Page-side `performance.now()` records each input/commit, a `MutationObserver` observes the expected
+dependent result, and two subsequent `requestAnimationFrame` callbacks mark an intervening
+rendering opportunity. This measures DOM/result availability and RAF opportunities, not compositor
+paint or physical input latency.
+
+Each timing field includes raw samples, median, nearest-rank p95 and maximum in milliseconds.
+Edit `inputToResultOpportunityMs` includes the deliberate two-RAF controlled-draft settling step;
+`draftSettlingMs` reports it and `commitToResultOpportunityMs` starts at Escape after that step.
+The corresponding `*ResultDomMs` fields end when the expected result appears in the DOM. Vary
+uses its input event as the commit timestamp. Browser storage remains enabled, but durable
+reads and reload checks sit outside these windows; autosave contention can still affect timings.
+These observations are device-specific diagnostics with finite/nonnegative validation and result
+correctness checks, without a latency acceptance threshold or a document-capacity increase.
+
 The default `check-drawing-scene-browser` retains one correctness-only 100-mark native
 Open, whole-scene resize/Undo, view-only translation and durable reload, without measurement
 loops. Existing drawing tests retain drawing gestures, limits, regularization and safety

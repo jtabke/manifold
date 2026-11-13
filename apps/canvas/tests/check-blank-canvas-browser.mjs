@@ -22,6 +22,40 @@ try {
     page.getByRole("link", { name: "Manifold Workshop", exact: true }),
   ).not.toBeVisible();
   await expect(page.getByLabel("Reveal layer", { exact: true })).toHaveCount(0);
+  // IME confirmation/dismissal belongs to the search field, never a command.
+  await page.keyboard.press("ControlOrMeta+k");
+  const search = page.getByRole("textbox", {
+    name: "Search commands",
+    exact: true,
+  });
+  await search.fill("Write");
+  for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+    for (const key of ["Enter", "Escape", "ArrowDown", "ArrowUp"]) {
+      const untouched = await search.evaluate(
+        (node, options) =>
+          node.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              bubbles: true,
+              cancelable: true,
+              ...options,
+            }),
+          ),
+        { key, ...composition },
+      );
+      expect(untouched).toBe(true);
+      await expect(search).toBeFocused();
+      await expect(editor).toHaveCount(0);
+    }
+  }
+  await search.fill("");
+  const commands = page.locator(".er-command-item:not(:disabled)");
+  expect(await commands.count()).toBeGreaterThan(1);
+  await search.press("ArrowUp");
+  await expect(commands.last()).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(commands.first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(search).toHaveCount(0);
   await captureEvidence(page, {
     path: new URL("../screenshots/blank-canvas-reset.png", import.meta.url)
       .pathname,
