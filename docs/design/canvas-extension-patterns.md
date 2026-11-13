@@ -149,7 +149,11 @@ draft is an explicit proposal: its buffer refuses file transitions with Run/canc
 Open/Export must not execute or implicitly accept it. Buffer reads participate in slow-file guards even
 when no authored root changed. The [renderer-buffer Chrome contract](../../apps/canvas/tests/check-renderer-buffers-browser.mjs)
 checks this boundary. Closing an editor explicitly can discard its unaccepted proposal. Personal pane
-arrangement/navigation remains separate from portable authored canvas records.
+arrangement/navigation remains separate from portable authored canvas records. The
+[dockable chrome decision](decisions/0043-personal-workspace-chrome.md) defines the
+bounded personal toolbar/panel preference owner. It is not a canvas-scene layout store:
+keep chrome changes out of session records and history, preserve stable canvas/tool hosts,
+and publish live preferences only after successful validation and storage.
 
 ## Worksheet exploration
 

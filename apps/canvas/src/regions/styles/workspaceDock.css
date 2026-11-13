@@ -1,0 +1,331 @@
+.er-app {
+  grid-template-rows: minmax(54px, auto) minmax(0, 1fr);
+}
+.wc-shell {
+  isolation: isolate;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.wc-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.wc-layout {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  position: relative;
+}
+.wc-canvas {
+  isolation: isolate;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wc-canvas > .er-canvas,
+.wc-canvas > .mw-shell {
+  flex: 1;
+  min-height: 0;
+}
+.wc-toolbar-slot:empty {
+  display: none;
+}
+.wc-toolbar-host {
+  display: flex;
+  align-items: stretch;
+  background: var(--canvas-surface);
+}
+.wc-toolbar-host .er-authoring-bar {
+  flex: 1;
+  min-width: 0;
+}
+.wc-toolbar-grip {
+  cursor: grab;
+  border-radius: 0 !important;
+  padding: 2px !important;
+}
+.wc-toolbar-left,
+.wc-toolbar-right {
+  flex-shrink: 0;
+  max-width: 108px;
+  overflow: auto;
+  border-right: 1px solid var(--canvas-border);
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .wc-toolbar-host {
+  flex-direction: column;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-authoring-bar {
+  flex-direction: column;
+  padding: 4px;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right)
+  :is(
+    .er-history-tools,
+    .er-view-tools,
+    .drawing-toolbar-host,
+    .drawing-toolbar
+  ) {
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 0;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-history-tools {
+  padding: 0;
+  border: 0;
+}
+.wc-group {
+  z-index: 1;
+  position: relative;
+  background: var(--canvas-surface);
+  border: 1px solid var(--canvas-border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.wc-group-left {
+  grid-column: 1;
+  grid-row: 1;
+  width: min(var(--dock-size), 35vw);
+}
+.wc-group-right {
+  grid-column: 3;
+  grid-row: 1;
+  width: min(var(--dock-size), 35vw);
+}
+.wc-group-bottom {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  height: min(var(--dock-size), 40dvh);
+}
+.wc-tabs {
+  display: flex;
+  flex-shrink: 0;
+  overflow: auto;
+  border-bottom: 1px solid var(--canvas-border);
+}
+.wc-tabs button {
+  white-space: nowrap;
+  font-size: 12px;
+  border-radius: 0;
+  cursor: grab;
+}
+.wc-tabs [aria-selected="true"] {
+  background: var(--canvas-accent-tint);
+  border-bottom-color: var(--canvas-accent);
+  color: var(--canvas-accent);
+}
+.wc-group-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 3px 6px;
+}
+.wc-group-actions select,
+.wc-menu-row select {
+  font: inherit;
+  background: var(--canvas-surface);
+  border: 1px solid var(--canvas-border);
+  border-radius: 4px;
+  max-width: 100%;
+}
+.wc-group-actions select {
+  margin-right: auto;
+  font-size: 11px;
+}
+.wc-group-content,
+.wc-panel-host,
+.wc-panel {
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.wc-group-content {
+  overflow: auto;
+}
+.wc-panel {
+  padding: 8px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.wc-panel > * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.wc-group [hidden] {
+  display: none !important;
+}
+.wc-group.is-collapsed:not(.wc-group-bottom) {
+  width: 38px;
+}
+.wc-group.is-collapsed:not(.wc-group-bottom) .wc-tabs {
+  flex-direction: column;
+}
+.wc-group.is-collapsed:not(.wc-group-bottom) .wc-tabs button {
+  writing-mode: vertical-rl;
+  padding: 10px 6px;
+}
+.wc-group.is-collapsed .wc-group-actions {
+  justify-content: center;
+  padding: 3px;
+}
+.wc-group-bottom.is-collapsed {
+  height: 38px;
+  flex-direction: row;
+}
+.wc-group-bottom.is-collapsed .wc-group-actions {
+  margin-left: auto;
+}
+.wc-resizer {
+  position: absolute;
+  z-index: 5;
+  touch-action: none;
+}
+.wc-resizer:hover,
+.wc-resizer:focus-visible {
+  background: var(--canvas-accent);
+}
+.wc-resizer-left {
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+}
+.wc-resizer-right {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+}
+.wc-resizer-bottom {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 5px;
+  cursor: row-resize;
+}
+.wc-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.wc-menu-row > input:not([type="checkbox"]) {
+  width: 130px;
+  min-width: 0;
+  background: var(--canvas-bg);
+  border: 1px solid var(--canvas-border);
+  padding: 5px;
+  border-radius: 4px;
+  font: inherit;
+}
+.wc-menu-row select {
+  margin-left: auto;
+}
+.wc-menu-row > button:first-child {
+  flex: 1;
+  justify-content: flex-start;
+}
+.wc-error {
+  background: var(--canvas-warning-tint);
+  color: var(--canvas-warning);
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.wc-drop-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 150;
+}
+.wc-drop {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: var(--canvas-accent-tint);
+  border: 2px dashed var(--canvas-accent);
+  border-radius: 8px;
+  opacity: 0.92;
+}
+.wc-drop.is-target {
+  background: var(--canvas-accent-strong);
+  border-style: solid;
+}
+.wc-drop-top {
+  top: 8px;
+  left: 25%;
+  right: 25%;
+  height: 44px;
+}
+.wc-drop-bottom {
+  bottom: 8px;
+  left: 25%;
+  right: 25%;
+  height: 64px;
+}
+.wc-drop-left {
+  left: 8px;
+  top: 20%;
+  bottom: 25%;
+  width: 100px;
+}
+.wc-drop-right {
+  right: 8px;
+  top: 20%;
+  bottom: 25%;
+  width: 100px;
+}
+.wc-panel .canvas-assistant.is-embedded {
+  position: static;
+  width: 100%;
+  max-height: none;
+  flex: 1;
+  border-radius: 4px;
+  box-shadow: none;
+}
+@media (max-width: 900px) {
+  .wc-group-left,
+  .wc-group-right {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: min(var(--dock-size), calc(100% - 48px));
+    max-width: calc(100% - 48px);
+    z-index: 35;
+    box-shadow: 0 4px 20px var(--canvas-shadow);
+  }
+  .wc-group-left {
+    left: 0;
+  }
+  .wc-group-right {
+    right: 0;
+  }
+  .wc-toolbar-left,
+  .wc-toolbar-right {
+    max-width: 64px;
+  }
+}

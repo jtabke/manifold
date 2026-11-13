@@ -223,7 +223,6 @@ try {
     name: "Ask agent about Spring",
     exact: true,
   });
-  const triggerBounds = await trigger.boundingBox();
   await trigger.click();
   const panel = page.getByRole("dialog", {
     name: "Canvas assistant Pi · experimental",
@@ -240,15 +239,18 @@ try {
   });
   await expect(input).toBeEnabled();
   await expect(input).toBeFocused();
-  const compact = await panel.boundingBox();
-  expect(compact.width).toBeLessThanOrEqual(320);
-  expect(compact.height).toBeLessThanOrEqual(60);
-  expect(
-    Math.abs(compact.x - (triggerBounds.x + triggerBounds.width / 2 + 12)),
-  ).toBeLessThan(2);
-  expect(
-    Math.abs(compact.y - (triggerBounds.y + triggerBounds.height / 2 + 12)),
-  ).toBeLessThan(2);
+  const dock = page.getByLabel("right dock", { exact: true });
+  await expect(dock).toBeVisible();
+  await expect(
+    dock.getByRole("tab", { name: "Agent", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  const dockBounds = await dock.boundingBox();
+  const panelBounds = await panel.boundingBox();
+  expect(panelBounds.x).toBeGreaterThanOrEqual(dockBounds.x);
+  expect(panelBounds.x + panelBounds.width).toBeLessThanOrEqual(
+    dockBounds.x + dockBounds.width,
+  );
+  expect((await input.boundingBox()).height).toBeLessThanOrEqual(100);
   await input.fill("Keep this draft");
   await input.press("Shift+Enter");
   await expect(input).toHaveValue("Keep this draft\n");
@@ -455,7 +457,7 @@ try {
     .getByRole("button", { name: "Close canvas assistant", exact: true })
     .click();
   await expect.poll(() => disposed).toBe(2);
-  // A contextual request opens at the canvas point, not in a sidebar, and stays on-screen.
+  // A contextual request retains its invocation context in the dock and stays on-screen.
   await page.mouse.click(1480, 940, { button: "right" });
   await page.getByRole("menuitem", { name: "Ask agent", exact: true }).click();
   const contextual = page.getByRole("dialog", {
@@ -468,7 +470,9 @@ try {
   const edge = await contextual.boundingBox();
   expect(edge.x + edge.width).toBeLessThanOrEqual(1492);
   expect(edge.y + edge.height).toBeLessThanOrEqual(992);
-  expect(edge.height).toBeLessThanOrEqual(60);
+  await expect(
+    page.getByRole("tab", { name: "Agent", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   await page.setViewportSize({ width: 390, height: 700 });
   await contextual
     .getByRole("button", { name: "Assistant settings", exact: true })

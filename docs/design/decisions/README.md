@@ -98,6 +98,8 @@ contexts require retained identity, and a reliable Keep/Undo requires one owner.
 
 | [0042: Installable agent tools](0042-installable-agent-tools.md) | Built CLI/MCP distribution, no-provider runtime, local diagnostics and read-only MCP Apps presentation over existing image responses. | Accepted for the experimental local tooling slice. |
 
+| [0043: Personal dockable workspace chrome](0043-personal-workspace-chrome.md) | Device-local panel docks/tabs and toolbar preferences with stable canvas hosts, bounded presets and explicit recovery; separate from authored layouts. | Accepted for the in-app canvas shell. |
+
 ## Record lifecycle and template
 
 Create `NNNN-short-title.md` using the structure below. Begin as proposed. Record

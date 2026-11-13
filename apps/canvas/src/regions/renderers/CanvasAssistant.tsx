@@ -15,7 +15,9 @@ export function CanvasAssistant({
   close,
   anchor,
   canvas,
+  embedded = false,
 }: {
+  embedded?: boolean;
   canvas: AssistantCanvasPort;
   anchor: Point;
   session: RegionSession;
@@ -44,7 +46,7 @@ export function CanvasAssistant({
   const [position, setPosition] = useState(anchor);
   useLayoutEffect(() => {
     const element = popup.current;
-    if (!element) return;
+    if (!element || embedded) return;
     const place = () => {
       const x = Math.max(
         8,
@@ -66,7 +68,7 @@ export function CanvasAssistant({
       observer.disconnect();
       window.removeEventListener("resize", place);
     };
-  }, [anchor.x, anchor.y]);
+  }, [anchor.x, anchor.y, embedded]);
   useLayoutEffect(() => {
     const input = requestInput.current;
     if (!input) return;
@@ -92,8 +94,8 @@ export function CanvasAssistant({
     <dialog
       open
       ref={popup}
-      className="canvas-assistant"
-      style={{ left: position.x, top: position.y }}
+      className={`canvas-assistant ${embedded ? "is-embedded" : ""}`}
+      style={embedded ? undefined : { left: position.x, top: position.y }}
       aria-labelledby="canvas-assistant-title"
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.nativeEvent.isComposing) {

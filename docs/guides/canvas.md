@@ -42,14 +42,37 @@ connections to mathematical quantities require explicit review. Plot responses a
 compare alternatives through the existing quantities. The command palette opens
 with Ctrl/Cmd+K.
 
+## Configure the workspace
+
+**View** in the document header is always available, even when the toolbar is hidden.
+Use its **Panels** controls to show or hide Relationships, Results, Table and Agent.
+Panels share a tab group when docked on the same edge. Drag a panel tab to a labelled
+left, right or bottom destination, or use its position selector without dragging.
+Arrow Left/Right and Home/End switch focused tabs. Collapse a dock to a narrow strip;
+select its tab or Expand to restore it. Closing a panel does not delete engineering work.
+
+Drag the canvas toolbar's grip to any edge, or choose its position (including hidden)
+in **View → Toolbars**. Resize panels using their boundary; focused boundaries also
+support arrow keys and Home/End. Escape cancels an in-progress resize or drag.
+On narrow screens, side panels overlay the canvas instead of squeezing it away.
+
+In **View**, name and save a workspace preset, load it later, or delete it. Saving the
+same name replaces that preset (up to 12). **Reset workspace** restores the uncluttered
+canvas and top toolbar without deleting presets or changing engineering content.
+Chrome preferences save automatically in this browser on this device. They are not part
+of a downloaded `.manifold` file, named authored canvas layouts, or document Undo history.
+A save failure leaves the live layout unchanged and reports the problem. Invalid stored
+preferences remain untouched until an explicit Reset. Docking is in-app only;
+separate OS windows, free-floating panels and arbitrary editor splits are not included.
+
 ## Ask the canvas assistant (experimental)
 
 The assistant is optional: the canvas works without it. Start Manifold normally with
 `make canvas`; no second terminal, separate companion startup or copied connection URL is needed.
 
-1. Right-click a canvas point and choose **Ask agent**. A compact, single-line input opens at
-   that point, like a comment composer—not a sidebar. You can also use **Ask agent** on a scalar
-   model card, or the toolbar button to open at the last canvas point.
+1. Right-click a canvas point and choose **Ask agent** to open the dockable Agent panel.
+   You can also use **Ask agent** on a scalar model card or in the document header.
+   The invocation point is retained as context; move or collapse the panel without changing it.
 2. Type a question or request, such as “Set displacement to 3 mm and explain the effect.”
    **Enter** sends; **Shift+Enter** inserts a newline. The first request connects automatically
    using the detected Pi provider, default model and credentials. Opening the panel alone does
@@ -58,7 +81,7 @@ The assistant is optional: the canvas works without it. Start Manifold normally 
    reviewed transaction as one Undo step; **Dismiss** changes nothing.
 
 Only the input and small settings/send/close controls are shown initially. Multiline drafts grow
-as needed; replies, edit reviews and settings expand the same popup without leaving the viewport.
+as needed; replies, edit reviews and settings appear in the same dockable panel.
 **Escape** closes it and ends the connection. Selection context is attached when you send.
 
 Provider/model configuration is behind the **Assistant settings** gear button. Existing Pi
