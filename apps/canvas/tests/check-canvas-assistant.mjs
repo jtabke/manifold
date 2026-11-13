@@ -3,6 +3,7 @@ import { RegionSession } from "../src/regions/document.ts";
 import { bindLiveWorkspace } from "../src/headless.ts";
 import { createCanvasAssistant } from "../src/regions/assistant.ts";
 import { drawings } from "../src/regions/drawing.ts";
+import { assistantObjectReference } from "../src/regions/assistantReferences.ts";
 
 const session = new RegionSession(
   undefined,
@@ -25,6 +26,24 @@ try {
   assert.throws(() => assistant.begin("two"), /already running/);
   const inspected = assistant.tool("one", "inspect_workspace", {});
   assert.equal(inspected.documentId, initial.id);
+  const displacementReference = inspected.references.find(
+    (reference) => reference.id === model && reference.input === "displacement",
+  );
+  assert.deepEqual(
+    displacementReference,
+    assistantObjectReference(model, "Spring → Displacement", "displacement"),
+  );
+  assert(
+    inspected.references.some(
+      (reference) => reference.id === x && reference.label === "x",
+    ),
+  );
+  assert(Object.isFrozen(inspected.references));
+  assert(Object.isFrozen(displacementReference));
+  assert.equal(
+    assistantObjectReference("object /?#", "Label", "input /?#").href,
+    "manifold:object/object%20%2F%3F%23?input=input%20%2F%3F%23",
+  );
   assert.equal(
     inspected.models[0].inputs.find((i) => i.id === "displacement").unit,
     "mm",
@@ -164,6 +183,10 @@ try {
   try {
     canvasAssistant.begin("canvas");
     const page = canvasAssistant.tool("canvas", "inspect_canvas", { limit: 1 });
+    assert.deepEqual(
+      page.references.map((reference) => reference.id),
+      page.objects.map((object) => object.id),
+    );
     assert.equal(page.objects.length, 1);
     assert.equal(page.pagination.hasMore, true);
     assert.throws(() =>

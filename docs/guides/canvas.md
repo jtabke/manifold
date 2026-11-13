@@ -106,9 +106,17 @@ panel. **End assistant session** explicitly disconnects, cancels pending setup a
 conversation and unaccepted proposals. Accepted edits remain in the worksheet. Dock/float/minimize
 changes do not reconnect or send model requests; reloading does not retain the transient conversation.
 
-Proposal cards show source and model-input differences before approval. **Show on canvas** actions
-locate and highlight an existing visible target without applying the edit. New content is available
-on the canvas only after approval; unavailable targets are reported rather than silently accepted.
+Answers can link directly to inspected objects and model inputs, such as **Spring → Displacement**.
+Click a reference to bring its exact target into view and briefly highlight it, without opening an
+editor, accepting an input draft or changing the worksheet. References use IDs returned by inspection
+in that request, not guesses based on names; the panel displays the inspected label. Unknown,
+removed or unavailable targets report the limitation instead of navigating elsewhere. These links
+are navigation aids, not evidence that a claim or numerical result has been validated.
+
+Proposal cards show compact input summaries such as **Displacement: 2 mm → 3 mm** before approval.
+Source diffs and full diagnostics remain expandable. **Show on canvas** actions locate and highlight
+an existing visible target without applying the edit. New content is available on the canvas only
+after approval; unavailable targets are reported rather than silently accepted.
 Tool progress distinguishes worksheet inspection, plot reads, canvas images and preparing an edit.
 The **Stop request** control remains available while a request is running.
 

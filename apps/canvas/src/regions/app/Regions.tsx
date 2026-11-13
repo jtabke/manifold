@@ -4037,7 +4037,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     return;
                   setAssistantPresentation(value);
                 }}
-                reveal={async (id) => {
+                reveal={async (id, input) => {
                   const views = [...session.document.views.entries()]
                     .filter(([, view]) => view.reference.item === id)
                     .map(([viewId]) => viewId);
@@ -4073,7 +4073,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   );
                   const element = [
                     ...(canvas.current?.querySelectorAll(selectors) || []),
-                  ].find((node) => node.getClientRects().length > 0);
+                  ]
+                    .map((node) =>
+                      input === undefined
+                        ? node
+                        : node.getAttribute("data-comparison") === "true"
+                          ? null
+                          : node.querySelector(
+                              `[data-model-input="${CSS.escape(input)}"]`,
+                            ),
+                    )
+                    .find((node) => node && node.getClientRects().length > 0);
                   if (!element) return false;
                   revealCanvasElement(element, {
                     block: "nearest",

@@ -7,6 +7,7 @@ import {
   validateWorkspace,
 } from "../agent.ts";
 import { RegionSession } from "./document.ts";
+import { assistantObjectReference } from "./assistantReferences.ts";
 import {
   assistantCapabilities,
   canvasChanges,
@@ -69,9 +70,75 @@ export function createCanvasAssistant(session: RegionSession) {
       check();
       if (request !== requestId)
         throw Error("Assistant request is no longer active");
-      if (name === "inspect_workspace") return summarizeWorkspace(workspace);
-      if (name === "inspect_canvas") return summarizeCanvas(session, args);
-      if (name === "inspect_plot") return inspectPlot(session, args);
+      if (name === "inspect_workspace") {
+        const snapshot = summarizeWorkspace(workspace);
+        return freeze({
+          ...snapshot,
+          references: [
+            ...snapshot.worksheet.regions.map((region) =>
+              assistantObjectReference(
+                region.id,
+                session.state.regions.find((item) => item.id === region.id)
+                  ?.label ||
+                  region.name ||
+                  region.text.slice(0, 80) ||
+                  "Worksheet region",
+              ),
+            ),
+            ...snapshot.models.flatMap((model) => [
+              assistantObjectReference(model.id, model.label),
+              ...model.inputs.map((input) =>
+                assistantObjectReference(
+                  model.id,
+                  `${model.label} → ${input.label}`,
+                  input.id,
+                ),
+              ),
+            ]),
+          ],
+        });
+      }
+      if (name === "inspect_canvas") {
+        const snapshot = summarizeCanvas(session, args);
+        return freeze({
+          ...snapshot,
+          references: snapshot.objects.map((object) => {
+            const region = session.state.regions.find(
+              (region) => region.id === object.id,
+            );
+            const drawing = snapshot.drawings.find(
+              (drawing) => drawing.view === object.id,
+            );
+            const label =
+              session.document.items.get(
+                "object" in object && typeof object.object === "string"
+                  ? object.object
+                  : object.id,
+              )?.label ||
+              region?.label ||
+              region?.text.slice(0, 80) ||
+              drawing?.mark.text.slice(0, 80) ||
+              (drawing
+                ? `${drawing.mark.kind} drawing`
+                : snapshot.plots.some((plot) => plot.id === object.id)
+                  ? "Worksheet plot"
+                  : "Canvas object");
+            return assistantObjectReference(object.id, label);
+          }),
+        });
+      }
+      if (name === "inspect_plot") {
+        const snapshot = inspectPlot(session, args);
+        return freeze({
+          ...snapshot,
+          references: [
+            assistantObjectReference(
+              snapshot.id,
+              session.document.items.get(snapshot.id)?.label || "Plot",
+            ),
+          ],
+        });
+      }
       if (name === "capabilities") return assistantCapabilities();
       if (name !== "prepare_edit") throw Error("Unsupported assistant tool");
       if (!args || typeof args !== "object" || Array.isArray(args))

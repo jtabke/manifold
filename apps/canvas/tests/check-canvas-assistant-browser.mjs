@@ -11,6 +11,7 @@ const requests = [];
 const images = [];
 const plotReads = [];
 let releaseStream;
+let answerReferences;
 const formattedResponse = [
   "## Engineering review",
   "- **Assumption:** a linear spring.",
@@ -51,6 +52,38 @@ const companion = await startCompanion({
       },
       async prompt(text) {
         requests.push(text);
+        if (text.startsWith("Explain with canvas references")) {
+          const state = await call("inspect_workspace", {}, undefined);
+          tools++;
+          answerReferences = {
+            input: state.references.find(
+              (reference) =>
+                reference.id === state.models[0].id &&
+                reference.input === "displacement",
+            ),
+            equation: state.references.find(
+              (reference) => reference.label === "x",
+            ),
+          };
+          listener({
+            type: "message_update",
+            assistantMessageEvent: {
+              type: "text_delta",
+              delta: `Inspect [a misleading model label](${answerReferences.input.href}) and [an equation label](${answerReferences.equation.href}). Also [Unknown object](manifold:object/not-an-inspected-object).`,
+            },
+          });
+          return;
+        }
+        if (text.startsWith("Reuse uninspected reference")) {
+          listener({
+            type: "message_update",
+            assistantMessageEvent: {
+              type: "text_delta",
+              delta: `[Uninspected old reference](${answerReferences.input.href})`,
+            },
+          });
+          return;
+        }
         if (text.startsWith("Formatted explanation")) {
           listener({
             type: "message_update",
@@ -491,7 +524,12 @@ try {
     "backgroundColor",
     "--canvas-accent-strong",
   );
-  await expect(proposal).toContainText("Displacement [mm]");
+  await expect(proposal.locator(".assistant-input-change")).toHaveText(
+    "Displacement: 2 mm → 3 mm",
+  );
+  await expect(
+    proposal.locator(".assistant-source-diff details"),
+  ).not.toHaveAttribute("open");
   await expect(
     model.getByLabel("Spring Displacement", { exact: true }),
   ).toHaveValue("2");
@@ -920,6 +958,71 @@ try {
   await expect(panel.locator(".assistant-answer").last()).toContainText(
     "Step 80",
   );
+  // Answer references are bound to inspection IDs, not model-generated labels or name matching.
+  const beforeReferences = await readWorkspace(page);
+  await ask("Explain with canvas references");
+  const linkedAnswer = panel.locator(".assistant-answer").last();
+  const inputReference = linkedAnswer.getByRole("button", {
+    name: "Spring → Displacement",
+    exact: true,
+  });
+  await expect(inputReference).toBeVisible();
+  await expect(
+    linkedAnswer.getByRole("button", {
+      name: "a misleading model label",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await inputReference.click();
+  await expect(
+    linkedAnswer.locator(".assistant-reference-status"),
+  ).toContainText("Highlighted Spring → Displacement");
+  const referencedInput = model.locator('[data-model-input="displacement"]');
+  expect(
+    await referencedInput.evaluate((element) => element.getAnimations().length),
+  ).toBeGreaterThan(0);
+  await expect(inputReference).toBeFocused();
+  await expect(displacement).toHaveValue("4");
+  await displacement.fill("5");
+  await inputReference.click();
+  await expect(displacement).toHaveValue("5");
+  await expect(inputReference).toBeFocused();
+  expect((await readWorkspace(page)).document.id).toBe(
+    beforeReferences.document.id,
+  );
+  await displacement.fill("4");
+  await linkedAnswer.getByRole("button", { name: "x", exact: true }).click();
+  await expect(
+    linkedAnswer.locator(".assistant-reference-status"),
+  ).toContainText("Highlighted x");
+  await linkedAnswer
+    .getByRole("button", { name: "Unknown object", exact: true })
+    .click();
+  await expect(
+    linkedAnswer.locator(".assistant-reference-status"),
+  ).toContainText("not verified");
+  expect((await readWorkspace(page)).document.id).toBe(
+    beforeReferences.document.id,
+  );
+  // Remove the referenced equation by undoing its actual creation, then restore it with Redo.
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await linkedAnswer.getByRole("button", { name: "x", exact: true }).click();
+  await expect(
+    linkedAnswer.locator(".assistant-reference-status"),
+  ).toContainText("no longer available or visible");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await linkedAnswer.getByRole("button", { name: "x", exact: true }).click();
+  await expect(
+    linkedAnswer.locator(".assistant-reference-status"),
+  ).toContainText("Highlighted x");
+  await ask("Reuse uninspected reference from an earlier answer");
+  const uninspectedAnswer = panel.locator(".assistant-answer").last();
+  await uninspectedAnswer
+    .getByRole("button", { name: "Uninspected old reference", exact: true })
+    .click();
+  await expect(
+    uninspectedAnswer.locator(".assistant-reference-status"),
+  ).toContainText("not verified");
   // Rich responses are readable but cannot execute HTML, fetch remote images or run links.
   const trackingRequests = [];
   page.on("request", (request) => {
@@ -1014,9 +1117,8 @@ try {
     ).toBeLessThan(48);
   }).toPass({ timeout: 15000 });
   // Deliberately reading earlier messages also survives a minimize/restore cycle.
-  await history.evaluate((element) => {
-    element.scrollTop = 0;
-  });
+  await history.focus();
+  await history.press("Control+Home");
   await expect(
     panel.getByRole("button", { name: "Latest response", exact: true }),
   ).toBeVisible();
@@ -1036,7 +1138,7 @@ try {
   await page.reload();
   await expect(page.locator('[data-drawing-kind="rectangle"]')).toHaveCount(1);
   expect((await readWorkspace(page)).page.plots).toHaveLength(1);
-  expect(tools).toBe(17);
+  expect(tools).toBe(18);
   expect(errors).toEqual([]);
   console.log(
     "Canvas assistant browser: cursor/model context, real companion transport, bounded viewport/object images, drawing/plot/layout review, exact Apply/Undo/Redo, derived plot reads, human drafts, stale/dismiss, Stop, cancelled setup and saved continuity pass (deterministic agent; no paid calls).",

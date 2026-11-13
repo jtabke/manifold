@@ -11,15 +11,18 @@ const AssistantMessage = lazy(() =>
   })),
 );
 
-function bindingLabel(binding: unknown): string {
-  if (binding == null) return "default";
-  if (
-    typeof binding === "object" &&
-    "value" in binding &&
-    (typeof binding.value === "number" || typeof binding.value === "string")
-  )
-    return String(binding.value);
-  return JSON.stringify(binding);
+type ReviewInput = NonNullable<
+  AssistantProposal["diff"]["models"][number]["before"]
+>["inputs"][number];
+function inputValue(input: ReviewInput | undefined): string {
+  if (!input) return "(not present)";
+  if (input.binding?.kind === "reference")
+    return `Linked source ${input.binding.reference.item}`;
+  const value =
+    input.binding?.kind === "value" ? input.binding.value : input.defaultValue;
+  return value == null
+    ? "Not set"
+    : `${value}${input.unit ? ` ${input.unit}` : ""}`;
 }
 function ProposalReview({
   proposal,
@@ -32,7 +35,7 @@ function ProposalReview({
   busy: boolean;
   connection: AssistantConnectionState;
   resolve: (proposal: AssistantProposal, apply: boolean) => void;
-  reveal: (id: string) => Promise<boolean>;
+  reveal: (id: string, input?: string) => Promise<boolean>;
 }) {
   const [feedback, setFeedback] = useState("");
   const show = async (id: string) => {
@@ -89,8 +92,13 @@ function ProposalReview({
               Show source on canvas
             </button>
           </div>
-          <del aria-label="Before">{change.before?.text || "(new region)"}</del>
-          <ins aria-label="After">{change.after?.text || "(removed)"}</ins>
+          <details>
+            <summary>View source diff</summary>
+            <del aria-label="Before">
+              {change.before?.text || "(new region)"}
+            </del>
+            <ins aria-label="After">{change.after?.text || "(removed)"}</ins>
+          </details>
         </div>
       ))}
       {proposal.diff.models.map((change) => (
@@ -101,19 +109,30 @@ function ProposalReview({
               Show model on canvas
             </button>
           </div>
-          {change.after?.inputs.map((input) => {
+          {[
+            ...new Set([
+              ...(change.before?.inputs || []).map((input) => input.id),
+              ...(change.after?.inputs || []).map((input) => input.id),
+            ]),
+          ].map((id) => {
             const before = change.before?.inputs.find(
-              (prior) => prior.id === input.id,
+              (input) => input.id === id,
             );
+            const after = change.after?.inputs.find((input) => input.id === id);
             if (
-              JSON.stringify(before?.binding) === JSON.stringify(input.binding)
+              before &&
+              after &&
+              JSON.stringify(before.binding) ===
+                JSON.stringify(after.binding) &&
+              before.defaultValue === after.defaultValue &&
+              before.unit === after.unit &&
+              before.label === after.label
             )
               return null;
             return (
-              <p key={input.id}>
-                {input.label} [{input.unit}]:{" "}
-                <del>{bindingLabel(before?.binding)}</del> →{" "}
-                <ins>{bindingLabel(input.binding)}</ins>
+              <p key={id} className="assistant-input-change">
+                <strong>{after?.label || before?.label}:</strong>{" "}
+                <del>{inputValue(before)}</del> → <ins>{inputValue(after)}</ins>
               </p>
             );
           })}
@@ -211,7 +230,7 @@ export function AssistantConversation({
   busy: boolean;
   connection: AssistantConnectionState;
   resolve: (proposal: AssistantProposal, apply: boolean) => void;
-  reveal: (id: string) => Promise<boolean>;
+  reveal: (id: string, input?: string) => Promise<boolean>;
 }) {
   if (!turns.length) return null;
   return (
@@ -234,7 +253,11 @@ export function AssistantConversation({
             <Suspense
               fallback={<p className="assistant-answer">{turn.answer}</p>}
             >
-              <AssistantMessage text={turn.answer} />
+              <AssistantMessage
+                text={turn.answer}
+                references={turn.references}
+                reveal={reveal}
+              />
             </Suspense>
           ) : (
             <p className="assistant-answer">

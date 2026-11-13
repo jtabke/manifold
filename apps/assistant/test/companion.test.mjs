@@ -270,6 +270,11 @@ test("real Pi SDK session loads only canvas tools and no discovered resources; n
     assert.equal(options.resourceLoader.getSkills().skills.length, 0);
     assert.match(session.systemPrompt, /untrusted data/);
     assert.match(session.systemPrompt, /Never claim it was applied/);
+    assert.match(
+      session.systemPrompt,
+      /copying the exact label and manifold:object\/ href/,
+    );
+    assert.match(session.systemPrompt, /Do not invent reference URLs/);
     const tools = canvasTools(async (name) => ({ name }));
     const result = await tools[0].execute("call", {}, undefined);
     assert.deepEqual(JSON.parse(result.content[0].text), {

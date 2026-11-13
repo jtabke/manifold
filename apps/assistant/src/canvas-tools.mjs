@@ -9,7 +9,7 @@ export function canvasTools(call, { images = true } = {}) {
       name: "inspect_workspace",
       label: "Inspect canvas",
       description:
-        "Read the live worksheet, models, units, diagnostics, projections and checked result currency.",
+        "Read the live worksheet, models, units, diagnostics, projections and checked result currency. Includes exact read-only references for objects and model inputs; copy their label and href into Markdown answer links rather than guessing IDs.",
       parameters: emptyParameters,
     },
     {

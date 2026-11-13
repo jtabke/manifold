@@ -59,7 +59,7 @@ export function CanvasAssistant({
     floating: boolean;
     minimized: boolean;
   }) => void;
-  reveal: (id: string) => Promise<boolean>;
+  reveal: (id: string, input?: string) => Promise<boolean>;
   canvas: AssistantCanvasPort;
   anchor: Point;
   session: RegionSession;
@@ -312,6 +312,19 @@ export function CanvasAssistant({
             tabIndex={0}
             role="region"
             aria-label="Conversation history"
+            onWheel={(event) => {
+              changingPresentation.current = false;
+              if (event.deltaY < 0) followLatest.current = false;
+            }}
+            onKeyDown={(event) => {
+              if (
+                !event.nativeEvent.isComposing &&
+                ["Home", "PageUp", "ArrowUp"].includes(event.key)
+              ) {
+                changingPresentation.current = false;
+                followLatest.current = false;
+              }
+            }}
             onScroll={(event) => {
               if (
                 minimized ||

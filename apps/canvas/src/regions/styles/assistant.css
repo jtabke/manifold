@@ -398,6 +398,29 @@
   flex-shrink: 0;
   margin-top: 2px;
 }
+.canvas-assistant .assistant-object-reference {
+  display: inline;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--canvas-accent, #8069bb);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.assistant-reference-status {
+  color: var(--canvas-muted, #606775);
+  font-size: 11px;
+}
+.assistant-input-change {
+  margin: 8px 0;
+}
+.assistant-input-change del {
+  color: var(--canvas-muted, #606775);
+}
 .assistant-answer a {
   color: var(--canvas-accent, #8069bb);
   text-decoration: underline;

@@ -7,6 +7,7 @@ import {
 import type { RegionSession } from "../document";
 import type { WorkspaceEdits } from "./workspaceFiles";
 import type { AssistantCanvasPort } from "../assistantCanvas";
+import type { AssistantObjectReference } from "../assistantReferences";
 
 export type AssistantConnectionState = "offline" | "connecting" | "ready";
 export type AssistantTurn = {
@@ -14,6 +15,7 @@ export type AssistantTurn = {
   prompt: string;
   selection: string[];
   answer: string;
+  references: AssistantObjectReference[];
 };
 type Bridge = {
   socket: WebSocket;
@@ -176,6 +178,33 @@ export function useCanvasAssistant(
                   "Canvas tool result is too large; inspect a smaller page or one object",
                 );
               socket.send(response);
+              if (
+                [
+                  "inspect_workspace",
+                  "inspect_canvas",
+                  "inspect_plot",
+                ].includes(message.name)
+              ) {
+                const references = (
+                  result as { references: readonly AssistantObjectReference[] }
+                ).references;
+                setTurns((previous) =>
+                  previous.map((turn) =>
+                    turn.id === message.requestId
+                      ? {
+                          ...turn,
+                          references: [
+                            ...new Map(
+                              [...turn.references, ...references].map(
+                                (reference) => [reference.href, reference],
+                              ),
+                            ).values(),
+                          ],
+                        }
+                      : turn,
+                  ),
+                );
+              }
               setActivity("Thinking…");
             } catch (failure) {
               if (
@@ -264,7 +293,13 @@ export function useCanvasAssistant(
       current.active = id;
       setTurns((previous) => [
         ...previous,
-        { id, prompt: text.trim(), selection: attached, answer: "" },
+        {
+          id,
+          prompt: text.trim(),
+          selection: attached,
+          answer: "",
+          references: [],
+        },
       ]);
       setBusy(true);
       setError("");

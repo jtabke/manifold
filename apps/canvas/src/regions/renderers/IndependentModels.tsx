@@ -199,7 +199,7 @@ function ModelCard({
                 ? Number(source.projection.value.value)
                 : node.default;
         return (
-          <div className="im-input" key={port}>
+          <div className="im-input" key={port} data-model-input={port}>
             <ModelInput
               key={revision.id}
               id={view.id + ":" + port}
