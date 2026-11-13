@@ -1,5 +1,6 @@
 import {
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -100,14 +101,37 @@ export function WorkspaceDock({
   workspace,
   toolbar,
   panels,
+  detachedPanels = [],
   children,
 }: {
+  detachedPanels?: readonly PanelId[];
   workspace: WorkspaceChromeState;
   toolbar: ReactNode;
   panels: Record<PanelId, ReactNode>;
   children: ReactNode;
 }) {
-  const { layout } = workspace.preferences;
+  const savedLayout = workspace.preferences.layout;
+  // Detachment is transient presentation, not a second persisted layout owner.
+  const layout = useMemo(
+    () => ({
+      ...savedLayout,
+      groups: Object.fromEntries(
+        dockSides.map((side) => {
+          const group = savedLayout.groups[side];
+          const tabs = group.tabs.filter((id) => !detachedPanels.includes(id));
+          return [
+            side,
+            {
+              ...group,
+              tabs,
+              active: tabs.includes(group.active!) ? group.active : tabs[0],
+            },
+          ];
+        }),
+      ) as typeof savedLayout.groups,
+    }),
+    [savedLayout, detachedPanels],
+  );
   // Moving DOM hosts rather than React subtrees keeps canvas, drafts and tools alive.
   const [hosts] = useState(() => {
     const make = (className: string) =>
@@ -122,6 +146,7 @@ export function WorkspaceDock({
   const toolbarSlots = useRef(new Map<string, HTMLDivElement>());
   const panelSlots = useRef(new Map<string, HTMLDivElement>());
   const parking = useRef<HTMLDivElement>(null);
+  const detached = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const drag = useRef<DragItem | undefined>(undefined);
   const [dragging, setDragging] = useState<DragItem>();
@@ -159,10 +184,14 @@ export function WorkspaceDock({
       const side = dockSides.find(
         (s) => layout.groups[s].active === id && !layout.groups[s].collapsed,
       );
-      const slot = side ? panelSlots.current.get(side) : parking.current;
+      const slot = detachedPanels.includes(id)
+        ? detached.current
+        : side
+          ? panelSlots.current.get(side)
+          : parking.current;
       place(hosts.panels[id], slot);
     }
-  }, [layout, hosts]);
+  }, [layout, hosts, detachedPanels]);
   const cancel = () => {
     resize.current = undefined;
     setPreview(undefined);
@@ -477,6 +506,11 @@ export function WorkspaceDock({
       </div>
       {toolbarSlot("bottom")}
       <div hidden ref={parking} />
+      <div
+        className="wc-detached-panels"
+        ref={detached}
+        data-canvas-controls=""
+      />
       {createPortal(
         <>
           <button
@@ -496,9 +530,11 @@ export function WorkspaceDock({
       {(Object.keys(panelNames) as PanelId[]).map((id) =>
         createPortal(
           <div
-            role="tabpanel"
+            role={detachedPanels.includes(id) ? undefined : "tabpanel"}
             id={`wc-panel-${id}`}
-            aria-labelledby={`wc-tab-${id}`}
+            aria-labelledby={
+              detachedPanels.includes(id) ? undefined : `wc-tab-${id}`
+            }
             className="wc-panel"
           >
             {panels[id]}

@@ -10,6 +10,34 @@ const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const requests = [];
 const images = [];
 const plotReads = [];
+let releaseStream;
+const formattedResponse = [
+  "## Engineering review",
+  "- **Assumption:** a linear spring.",
+  "- Keep source units explicit.",
+  "",
+  "| Input | Value |",
+  "| --- | --- |",
+  "| Displacement | 3 mm |",
+  "",
+  "```python",
+  "force = 3 * 10",
+  "```",
+  "",
+  "$F = k x$",
+  "",
+  "$$\\frac{F}{k} = x$$",
+  "",
+  "A source note.[^source]",
+  "",
+  "[^source]: Check the original model assumptions.",
+  "",
+  "[Reference](https://example.com/reference)",
+  "[Unsafe link](javascript:alert(1))",
+  "![Remote tracking image](https://example.invalid/pixel.png)",
+  '<img src="x" onerror="window.assistantInjected = true">',
+  "<script>window.assistantInjected = true</script>",
+].join("\n");
 let tools = 0,
   disposed = 0;
 const companion = await startCompanion({
@@ -23,6 +51,54 @@ const companion = await startCompanion({
       },
       async prompt(text) {
         requests.push(text);
+        if (text.startsWith("Formatted explanation")) {
+          listener({
+            type: "message_update",
+            assistantMessageEvent: {
+              type: "text_delta",
+              delta: formattedResponse,
+            },
+          });
+          return;
+        }
+        if (text.startsWith("Stream while minimized")) {
+          listener({
+            type: "message_update",
+            assistantMessageEvent: {
+              type: "text_delta",
+              delta: "## In progress\n\n",
+            },
+          });
+          await new Promise((resolve, reject) => {
+            releaseStream = resolve;
+            aborted = reject;
+          });
+          listener({
+            type: "message_update",
+            assistantMessageEvent: {
+              type: "text_delta",
+              delta: Array.from(
+                { length: 80 },
+                (_, i) => `Streamed step ${i + 1}: Review source assumptions.`,
+              ).join("\n"),
+            },
+          });
+          return;
+        }
+        if (text.startsWith("Long explanation")) {
+          listener({
+            type: "message_update",
+            assistantMessageEvent: {
+              type: "text_delta",
+              delta: Array.from(
+                { length: 80 },
+                (_, i) =>
+                  `Step ${i + 1}: Inspect the assumptions and keep source units explicit.`,
+              ).join("\n"),
+            },
+          });
+          return;
+        }
         if (text.startsWith("Wait")) {
           await new Promise((_resolve, reject) => {
             aborted = reject;
@@ -228,6 +304,71 @@ try {
     name: "Canvas assistant Pi · experimental",
   });
   await expect(panel).toBeVisible();
+  const expectThemeToken = async (locator, property, token) => {
+    await expect(async () => {
+      const colors = await locator.evaluate(
+        (element, { property, token }) => {
+          const actual = getComputedStyle(element)[property];
+          const probe = document.createElement("span");
+          probe.style.color = getComputedStyle(element).getPropertyValue(token);
+          document.body.append(probe);
+          const expected = getComputedStyle(probe).color;
+          probe.remove();
+          return { actual, expected };
+        },
+        { property, token },
+      );
+      expect(colors.actual, `${property} should follow ${token}`).toBe(
+        colors.expected,
+      );
+    }).toPass({ timeout: 15000 });
+  };
+  const expectPanelTheme = async () => {
+    await expectThemeToken(panel, "backgroundColor", "--canvas-surface");
+    await expectThemeToken(panel, "color", "--canvas-text");
+    await expectThemeToken(
+      panel.locator("textarea"),
+      "backgroundColor",
+      "--canvas-surface",
+    );
+    await expectThemeToken(panel.locator("textarea"), "color", "--canvas-text");
+    await expectThemeToken(
+      panel.locator(".assistant-context"),
+      "color",
+      "--canvas-muted",
+    );
+    await expectThemeToken(
+      panel.locator(".assistant-settings"),
+      "backgroundColor",
+      "--canvas-bg",
+    );
+    await expectThemeToken(
+      panel.getByLabel("Provider", { exact: true }),
+      "backgroundColor",
+      "--canvas-surface",
+    );
+  };
+  await expectPanelTheme();
+  // The default workspace is dark. Alternate palettes must flow through the same tokens.
+  await panel.evaluate((element) => {
+    for (const [key, value] of Object.entries({
+      "--canvas-surface": "#ffffff",
+      "--canvas-bg": "#faf9fc",
+      "--canvas-text": "#343942",
+      "--canvas-muted": "#606775",
+    }))
+      element.style.setProperty(key, value);
+  });
+  await expectPanelTheme();
+  await panel.evaluate((element) => {
+    for (const token of [
+      "--canvas-surface",
+      "--canvas-bg",
+      "--canvas-text",
+      "--canvas-muted",
+    ])
+      element.style.removeProperty(token);
+  });
   const settings = panel.getByRole("button", {
     name: "Assistant settings",
     exact: true,
@@ -251,6 +392,39 @@ try {
     dockBounds.x + dockBounds.width,
   );
   expect((await input.boundingBox()).height).toBeLessThanOrEqual(100);
+  await expect(
+    panel.getByText("Connects when you send", { exact: true }),
+  ).toBeVisible();
+  await expect(panel.locator(".assistant-context")).toContainText("Spring");
+  await panel
+    .getByRole("button", {
+      name: "Remove Spring from request focus",
+      exact: true,
+    })
+    .click();
+  await expect(input).toHaveAccessibleDescription(/Worksheet context/);
+  await panel
+    .getByRole("button", { name: "Use selection", exact: true })
+    .click();
+  await expect(input).toHaveAccessibleDescription(/1 selected object/);
+  await panel
+    .getByRole("button", { name: "What the assistant can access", exact: true })
+    .click();
+  await expect(panel.locator("#assistant-access-details")).toContainText(
+    "not an access restriction",
+  );
+  await panel
+    .getByRole("button", { name: "What the assistant can access", exact: true })
+    .click();
+  await panel
+    .getByRole("button", { name: "Review assumptions", exact: true })
+    .click();
+  await expect(input).toHaveValue(/Review the assumptions and units/);
+  await expect(input).toBeFocused();
+  expect(configurations).toHaveLength(0);
+  await expect(
+    panel.getByRole("button", { name: "Explain this work", exact: true }),
+  ).toBeDisabled();
   await input.fill("Keep this draft");
   await input.press("Shift+Enter");
   await expect(input).toHaveValue("Keep this draft\n");
@@ -263,9 +437,9 @@ try {
   await expect(panel.getByLabel("Model", { exact: true })).toHaveValue(
     "configured-default",
   );
-  // DOM order follows the visible composer/settings order for keyboard navigation.
+  // Header actions precede the open settings in both DOM and visual order.
   const closeButton = panel.getByRole("button", {
-    name: "Close canvas assistant",
+    name: "End assistant session",
     exact: true,
   });
   await closeButton.focus();
@@ -293,15 +467,124 @@ try {
     { provider: "test", model: "configured-default" },
   ]);
   await expect(settings).toHaveAttribute("aria-expanded", "false");
+  await expect(panel.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByRole("region", { name: "Get started with the assistant" }),
+  ).toHaveCount(0);
   const proposal = panel
     .getByRole("article", { name: "Proposed canvas edit" })
     .last();
   await expect(proposal).toContainText("pending");
+  await expectThemeToken(proposal, "backgroundColor", "--canvas-bg");
+  await expectThemeToken(
+    proposal.locator(".assistant-source-diff del"),
+    "backgroundColor",
+    "--canvas-danger-tint",
+  );
+  await expectThemeToken(
+    proposal.locator(".assistant-source-diff ins"),
+    "backgroundColor",
+    "--canvas-success-tint",
+  );
+  await expectThemeToken(
+    proposal.getByRole("button", { name: "Apply edit", exact: true }),
+    "backgroundColor",
+    "--canvas-accent-strong",
+  );
   await expect(proposal).toContainText("Displacement [mm]");
   await expect(
     model.getByLabel("Spring Displacement", { exact: true }),
   ).toHaveValue("2");
   await expect(model.getByLabel("Model force")).toHaveText("20 N");
+  expect((await readWorkspace(page)).document.id).toBe(before.document.id);
+  // Presentation changes keep the real companion, pending proposal and draft alive.
+  await input.fill("Preserve through float and minimize");
+  const liveInput = await input.elementHandle();
+  await panel
+    .getByRole("button", { name: "Float assistant panel", exact: true })
+    .click();
+  await expect(panel).toHaveClass(/is-floating/);
+  await expect(
+    page.getByRole("tab", { name: "Agent", exact: true }),
+  ).toHaveCount(0);
+  await expect(input).toHaveValue("Preserve through float and minimize");
+  expect(
+    await input.evaluate((node, previous) => node === previous, liveInput),
+  ).toBe(true);
+  const moveHandle = panel.getByRole("button", {
+    name: "Move floating assistant",
+    exact: true,
+  });
+  const floatingBounds = await panel.boundingBox();
+  await moveHandle.focus();
+  await moveHandle.press("ArrowLeft");
+  expect((await panel.boundingBox()).x).toBeLessThan(floatingBounds.x);
+  const moveBounds = await moveHandle.boundingBox();
+  await page.mouse.move(moveBounds.x + 20, moveBounds.y + 15);
+  await page.mouse.down();
+  await page.mouse.move(moveBounds.x - 30, moveBounds.y - 20);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(panel).toBeVisible();
+  expect((await panel.boundingBox()).x).toBe(floatingBounds.x - 20);
+  const resizeHandle = panel.getByRole("button", {
+    name: "Resize floating assistant",
+    exact: true,
+  });
+  await resizeHandle.focus();
+  await resizeHandle.press("ArrowRight");
+  expect((await panel.boundingBox()).width).toBe(floatingBounds.width + 20);
+  const grip = await resizeHandle.boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 60, grip.y + 30);
+  await page.mouse.up();
+  expect((await panel.boundingBox()).width).toBeGreaterThan(
+    floatingBounds.width + 20,
+  );
+  await input.press("Escape");
+  await expect(panel).toHaveCount(0);
+  const restore = page.getByRole("button", {
+    name: "Restore canvas assistant",
+    exact: true,
+  });
+  await expect(restore).toContainText("1 to review");
+  expect(disposed).toBe(0);
+  await restore.click();
+  await expect(proposal).toContainText("pending");
+  await expect(input).toHaveValue("Preserve through float and minimize");
+  await panel
+    .getByRole("button", { name: "Dock assistant panel", exact: true })
+    .click();
+  await expect(panel).toHaveClass(/is-embedded/);
+  await expect(
+    dock.getByRole("tab", { name: "Agent", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(input).toHaveValue("Preserve through float and minimize");
+  expect(configurations).toHaveLength(1);
+  expect(disposed).toBe(0);
+  await proposal
+    .getByRole("button", { name: "Show model on canvas", exact: true })
+    .click();
+  await expect(proposal.getByRole("status")).toContainText("Highlighted");
+  await model.evaluate((element) => {
+    element.style.display = "none";
+  });
+  await proposal
+    .getByRole("button", { name: "Show model on canvas", exact: true })
+    .click();
+  await expect(proposal.getByRole("status")).toContainText(
+    "not currently visible",
+  );
+  await model.evaluate((element) => {
+    element.style.removeProperty("display");
+  });
+  await proposal
+    .getByRole("button", { name: "Show source on canvas", exact: true })
+    .click();
+  await expect(proposal.getByRole("status")).toContainText(
+    "New content appears after approval",
+  );
   expect((await readWorkspace(page)).document.id).toBe(before.document.id);
   expect(requests[0]).toContain(
     before.document.items
@@ -347,6 +630,12 @@ try {
   // An unaccepted renderer draft blocks Apply without implicitly accepting it.
   await stale.getByRole("button", { name: "Apply edit", exact: true }).click();
   await expect(panel.getByRole("alert")).toContainText("Finish or cancel");
+  await expectThemeToken(panel.getByRole("alert"), "color", "--canvas-danger");
+  await expectThemeToken(
+    panel.getByRole("alert"),
+    "backgroundColor",
+    "--canvas-danger-tint",
+  );
   await displacement
     .locator("..")
     .locator("..")
@@ -374,7 +663,7 @@ try {
   await ask("Prepare for disconnect");
   await expect(panel.getByRole("article").last()).toContainText("pending");
   await panel
-    .getByRole("button", { name: "Close canvas assistant", exact: true })
+    .getByRole("button", { name: "End assistant session", exact: true })
     .click();
   await expect(panel).toHaveCount(0);
   await expect.poll(() => disposed).toBe(1);
@@ -454,7 +743,7 @@ try {
     "test-only-browser-key",
   );
   await setup
-    .getByRole("button", { name: "Close canvas assistant", exact: true })
+    .getByRole("button", { name: "End assistant session", exact: true })
     .click();
   await expect.poll(() => disposed).toBe(2);
   // A contextual request retains its invocation context in the dock and stays on-screen.
@@ -473,7 +762,18 @@ try {
   await expect(
     page.getByRole("tab", { name: "Agent", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
+  await contextual
+    .getByRole("button", { name: "Float assistant panel", exact: true })
+    .click();
   await page.setViewportSize({ width: 390, height: 700 });
+  await expect(contextual).toHaveClass(/is-floating/);
+  await expect(contextualInput).toBeVisible();
+  await expect(
+    contextual.getByRole("button", {
+      name: "Resize floating assistant",
+      exact: true,
+    }),
+  ).toBeHidden();
   await contextual
     .getByRole("button", { name: "Assistant settings", exact: true })
     .click();
@@ -483,7 +783,7 @@ try {
     expect(bounds.y).toBeGreaterThanOrEqual(8);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(382);
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(692);
-  }).toPass();
+  }).toPass({ timeout: 15000 });
   await contextualInput.press("Escape");
   await expect(contextual).toHaveCount(0);
   expect(configurations).toHaveLength(3);
@@ -501,7 +801,9 @@ try {
   const connecting = page.waitForRequest("**/api/assistant/connect");
   await contextualInput.press("Enter");
   await connecting;
-  await contextualInput.press("Escape");
+  await contextual
+    .getByRole("button", { name: "End assistant session", exact: true })
+    .click();
   await expect(contextual).toHaveCount(0);
   held.resolve();
   await completed.promise;
@@ -589,8 +891,146 @@ try {
   expect(plotReads[0].status).toBe("derived-not-checked");
   expect(plotReads[0].points).toHaveLength(81);
   expect(images).toHaveLength(3);
+  await ask("Long explanation of the worksheet");
+  const history = panel.getByRole("region", {
+    name: "Conversation history",
+    exact: true,
+  });
+  await expect(async () => {
+    const distance = await history.evaluate(
+      (element) =>
+        element.scrollHeight - element.scrollTop - element.clientHeight,
+    );
+    expect(distance).toBeLessThan(48);
+  }).toPass({ timeout: 15000 });
+  const composerBounds = await input.boundingBox();
+  const historyBounds = await history.boundingBox();
+  expect(composerBounds.y).toBeGreaterThanOrEqual(
+    historyBounds.y + historyBounds.height,
+  );
+  await history.evaluate((element) => {
+    element.scrollTop = 0;
+  });
   await panel
-    .getByRole("button", { name: "Close canvas assistant", exact: true })
+    .getByRole("button", { name: "Latest response", exact: true })
+    .click();
+  await expect(
+    panel.getByRole("button", { name: "Latest response", exact: true }),
+  ).toHaveCount(0);
+  await expect(panel.locator(".assistant-answer").last()).toContainText(
+    "Step 80",
+  );
+  // Rich responses are readable but cannot execute HTML, fetch remote images or run links.
+  const trackingRequests = [];
+  page.on("request", (request) => {
+    if (request.url().includes("example.invalid"))
+      trackingRequests.push(request.url());
+  });
+  await ask("Formatted explanation of the worksheet");
+  await ask("Formatted explanation with another source note");
+  const rich = panel.locator(".assistant-answer").last();
+  await expect(
+    rich.getByRole("heading", { name: "Engineering review", exact: true }),
+  ).toBeVisible();
+  await expect(
+    rich.getByRole("region", { name: "Response table", exact: true }),
+  ).toBeVisible();
+  await expect(rich.locator(".katex")).toHaveCount(2);
+  await expect(rich.locator(".katex-error")).toHaveCount(0);
+  await expect(rich.locator("script,img,iframe")).toHaveCount(0);
+  await expect(rich.locator('a[href^="javascript:"]')).toHaveCount(0);
+  expect(await page.evaluate(() => window.assistantInjected)).toBeUndefined();
+  expect(trackingRequests).toEqual([]);
+  await expect(
+    rich.getByRole("link", { name: "Reference", exact: true }),
+  ).toHaveAttribute("rel", "noopener noreferrer");
+  const footnote = rich.locator("a[data-footnote-ref]");
+  await expect(footnote).not.toHaveAttribute("target", "_blank");
+  const footnoteId = (await footnote.getAttribute("href")).slice(1);
+  const referenceId = await footnote.getAttribute("id");
+  const urlBeforeFootnote = page.url();
+  await footnote.click();
+  expect(await page.evaluate(() => document.activeElement.id)).toBe(footnoteId);
+  await rich.locator("a[data-footnote-backref]").click();
+  expect(await page.evaluate(() => document.activeElement.id)).toBe(
+    referenceId,
+  );
+  expect(page.url()).toBe(urlBeforeFootnote);
+  expect(page.context().pages()).toHaveLength(1);
+  const responseIds = await panel
+    .locator(".assistant-answer [id]")
+    .evaluateAll((nodes) => nodes.map((node) => node.id));
+  expect(new Set(responseIds).size).toBe(responseIds.length);
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text) => {
+          window.assistantCopied = text;
+        },
+      },
+    }),
+  );
+  await rich.getByRole("button", { name: "Copy code", exact: true }).click();
+  expect(await page.evaluate(() => window.assistantCopied)).toBe(
+    "force = 3 * 10\n",
+  );
+  await rich
+    .getByRole("button", { name: "Copy assistant response", exact: true })
+    .click();
+  expect(await page.evaluate(() => window.assistantCopied)).toBe(
+    formattedResponse,
+  );
+  // A real active request continues while minimized, without losing its draft or scroll follow.
+  await input.fill("Stream while minimized");
+  await input.press("Enter");
+  await expect.poll(() => typeof releaseStream).toBe("function");
+  await expect(
+    panel.getByRole("button", { name: "Stop request", exact: true }),
+  ).toBeVisible();
+  await input.fill("Keep the next draft while hidden");
+  await panel
+    .getByRole("button", { name: "Minimize canvas assistant", exact: true })
+    .click();
+  const runningRestore = page.getByRole("button", {
+    name: "Restore canvas assistant",
+    exact: true,
+  });
+  await expect(runningRestore).toContainText("Writing a response");
+  expect(disposed).toBe(2);
+  releaseStream();
+  await expect(runningRestore).toContainText("Resume conversation");
+  await runningRestore.click();
+  await expect(input).toHaveValue("Keep the next draft while hidden");
+  await expect(panel.locator(".assistant-answer").last()).toContainText(
+    "Streamed step 80",
+  );
+  await expect(async () => {
+    expect(
+      await history.evaluate(
+        (element) =>
+          element.scrollHeight - element.scrollTop - element.clientHeight,
+      ),
+    ).toBeLessThan(48);
+  }).toPass({ timeout: 15000 });
+  // Deliberately reading earlier messages also survives a minimize/restore cycle.
+  await history.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(
+    panel.getByRole("button", { name: "Latest response", exact: true }),
+  ).toBeVisible();
+  await panel
+    .getByRole("button", { name: "Minimize canvas assistant", exact: true })
+    .click();
+  await runningRestore.click();
+  await expect(
+    panel.getByRole("button", { name: "Latest response", exact: true }),
+  ).toBeVisible();
+  expect(await history.evaluate((element) => element.scrollTop)).toBe(0);
+  expect(configurations).toHaveLength(5);
+  await panel
+    .getByRole("button", { name: "End assistant session", exact: true })
     .click();
   await expect.poll(() => disposed).toBe(3);
   await page.reload();

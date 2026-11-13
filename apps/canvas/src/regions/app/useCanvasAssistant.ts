@@ -111,6 +111,7 @@ export function useCanvasAssistant(
           }
           if (message.requestId !== current.active) return;
           if (message.type === "text") {
+            setActivity("Writing a response…");
             setTurns((previous) =>
               previous.map((turn) =>
                 turn.id === message.requestId
@@ -120,9 +121,16 @@ export function useCanvasAssistant(
             );
           } else if (message.type === "tool") {
             setActivity(
-              message.name === "prepare_edit"
-                ? "Preparing an edit for review…"
-                : "Inspecting the canvas…",
+              (
+                {
+                  inspect_workspace: "Reading the worksheet…",
+                  inspect_canvas: "Inspecting canvas layout…",
+                  inspect_plot: "Reading plot data…",
+                  look_at_canvas: "Looking at the canvas image…",
+                  capabilities: "Checking available operations…",
+                  prepare_edit: "Preparing an edit for review…",
+                } as Record<string, string>
+              )[message.name] || "Inspecting the canvas…",
             );
             try {
               if (!current.assistant.active(message.requestId)) return;
@@ -168,6 +176,7 @@ export function useCanvasAssistant(
                   "Canvas tool result is too large; inspect a smaller page or one object",
                 );
               socket.send(response);
+              setActivity("Thinking…");
             } catch (failure) {
               if (
                 bridge.current !== current ||

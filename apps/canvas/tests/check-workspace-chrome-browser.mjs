@@ -156,6 +156,36 @@ try {
   await expect(prompt).toBeHidden();
   await page.getByRole("tab", { name: "Agent", exact: true }).click();
   await expect(prompt).toHaveValue("Draft request — do not send");
+  // Docking/restoring explicitly reactivates and expands the original dock group.
+  await button("Float assistant panel").click();
+  await button("Collapse left dock").click();
+  await button("Dock assistant panel").click();
+  await expect(prompt).toBeVisible();
+  await expect(prompt).toHaveValue("Draft request — do not send");
+  await button("Minimize canvas assistant").click();
+  await button("Collapse left dock").click();
+  const beforeRestoreFailure = await saved();
+  await page.evaluate(() => {
+    window.__assistantSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "manifold.workspace-chrome.v1")
+        throw new DOMException("Full", "QuotaExceededError");
+      return window.__assistantSetItem.call(this, key, value);
+    };
+  });
+  await button("Restore canvas assistant").click();
+  await expect(button("Restore canvas assistant")).toBeVisible();
+  await expect(page.locator(".wc-error")).toContainText("could not be saved");
+  expect(await saved()).toEqual(beforeRestoreFailure);
+  await page.evaluate(() => {
+    Storage.prototype.setItem = window.__assistantSetItem;
+  });
+  await button("Restore canvas assistant").click();
+  await expect(prompt).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Agent", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(prompt).toHaveValue("Draft request — do not send");
   await prompt.press("Escape");
   await view();
   await button("Reset workspace").click();

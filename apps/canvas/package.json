@@ -21,10 +21,15 @@
     "@fontsource-variable/manrope": "5.2.8",
     "@manifold/foundation": "0.17.1",
     "html-to-image": "1.11.13",
+    "katex": "0.19.1",
     "lucide-react": "0.468.0",
     "mathjs": "15.2.0",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0"
   },
   "engines": {
     "node": ">=22.18.0"

@@ -38,7 +38,7 @@ export function useWorkspaceChrome() {
   const publish = (next: ChromePreferences, reset = false) => {
     if (blocked.current && !reset) {
       setError(initial.error);
-      return;
+      return false;
     }
     try {
       restoreChrome(JSON.stringify(next));
@@ -47,10 +47,12 @@ export function useWorkspaceChrome() {
       blocked.current = false;
       setPreferences(next);
       setError("");
+      return true;
     } catch {
       setError(
         "Workspace preferences could not be saved. The layout has not changed. Free browser storage and try again.",
       );
+      return false;
     }
   };
   const update = (fn: (layout: ChromeLayout) => ChromeLayout) =>
@@ -60,7 +62,7 @@ export function useWorkspaceChrome() {
     error,
     update,
     show(id: PanelId, visible: boolean) {
-      update((layout) =>
+      return update((layout) =>
         movePanel(
           layout,
           id,

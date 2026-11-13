@@ -28,6 +28,9 @@
     "check": "make check",
     "verify": "make verify-application-foundation"
   },
+  "overrides": {
+    "katex": "0.19.1"
+  },
   "devDependencies": {
     "@playwright/test": "1.56.0",
     "@types/react": "19.2.0",

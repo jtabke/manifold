@@ -227,6 +227,18 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const chrome = useWorkspaceChrome();
   const assistantOpen = !!panelSide(chrome.preferences.layout, "assistant");
   const setAssistantOpen = (open: boolean) => chrome.show("assistant", open);
+  const [assistantPresentation, setAssistantPresentation] = useState({
+    floating: false,
+    minimized: false,
+  });
+  const detachedPanels = useMemo(
+    () =>
+      assistantOpen &&
+      (assistantPresentation.floating || assistantPresentation.minimized)
+        ? ["assistant" as const]
+        : [],
+    [assistantOpen, assistantPresentation],
+  );
   const [assistantAnchor, setAssistantAnchor] = useState<Point>({
     x: 200,
     y: 120,
@@ -2755,10 +2767,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     },
   };
   const openAssistant = (at: Point) => {
-    if (!workspaceEdits.finish()) return false;
+    if (!workspaceEdits.finish() || !setAssistantOpen(true)) return false;
     setAssistantAnchor({ x: at.x, y: at.y });
     setAssistantPoint(canvasPoint(at.x, at.y));
-    setAssistantOpen(true);
+    setAssistantPresentation((value) => ({ ...value, minimized: false }));
     return true;
   };
   const openWorkspace = async (file: File) => {
@@ -3748,10 +3760,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               ref={assistantButton}
               aria-label="Ask agent"
               className="er-agent-button"
-              aria-expanded={assistantOpen}
+              aria-expanded={assistantOpen && !assistantPresentation.minimized}
               onClick={() => {
-                if (assistantOpen) {
-                  setAssistantOpen(false);
+                if (assistantOpen && !assistantPresentation.minimized) {
+                  setAssistantPresentation((value) => ({
+                    ...value,
+                    minimized: true,
+                  }));
                   return;
                 }
                 const rect = canvas.current?.getBoundingClientRect();
@@ -3901,6 +3916,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         )}
 
         <WorkspaceDock
+          detachedPanels={detachedPanels}
           workspace={chrome}
           toolbar={
             <div
@@ -4010,7 +4026,83 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             ),
             assistant: assistantOpen && (
               <CanvasAssistant
-                embedded
+                floating={assistantPresentation.floating}
+                minimized={assistantPresentation.minimized}
+                changePresentation={(value) => {
+                  if (
+                    !value.floating &&
+                    !value.minimized &&
+                    !chrome.show("assistant", true)
+                  )
+                    return;
+                  setAssistantPresentation(value);
+                }}
+                reveal={async (id) => {
+                  const views = [...session.document.views.entries()]
+                    .filter(([, view]) => view.reference.item === id)
+                    .map(([viewId]) => viewId);
+                  const selectors = [id, ...views]
+                    .flatMap((target) =>
+                      [
+                        "region",
+                        "view",
+                        "plot",
+                        "model",
+                        "drawing",
+                        "tool",
+                        "data-relation",
+                      ].map(
+                        (kind) => `[data-${kind}-id="${CSS.escape(target)}"]`,
+                      ),
+                    )
+                    .join(",");
+                  revealAreaCanvas.current?.();
+                  if (relationshipNav.focus) relationshipNav.restore();
+                  if (!hierarchy.visible(id)) hierarchy.reveal(id);
+                  const group = spatial.scene.groups.find((group) =>
+                    group.members.some((member) =>
+                      [id, ...views].includes(member),
+                    ),
+                  );
+                  if (group) spatial.focusObject(group.id);
+                  // Scope/workspace changes publish before their DOM and camera updates.
+                  await new Promise<void>((resolve) =>
+                    requestAnimationFrame(() =>
+                      requestAnimationFrame(() => resolve()),
+                    ),
+                  );
+                  const element = [
+                    ...(canvas.current?.querySelectorAll(selectors) || []),
+                  ].find((node) => node.getClientRects().length > 0);
+                  if (!element) return false;
+                  revealCanvasElement(element, {
+                    block: "nearest",
+                    inline: "nearest",
+                  });
+                  const color =
+                    getComputedStyle(element).getPropertyValue(
+                      "--canvas-accent",
+                    ) || "#8069bb";
+                  const highlight = {
+                    outline: `3px solid ${color}`,
+                    outlineOffset: "4px",
+                  };
+                  element.animate(
+                    window.matchMedia("(prefers-reduced-motion: reduce)")
+                      .matches
+                      ? [highlight, highlight]
+                      : [
+                          highlight,
+                          highlight,
+                          {
+                            outline: "3px solid transparent",
+                            outlineOffset: "4px",
+                          },
+                        ],
+                    { duration: 2200 },
+                  );
+                  return true;
+                }}
                 session={session}
                 anchor={assistantAnchor}
                 canvas={agentCanvas}
@@ -4029,7 +4121,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   ),
                 ]}
                 close={() => {
-                  setAssistantOpen(false);
+                  if (!setAssistantOpen(false)) return;
+                  setAssistantPresentation({
+                    floating: false,
+                    minimized: false,
+                  });
                   assistantButton.current?.focus();
                 }}
               />

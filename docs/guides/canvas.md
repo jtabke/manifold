@@ -63,7 +63,8 @@ Chrome preferences save automatically in this browser on this device. They are n
 of a downloaded `.manifold` file, named authored canvas layouts, or document Undo history.
 A save failure leaves the live layout unchanged and reports the problem. Invalid stored
 preferences remain untouched until an explicit Reset. Docking is in-app only;
-separate OS windows, free-floating panels and arbitrary editor splits are not included.
+separate OS windows and arbitrary editor splits are not included. The Agent panel also supports
+an in-app floating presentation; other panels remain docked.
 
 ## Ask the canvas assistant (experimental)
 
@@ -80,9 +81,36 @@ The assistant is optional: the canvas works without it. Start Manifold normally 
 3. Review the proposed source/input changes and diagnostics. **Apply edit** accepts the exact
    reviewed transaction as one Undo step; **Dismiss** changes nothing.
 
-Only the input and small settings/send/close controls are shown initially. Multiline drafts grow
-as needed; replies, edit reviews and settings appear in the same dockable panel.
-**Escape** closes it and ends the connection. Selection context is attached when you send.
+The panel shows connection status, starter suggestions and a bottom composer with named selection
+chips. Remove a chip to exclude that object from the request's focus, or choose **Use selection**
+to reattach the current selection. This is a focus hint, not an access restriction: the assistant
+can still inspect the worksheet. **What the assistant can access** explains provider access and
+approval boundaries. Suggestions fill a draft without sending it or replacing existing text.
+Multiline drafts grow as needed; conversation and edit reviews scroll independently above the
+composer. New responses follow the latest text unless you scroll back; **Latest response** returns
+to the bottom. Responses support headings, lists, tables, code and LaTeX mathematics, with copy
+controls for code and the original response. Raw HTML, remote images and executable links are
+not enabled. Follow source footnotes within the conversation without opening another canvas.
+Settings, messages, diagnostics and source diffs use the workspace palette, including its dark theme.
+
+Use **Float assistant panel** to work beside a canvas object, and **Dock assistant panel** to return
+to its saved dock side. Drag the floating header to move it or the corner grip to resize it; both
+controls also accept arrow keys, with Shift for larger steps. **Escape** during a pointer gesture
+cancels that gesture. Floating geometry stays within the viewport and is transient; on small screens
+the floating panel becomes a bottom sheet rather than a movable window.
+
+**Minimize canvas assistant**, or **Escape** outside a gesture, hides the panel without stopping the
+request or clearing conversation, drafts or pending proposals. The Agent pill shows working/review
+status; click it to resume. The document-header **Ask agent** button also minimizes or restores the
+panel. **End assistant session** explicitly disconnects, cancels pending setup and discards the
+conversation and unaccepted proposals. Accepted edits remain in the worksheet. Dock/float/minimize
+changes do not reconnect or send model requests; reloading does not retain the transient conversation.
+
+Proposal cards show source and model-input differences before approval. **Show on canvas** actions
+locate and highlight an existing visible target without applying the edit. New content is available
+on the canvas only after approval; unavailable targets are reported rather than silently accepted.
+Tool progress distinguishes worksheet inspection, plot reads, canvas images and preparing an edit.
+The **Stop request** control remains available while a request is running.
 
 Provider/model configuration is behind the **Assistant settings** gear button. Existing Pi
 configuration is read from `~/.pi/agent` (or `PI_CODING_AGENT_DIR` set when starting Manifold).
