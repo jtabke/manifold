@@ -21,6 +21,11 @@ import {
 import { archive } from "../src/regions/artifacts.ts";
 import { stageWorkspaceFile } from "../src/regions/app/workspaceFiles.ts";
 import { canvasLocalStore } from "../src/regions/app/canvasLocalStore.ts";
+import {
+  duplicateSelection,
+  deleteSelection,
+  positionDrawings,
+} from "../src/regions/selectionOperations.ts";
 const p = (x, y, pressure = 0.5) => ({ x, y, pressure });
 const mark = (kind = "rectangle") => ({
   kind,
@@ -493,7 +498,84 @@ assert.equal(s.canRedo, true, "rejected edits preserve Redo");
 createDrawing(s, mark("line"));
 assert.equal(s.canRedo, false, "a new accepted edit clears the redo branch");
 off();
-for (const owner of [s, opened, recovered]) owner.dispose();
+// Mixed selections share one publication/history boundary without rebinding engineering definitions.
+const mixed = new RegionSession();
+const input = mixed.create({ x: 100, y: 100 });
+assert.equal(mixed.write(input, "force = 20 N").ok, true);
+const output = mixed.create({ x: 100, y: 200 });
+assert.equal(mixed.write(output, "work = force * 2 m").ok, true);
+const doodle = createDrawing(mixed, mark(), { x: 400, y: 100 });
+const mixedPage = structuredClone(mixed.state),
+  mixedMarks = drawings(mixed.document);
+const assertMixed = () => {
+  assert.deepEqual(mixed.state, mixedPage);
+  assert.deepEqual(drawings(mixed.document), mixedMarks);
+};
+let publications = 0;
+const stopMixed = mixed.subscribe(() => publications++);
+const mixedCopies = duplicateSelection(mixed, [input, output, doodle], {
+  [input]: { x: 100, y: 100 },
+  [output]: { x: 100, y: 200 },
+});
+assert.equal(publications, 1);
+assert.equal(mixedCopies.length, 3);
+assert(mixed.state.regions.some((r) => r.text === "force_copy = 20 N"));
+assert(
+  mixed.state.regions.some((r) => r.text === "work_copy = force_copy * 2 m"),
+);
+assert.equal(mixed.state.links?.[mixedCopies[1]]?.force_copy, mixedCopies[0]);
+mixed.undo();
+assertMixed();
+const beforeRejected = mixed.document;
+assert.throws(() => deleteSelection(mixed, [input, doodle]), /depend/);
+assert.equal(
+  mixed.document,
+  beforeRejected,
+  "Rejected mixed deletion publishes nothing",
+);
+publications = 0;
+deleteSelection(mixed, [input, output, doodle]);
+assert.equal(publications, 1);
+assert.equal(mixed.state.regions.length, 0);
+assert.equal(drawings(mixed.document).length, 0);
+mixed.undo();
+assertMixed();
+const beforePosition = drawings(mixed.document)[0];
+mixed.atomic((staged) => {
+  positionDrawings(staged, { [doodle]: { x: 430, y: 140 } });
+  staged.arrange({ [input]: { x: 130, y: 140 } });
+});
+assert.deepEqual(drawings(mixed.document)[0].mark, beforePosition.mark);
+assert.deepEqual(
+  {
+    x: drawings(mixed.document)[0].view.x,
+    y: drawings(mixed.document)[0].view.y,
+  },
+  { x: 430, y: 140 },
+);
+mixed.undo();
+assertMixed();
+mixed.setScene((scene) => ({
+  ...scene,
+  groups: [
+    {
+      id: "group-mixed",
+      name: "Mixed",
+      members: [input, doodle],
+      layout: "stack",
+      auto: false,
+    },
+  ],
+}));
+const mixedOpened = await stageWorkspaceFile(archive(mixed.native()));
+assert.deepEqual(mixedOpened.scene.groups[0].members, [input, doodle]);
+assert.equal(drawings(mixedOpened.document).length, 1);
+deleteSelection(mixed, [input, output, doodle]);
+assert.equal(mixed.scene.groups.length, 0);
+mixed.undo();
+assert.equal(mixed.scene.groups.length, 1);
+stopMixed();
+for (const owner of [s, opened, recovered, mixed, mixedOpened]) owner.dispose();
 console.log(
   "Drawing: typed marks, pressure, atomic move/delete/duplicate/Undo/Redo, attached connectors, stale rejection and native/local round trips pass.",
 );

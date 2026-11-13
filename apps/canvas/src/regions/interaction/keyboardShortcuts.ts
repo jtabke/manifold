@@ -127,7 +127,7 @@ const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
     [
       "Shift + click",
       "Toggle an object in a multi-selection",
-      "Canvas objects, or marks with the drawing Select tool.",
+      "Canvas objects or drawings with the default Select / Edit pointer.",
     ],
     [
       "Alt + click",
@@ -138,6 +138,11 @@ const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
       "Arrow keys / Shift + Arrow keys",
       "Nudge a selected worksheet region by 5 / 20 units",
       "Canvas focus; not in text fields or on buttons.",
+    ],
+    [
+      "Tab · Alt + Arrow · Home / End",
+      "Navigate the drawing collection",
+      "Drawings use one Tab stop. Alt + Arrow browses drawings; Home/End jumps to the first/last. Enter/Space selects. Arrow keys move selected objects by 5 units, or 20 with Shift. Delete removes the selection; Escape cancels or clears.",
     ],
     [
       "Alt while dragging",

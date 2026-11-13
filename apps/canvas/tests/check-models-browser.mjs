@@ -85,6 +85,7 @@ const select = async (ids) => {
 };
 const create = async (name, ids) => {
   await select(ids);
+  await page.locator(".er-selection-more > summary").click();
   await page.getByRole("button", { name: "Make model", exact: true }).click();
   await page.getByLabel("Model name", { exact: true }).fill(name);
   await page.getByRole("button", { name: "Create model", exact: true }).click();
@@ -164,6 +165,10 @@ try {
   checks.push(
     "Independently authored model interfaces connect only after unit-checked review through the existing binding command",
   );
+  // Capture the invocation camera after bringing the actual control into view.
+  await thermal
+    .getByRole("button", { name: "Enter model Thermal balance", exact: true })
+    .scrollIntoViewIfNeeded();
   const parentCamera = await camera();
   await thermal
     .getByRole("button", { name: "Enter model Thermal balance", exact: true })
@@ -236,6 +241,7 @@ try {
     (await read()).models.find((m) => m.name === "Heat source").id,
     thermalId,
   ]);
+  await page.locator(".er-selection-more > summary").click();
   await page.getByRole("button", { name: "Make model", exact: true }).click();
   await page.getByLabel("Model name", { exact: true }).fill("Cooling system");
   await page.getByRole("button", { name: "Create model", exact: true }).click();

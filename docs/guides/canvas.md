@@ -19,12 +19,14 @@ For the equivalent commands without Make and frontend development, see the
 
 ## Equations and data
 
-Start typing an equation or note, then click to choose its position. **Write** starts
+Start typing an equation or note, then click to choose its position. **Write equation or note** starts
 in the visible canvas. The inline source field grows with your text instead of opening a
 fixed-width panel. Enter continues below, Escape finishes, Shift+Enter adds a line and `@`
 offers references. Arithmetic such as `1+1` evaluates without a variable name.
-Click mathematical notation to edit it; Enter continues below and Escape finishes
-editing. Unresolved expressions remain editable.
+Single-click an equation or note to select it; double-click or press Enter to edit.
+Enter in the source field continues below and Escape finishes editing. Unresolved
+expressions remain editable. Mathematical source-range selection, Alt-click term
+inspection and dedicated number-exploration controls retain their own gestures.
 
 Use **Import CSV** or drop a CSV onto the canvas. Measurements retain their source;
 connections to mathematical quantities require explicit review. Plot responses and
@@ -301,11 +303,31 @@ the drawing toolbar using a click or keyboard focus plus Enter/Space. An uncerta
 leaves the stroke untouched. This is local geometry fitting, not AI or mechanical-symbol
 interpretation; it creates no dimensions, constraints or computational dependencies.
 
-Use **Select drawings** (Shift-click for multiple) or **Lasso drawings**, then drag to
-move, drag the corner handle to resize, or use Duplicate/Delete. Double-click a label
-to edit it; Enter accepts, Shift+Enter adds a line, and Escape cancels. The eraser
-removes whole marks. Finger-drag pans and two fingers pinch-zoom; Space-drag and
-middle-drag also pan. **Write** or Escape returns to equation/note authoring.
+**Select / Edit** is the default pointer for both worksheet authoring and drawing
+selection; there is no separate Write mode. Click a drawing to select it, Shift-click
+for multiple, or use **Lasso drawings**, then drag to move, drag the corner handle to
+resize, or use Duplicate/Delete. Clicking blank space clears the selection; typing or
+Enter starts a worksheet region, and clicking blank space with nothing selected still
+starts writing there. Shift-click adds worksheet objects and drawings to the same
+selection; blank-space box selection can include both. Drag a selected object or the
+selection's move handle to move them together. Mathematical text/control gestures are
+reserved for their editing and inspection actions; use the move handle there.
+Double-click a label to edit it without switching to label creation; Enter
+accepts, Shift+Enter adds a line, and Escape cancels.
+
+The contextual selection toolbar keeps Duplicate, Delete and Group near the selected
+content. Organize, Connect and Make model are behind **More**. Mixed worksheet-region
+and drawing duplication uses fresh identities and unique symbol names; internal
+bindings follow the copied definitions. Deletion refuses to break dependencies on
+unselected regions or live data/plot/artifact references. Other representation types
+retain their own actions; Duplicate/Delete explains when a selection is unsupported.
+Each accepted mixed edit is one Undo step, and native files retain mixed groups.
+
+Drawings use one Tab stop rather than one per mark. Alt+Arrow browses the collection;
+Home/End focuses its first/last drawing. Enter/Space selects. Arrow keys move selected
+objects by 5 units, or 20 with Shift. Escape cancels the current action or clears selection;
+from a drawing tool it returns to **Select / Edit**. The eraser removes whole marks.
+Finger-drag pans and two fingers pinch-zoom; Space-drag and middle-drag also pan.
 
 Ordinary drawing gestures save on release as one Undo step. A held regularization saves
 the original ink first, then replaces it through a second normal history operation:

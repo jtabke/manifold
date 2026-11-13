@@ -224,7 +224,7 @@ try {
 
     // Each entry route must reject unresolved bindings without creating a view.
     const force = page.locator(`[data-region-id="${named("F")}"]`);
-    await force.getByRole("button", { name: "Edit F", exact: true }).click();
+    await force.getByRole("button", { name: "Edit F", exact: true }).dblclick();
     await editor.fill("F =");
     await editor.press("Escape");
     await selectEquation();

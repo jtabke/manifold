@@ -636,6 +636,143 @@ export class RegionSession {
     this.apply(next);
     return id;
   }
+  /** Copy authored regions with fresh identities and unambiguous local symbol names. */
+  duplicateRegions(ids: readonly string[], placements: Record<string, Point>) {
+    const next = clone(this.state),
+      selected = new Set(ids),
+      projection = project(this.state);
+    const source = next.regions.filter((r) => selected.has(r.id));
+    if (next.regions.length + source.length > 256)
+      throw Error("This page supports up to 256 regions.");
+    const mapping = new Map(
+      source.map((r) => [r.id, `region-${crypto.randomUUID()}`]),
+    );
+    const used = new Set(
+      next.contexts.flatMap((context) =>
+        [...project(this.state, context.id).statements.values()].map(
+          (s) => s.name,
+        ),
+      ),
+    );
+    const names = new Map<string, string>();
+    for (const region of source) {
+      const statement = projection.statements.get(region.id);
+      if (!statement || statement.anonymous || statement.relation !== "=")
+        continue;
+      let name = `${statement.name}_copy`,
+        suffix = 2;
+      while (used.has(name)) name = `${statement.name}_copy${suffix++}`;
+      used.add(name);
+      names.set(region.id, name);
+    }
+    const rewrite = (text: string, id: string) => {
+      const aliases = new Map<string, string>();
+      const own = projection.statements.get(id);
+      if (own && names.has(id)) aliases.set(own.name, names.get(id)!);
+      else if (own && own.relation !== "=") {
+        const source = projection.sources[own.name]?.find((target) =>
+          names.has(target),
+        );
+        if (source) aliases.set(own.name, names.get(source)!);
+      }
+      for (const [alias, target] of Object.entries(
+        projection.bindings[id] || {},
+      ))
+        if (names.has(target)) aliases.set(alias, names.get(target)!);
+      return text.replace(
+        /[\p{L}_][\p{L}\p{N}_]*/gu,
+        (token) => aliases.get(token) || token,
+      );
+    };
+    for (const region of source) {
+      const id = mapping.get(region.id)!;
+      next.regions.push({
+        ...region,
+        id,
+        text: rewrite(region.text, region.id),
+        ...(region.source
+          ? {
+              source: {
+                ...region.source,
+                dataset:
+                  mapping.get(region.source.dataset) || region.source.dataset,
+              },
+            }
+          : {}),
+      });
+      const at = placements[region.id] || positions(this.state)[region.id];
+      next.layout[id] = { x: at.x + 24, y: at.y + 24 };
+      const parent = next.models?.find((model) =>
+        model.members.includes(region.id),
+      );
+      parent?.members.push(id);
+      const bindings = {
+        ...projection.bindings[region.id],
+        ...next.links?.[region.id],
+      };
+      if (Object.keys(bindings).length)
+        (next.links ||= {})[id] = Object.fromEntries(
+          Object.entries(bindings).map(([alias, target]) => [
+            names.get(target) || alias,
+            mapping.get(target) || target,
+          ]),
+        );
+      for (const context of next.contexts)
+        for (const key of ["base", "overrides"] as const)
+          if (context[key][region.id] !== undefined)
+            context[key][id] = rewrite(context[key][region.id], region.id);
+    }
+    this.apply(next);
+    return [...mapping.values()];
+  }
+  /** Refuse partial deletion of live engineering dependencies rather than silently rebinding them. */
+  deleteRegions(ids: readonly string[]) {
+    const removed = new Set(ids),
+      next = clone(this.state);
+    for (const context of next.contexts) {
+      const projection = project(this.state, context.id);
+      if (
+        Object.entries(projection.bindings).some(
+          ([id, links]) =>
+            !removed.has(id) &&
+            Object.values(links).some((target) => removed.has(target)),
+        )
+      )
+        throw Error(
+          "Other regions depend on this selection. Select the dependent regions too, or disconnect them first.",
+        );
+    }
+    if (
+      next.regions.some(
+        (r) => !removed.has(r.id) && r.source && removed.has(r.source.dataset),
+      ) ||
+      next.plots.some((p) => removed.has(p.input) || removed.has(p.output)) ||
+      next.dataRelations?.some((r) =>
+        [r.dataset, r.output, ...r.bindings.map((b) => b.quantity)].some(
+          (id) => id && removed.has(id),
+        ),
+      ) ||
+      this.artifacts.some((a) => removed.has(a.input) || removed.has(a.output))
+    )
+      throw Error(
+        "This selection has live data, plot or artifact references. Remove those references first.",
+      );
+    next.regions = next.regions.filter((r) => !removed.has(r.id));
+    for (const id of removed) {
+      delete next.layout[id];
+      if (next.links) delete next.links[id];
+      for (const context of next.contexts) {
+        delete context.base[id];
+        delete context.overrides[id];
+      }
+    }
+    for (const model of next.models || []) {
+      model.members = model.members.filter((id) => !removed.has(id));
+      model.inputs = model.inputs.filter((id) => !removed.has(id));
+      model.outputs = model.outputs.filter((id) => !removed.has(id));
+    }
+    this.apply(next);
+  }
   importData(name: string, csv: string, at: Point, scope?: string): string {
     const data = { name, csv };
     readCsv(data);

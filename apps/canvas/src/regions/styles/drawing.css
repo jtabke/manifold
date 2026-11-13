@@ -4,7 +4,8 @@
 .er-canvas {
   touch-action: none;
 }
-.er-paper:has(.drawing-surface.is-drawing) > .er-empty {
+.er-paper:has(.drawing-surface.is-drawing)
+  > :is(.er-empty, .er-selection-tools) {
   display: none;
 }
 .drawing-toolbar {
@@ -71,6 +72,9 @@
   pointer-events: none;
   z-index: 2;
 }
+.drawing-surface.has-selection {
+  z-index: 30;
+}
 .drawing-surface.is-drawing {
   z-index: 30;
   cursor: crosshair;
@@ -82,8 +86,41 @@
   pointer-events: all;
   cursor: pointer;
 }
+.drawing-mark.is-selected {
+  cursor: grab;
+}
+.drawing-surface.is-drawing .drawing-mark {
+  cursor: inherit;
+}
+.drawing-surface[data-drawing-active]:not(.is-drawing) .drawing-mark {
+  cursor: grabbing;
+}
+@media (hover: hover) and (pointer: fine) {
+  .drawing-mark:hover > .drawing-focus {
+    stroke: color-mix(in srgb, var(--canvas-accent, #c5a2f0) 60%, transparent);
+  }
+}
 .drawing-resize {
   cursor: nwse-resize;
+  fill: var(--canvas-surface);
+}
+.drawing-selection,
+.drawing-lasso {
+  stroke: var(--canvas-accent, #c5a2f0);
+}
+.drawing-lasso {
+  fill: color-mix(in srgb, var(--canvas-accent, #c5a2f0) 10%, transparent);
+}
+.drawing-mark:focus-visible {
+  outline: none;
+}
+.drawing-mark:focus-visible > .drawing-focus {
+  stroke: var(--canvas-accent, #c5a2f0);
+}
+.drawing-focus {
+  pointer-events: none;
+  fill: none;
+  stroke: transparent;
 }
 .drawing-label-editor {
   position: absolute;

@@ -82,7 +82,9 @@ try {
       before,
       "layout must reuse every mathematical subtree",
     );
-    await r0.getByRole("button", { name: "Edit value 2", exact: true }).click();
+    await r0
+      .getByRole("button", { name: "Edit value 2", exact: true })
+      .dblclick();
     const editor = page.getByLabel("Write an engineering region", {
       exact: true,
     });
@@ -99,7 +101,9 @@ try {
       "independent rows must retain their rendered math",
     );
     // A reused row must route interactions through the latest committed handlers.
-    await r2.getByRole("button", { name: "Edit value 4", exact: true }).click();
+    await r2
+      .getByRole("button", { name: "Edit value 4", exact: true })
+      .dblclick();
     await editor.fill("v2 = 2*v0");
     await editor.press("Escape");
     await expect(page.locator('[data-result-for="v2"]')).toContainText("8 m");

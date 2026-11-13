@@ -161,7 +161,9 @@ try {
   const equation = pane.locator(
     `[data-object-id="${input}"] .mw-equation-line`,
   );
-  await equation.getByRole("button", { name: "Edit x", exact: true }).click();
+  await equation
+    .getByRole("button", { name: "Edit x", exact: true })
+    .dblclick();
   const text = pane.getByLabel("Edit equation in workspace", { exact: true });
   await expect(text).toBeVisible();
   await delayedOpen(() => text.fill("x := 2 mm"), false);

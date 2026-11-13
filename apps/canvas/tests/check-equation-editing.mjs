@@ -88,9 +88,30 @@ try {
     if (width === 390) {
       await editor().fill("A compact note on a small screen");
       await editor().press("Escape");
-      await expect(
-        page.getByText("A compact note on a small screen", { exact: true }),
-      ).toBeVisible();
+      const note = page.getByRole("button", {
+        name: "Edit thought: A compact note on a small screen",
+        exact: true,
+      });
+      await expect(note).toBeVisible();
+      await note.click();
+      await expect(editor()).toHaveCount(0);
+      await note.press("Enter");
+      await expect(editor()).toHaveValue("A compact note on a small screen");
+      await editor().press("Escape");
+      await note.dblclick();
+      await expect(editor()).toHaveValue("A compact note on a small screen");
+      await editor().press("Escape");
+      const beforeMove = (await readWorkspace(page)).page;
+      const noteBox = await note.boundingBox();
+      await page.mouse.move(noteBox.x + 20, noteBox.y + 10);
+      await page.mouse.down();
+      await page.mouse.move(noteBox.x + 40, noteBox.y + 30, { steps: 5 });
+      await page.mouse.up();
+      await expect
+        .poll(async () => (await readWorkspace(page)).page.origin)
+        .not.toEqual(beforeMove.origin);
+      await page.keyboard.press("ControlOrMeta+z");
+      expect((await readWorkspace(page)).page).toEqual(beforeMove);
       await context.close();
       checks++;
       continue;
@@ -113,6 +134,11 @@ try {
     const equation = page.locator('.er-region[data-kind="equation"]').first();
     const text = "T = T_inf + Q/(h*A)";
     await equation.getByRole("button", { name: "Edit T", exact: true }).click();
+    await expect(editor()).toHaveCount(0);
+    await expect(equation).toHaveClass(/is-selected/);
+    await equation
+      .getByRole("button", { name: "Edit T", exact: true })
+      .dblclick();
     await editor().fill("T = missing + 1 K");
     await editor().press("Escape");
     const issue = equation.locator(".er-region-error");
@@ -140,6 +166,7 @@ try {
       await moveHandle.evaluate((node) => getComputedStyle(node).opacity),
     ).toBe("0");
     await equation.hover({ position: { x: 400, y: 10 } });
+    await expect(equation).toHaveCSS("outline-style", "solid");
     expect(
       await moveHandle.evaluate((node) => getComputedStyle(node).opacity),
     ).toBe("1");
@@ -217,7 +244,7 @@ try {
       page.getByRole("dialog", { name: "Link actions", exact: true }),
     ).toHaveCount(0);
     await editor().press("Escape");
-    await term.click({ position: { x: 1, y: 8 } });
+    await term.dblclick({ position: { x: 1, y: 8 } });
     expect(await selection()).toEqual([text.indexOf("Q"), text.indexOf("Q")]);
     await editor().pressSequentially("2*");
     await editor().press("Escape");
@@ -229,7 +256,7 @@ try {
       "91.6667",
     );
     const plus = equation.locator("mo").filter({ hasText: "+" });
-    await plus.click({ position: { x: 1, y: 5 } });
+    await plus.dblclick({ position: { x: 1, y: 5 } });
     expect(await selection()).toEqual([text.indexOf("+"), text.indexOf("+")]);
     await editor().press("/");
     await expect(
@@ -238,13 +265,13 @@ try {
     await editor().fill(text);
     await editor().press("Escape");
     // Repeated symbols must resolve to their own occurrence, not the first one.
-    await term.click();
+    await term.dblclick();
     await editor().fill("T = T_inf + Q/(h*A) + Q/(h*A)");
     await editor().press("Escape");
     const repeated = equation
       .getByRole("button", { name: "Edit Q", exact: true })
       .last();
-    await repeated.click({ position: { x: 1, y: 8 } });
+    await repeated.dblclick({ position: { x: 1, y: 8 } });
     expect((await selection())[0]).toBe(
       "T = T_inf + Q/(h*A) + Q/(h*A)".lastIndexOf("Q"),
     );
@@ -265,11 +292,11 @@ try {
     await expect(artifact).toHaveAttribute("data-status", "current");
     const execution = await artifact.getAttribute("data-execution-key");
     const plotPosition = await artifact.getAttribute("style");
-    await term.click();
+    await term.dblclick();
     await editor().press("Enter");
     await editor().press("Escape");
     await expect(artifact).toHaveAttribute("style", plotPosition);
-    await term.click();
+    await term.dblclick();
     const before = await editor().locator("..").boundingBox();
     await editor().press("Enter");
     const below = await editor().locator("..").boundingBox();
@@ -304,7 +331,9 @@ try {
     const h = page.locator('.er-region[data-kind="quantity"]').filter({
       has: page.getByRole("button", { name: "Edit h", exact: true }),
     });
-    await h.getByRole("button", { name: "Edit value 2", exact: true }).click();
+    await h
+      .getByRole("button", { name: "Edit value 2", exact: true })
+      .dblclick();
     const caret = (await selection())[0];
     expect([
       "h := 60 W/(m² K)".indexOf("²"),
@@ -315,10 +344,12 @@ try {
     // Independently placed equations continue from their own position, at zoom.
     await page.getByLabel("Zoom out", { exact: true }).click();
     await page.mouse.click(20, 950);
+    await expect(editor()).toHaveCount(0);
+    await page.mouse.click(20, 950);
     await editor().fill("x := 3");
     await editor().press("Escape");
     const x = page.getByRole("button", { name: "Edit x", exact: true });
-    await x.click();
+    await x.dblclick();
     const at = await editor().locator("..").boundingBox();
     const scale = await page
       .locator(".er-paper")

@@ -102,6 +102,7 @@ export function MathLine(props: MathLineProps) {
   const visual = JSON.stringify([
     props.text,
     props.directEdit,
+    props.selectOnClick,
     props.inspectSymbols,
     props.highlightExpression,
     describeScrub(props.scrub),
@@ -185,6 +186,7 @@ function MathLineContent({
   highlightExpression,
   highlights,
   directEdit = false,
+  selectOnClick = false,
   inspectSymbols = false,
   cancelInput,
   linkSources,
@@ -201,6 +203,7 @@ function MathLineContent({
   highlights?: Set<string>;
   highlightExpression?: boolean;
   directEdit?: boolean;
+  selectOnClick?: boolean;
   inspectSymbols?: boolean;
   cancelInput: RefObject<(() => void) | undefined>;
   linkSources?: Readonly<Record<string, readonly string[]>>;
@@ -339,7 +342,9 @@ function MathLineContent({
       : m("mrow", notation(name), {
           className: `er-term ${highlight === name || highlights?.has(name) ? "is-linked" : ""}`,
           "data-symbol": name,
-          title: "Click to edit · Alt-click to select this term",
+          title: selectOnClick
+            ? "Click to select · Double-click or Enter to edit · Alt-click to inspect this term"
+            : "Click to edit · Alt-click to select this term",
           "data-link-source":
             linkSources?.[name]?.length === 1
               ? linkSources[name][0]
@@ -349,6 +354,14 @@ function MathLineContent({
           ...sourceProps(span),
           "aria-label": `${directEdit && !inspectSymbols ? "Edit" : "Inspect"} ${name}`,
           onClick: (e: React.MouseEvent) => {
+            if (
+              selectOnClick &&
+              directEdit &&
+              !inspectSymbols &&
+              !e.altKey &&
+              e.detail < 2
+            )
+              return;
             e.stopPropagation();
             if (e.altKey) {
               choose(name);
@@ -360,6 +373,7 @@ function MathLineContent({
           },
           onKeyDown: (e: React.KeyboardEvent) => {
             if (e.key === "Enter") {
+              e.preventDefault();
               e.stopPropagation();
               if (inspectSymbols && onSymbol?.(name)) return;
               if (directEdit && span) editAt(span);
@@ -539,7 +553,11 @@ function MathLineContent({
         numbers.onLostPointerCapture(event);
         if (drag.current?.pointer === event.pointerId) cancelSelection();
       },
+      onDoubleClick: (event: React.MouseEvent) => {
+        if (selectOnClick && directEdit) event.stopPropagation();
+      },
       onClick: (event: React.MouseEvent) => {
+        if (selectOnClick && !event.altKey && event.detail < 2) return;
         if (directEdit) event.stopPropagation();
         if (drag.current) return;
         if (suppressClick.current) {

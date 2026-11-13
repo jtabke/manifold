@@ -31,6 +31,7 @@ import {
 } from "../canvasScene";
 import type { SpatialDrag } from "../renderers/CanvasObjects";
 import { sameJson } from "../immutableJson.ts";
+import { positionDrawings } from "../selectionOperations.ts";
 const STALE_GESTURE =
   "This workspace changed during the gesture. Try the move again.";
 type Options = {
@@ -200,6 +201,7 @@ export function useCanvasScene(o: Options) {
           void Promise.resolve(value).catch(() => undefined);
           throw Error("Layout edits must be synchronous.");
         }
+        positionDrawings(staged, placements);
         staged.arrange(placements, checkpoint);
         staged.setArtifacts((items) =>
           items.map((a) => ({
@@ -345,6 +347,7 @@ export function useCanvasScene(o: Options) {
     e: PointerEvent,
     group = false,
     selection: string[] = [],
+    direct = false,
   ) => {
     if (
       e.button !== 0 ||
@@ -371,7 +374,7 @@ export function useCanvasScene(o: Options) {
       client: { x: e.clientX, y: e.clientY },
       members: origins,
       moved: false,
-      group: group || multiple,
+      group: group || multiple || direct,
       multiple,
     };
   };
@@ -782,6 +785,10 @@ export function useCanvasScene(o: Options) {
     finishPointer: (event: { pointerId: number }) => {
       const current = gesture.current;
       if (!current || current.pointer !== event.pointerId) return;
+      if (!current.moved) {
+        clearGesture();
+        return;
+      }
       current.released = true;
       const pending = pendingDock.current;
       if (pending?.timer !== undefined) {

@@ -196,12 +196,80 @@ try {
     const quantities = page.locator('.er-region[data-kind="quantity"]');
     for (const quantity of await quantities.all())
       await quantity.click({ modifiers: ["Shift"] });
+    const outlines = page.locator(".er-selection-outline");
+    expect(await outlines.count()).toBeGreaterThan(0);
+    for (const outline of await outlines.all()) {
+      await expect(outline).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(outline).toHaveCSS("pointer-events", "none");
+    }
+    const selectionToolbar = page.getByRole("toolbar", {
+      name: "Canvas selection",
+      exact: true,
+    });
+    const selectionLayout = () =>
+      page.locator(".er-canvas").evaluate((canvas) => {
+        const viewport = canvas.getBoundingClientRect();
+        const toolbar = canvas
+          .querySelector(".er-selection-tools")
+          .getBoundingClientRect();
+        const boxes = [...canvas.querySelectorAll(".er-selection-outline")].map(
+          (node) => node.getBoundingClientRect(),
+        );
+        return {
+          top: Math.min(...boxes.map((box) => box.top)),
+          bottom: Math.max(...boxes.map((box) => box.bottom)),
+          toolbarTop: toolbar.top,
+          toolbarBottom: toolbar.bottom,
+          inside:
+            toolbar.left >= viewport.left &&
+            toolbar.right <= viewport.right &&
+            toolbar.top >= viewport.top &&
+            toolbar.bottom <= viewport.bottom,
+        };
+      });
+    await expect(selectionToolbar).toBeVisible();
+    await expect
+      .poll(async () => {
+        const layout = await selectionLayout();
+        return layout.inside && layout.toolbarBottom <= layout.top;
+      })
+      .toBe(true);
+    // Push the selection to the top edge: the toolbar must flip below it, not cover it.
+    const originalScroll = await page
+      .locator(".er-canvas")
+      .evaluate((canvas) => {
+        const original = canvas.scrollTop;
+        const top = Math.min(
+          ...[...canvas.querySelectorAll(".er-selection-outline")].map(
+            (node) => node.getBoundingClientRect().top,
+          ),
+        );
+        canvas.scrollTop += top - canvas.getBoundingClientRect().top - 4;
+        return original;
+      });
+    await expect
+      .poll(async () => {
+        const layout = await selectionLayout();
+        return layout.inside && layout.toolbarTop >= layout.bottom;
+      })
+      .toBe(true);
+    await page.locator(".er-canvas").evaluate((canvas, top) => {
+      canvas.scrollTop = top;
+    }, originalScroll);
     await quantities.first().click({ button: "right" });
     await expect(item("Group")).toBeVisible();
     await expect(item("Make model")).toBeVisible();
     const beforeGroup = (await saved()).page;
     await item("Group").click();
     await expect(page.locator(".cs-group")).toHaveCount(1);
+    await expect(page.locator(".cs-group")).toHaveCSS(
+      "background-color",
+      "rgba(0, 0, 0, 0)",
+    );
+    await expect(page.locator(".cs-group-head")).toHaveCSS(
+      "background-color",
+      "rgb(34, 32, 39)",
+    );
     expect((await saved()).page.regions).toEqual(beforeGroup.regions);
     await expect(page.locator('[data-result-for="P"]')).toContainText("60 W");
 

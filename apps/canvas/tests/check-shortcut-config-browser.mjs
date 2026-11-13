@@ -214,7 +214,9 @@ try {
   );
   await page.keyboard.press("Escape");
   // Editor-specific search and ordinary typing stay fixed despite remapping canvas actions.
-  await page.locator(`[data-region-id="${input}"] .er-editable-math`).click();
+  await page
+    .locator(`[data-region-id="${input}"] .er-editable-math`)
+    .dblclick();
   const writer = page.getByLabel("Write an engineering region", {
     exact: true,
   });

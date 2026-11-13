@@ -450,7 +450,7 @@ for (let replicate = 0; replicate < replicates; replicate++)
           toolbar.getByRole("button", { name: "Duplicate drawings" }),
         ).toBeEnabled();
       }
-      await tool("Select drawings");
+      await tool("Select / Edit");
       for (let pass = 0; pass < 3; pass++) {
         const h = await page.locator("[data-drawing-resize]").boundingBox();
         assert(h);

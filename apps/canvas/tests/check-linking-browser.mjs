@@ -135,7 +135,7 @@ try {
   // Construct a small model output below the existing worksheet.
   await add("P_in := 1000 W", [115, 980]);
   // Enter creates flow below; scroll-aware positions come from the rendered source.
-  await page.getByRole("button", { name: "Edit P_in", exact: true }).click();
+  await page.getByRole("button", { name: "Edit P_in", exact: true }).dblclick();
   await editor().press("Enter");
   await editor().fill("eta := .8");
   await editor().press("Enter");
@@ -207,7 +207,7 @@ try {
     .getByRole("button", { name: "Link A", exact: true })
     .locator("..")
     .getByRole("button", { name: "Edit A", exact: true })
-    .click();
+    .dblclick();
   await editor().fill("A_cool := 0.2 m²");
   await editor().press("Escape");
   await expect(widget()).toHaveAttribute("data-status", "ready");

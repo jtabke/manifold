@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import type { Document } from "@manifold/foundation";
@@ -33,7 +34,6 @@ import {
   drawings,
   editDrawings,
   deleteDrawings,
-  duplicateDrawings,
   isInk,
   MAX_STROKE_POINTS,
   MAX_LABEL_LENGTH,
@@ -60,7 +60,7 @@ import {
 } from "../drawingRegularization";
 import type { EditBuffers } from "../app/workspaceFiles";
 import "../styles/drawing.css";
-type Tool = "write" | "select" | "lasso" | "eraser" | DrawingKind;
+type Tool = "select" | "lasso" | "eraser" | DrawingKind;
 type DrawingPointer = ReactPointerEvent<SVGSVGElement>;
 type Label = {
   at: Point;
@@ -84,7 +84,7 @@ type Gesture = {
   transform?: (end: Point) => DrawingEdit[];
 };
 const tools = [
-  ["select", "Select drawings", MousePointer2],
+  ["select", "Select / Edit", MousePointer2],
   ["pen", "Pen", PenTool],
   ["highlighter", "Highlighter", Highlighter],
   ["eraser", "Eraser", Eraser],
@@ -138,12 +138,24 @@ function useDrawingCanvas(
   report: (message: string) => void,
   visible: boolean,
   zoom: number,
+  activate: () => boolean,
+  shared: {
+    ids: readonly string[];
+    select: (ids: string[]) => void;
+    move: (delta: Point) => void;
+    startMove: (e: DrawingPointer, id: string, ids: string[]) => void;
+    duplicate: () => void;
+    remove: () => void;
+  },
 ) {
   const matchShortcut = useShortcutMatcher();
-  const [tool, setTool] = useState<Tool>("write");
+  const [tool, setTool] = useState<Tool>("select");
+  const surface = useRef<SVGSVGElement>(null);
   const [style, setStyle] = useState({ color: "#c5d3e8", width: 3 });
-  const [selection, setSelection] = useState(new Set<string>()),
-    [label, setLabel] = useState<Label>();
+  const selection = useMemo(() => new Set(shared.ids), [shared.ids]);
+  const setSelection = (ids: Set<string>) => shared.select([...ids]);
+  const [label, setLabel] = useState<Label>();
+  const [focused, setFocused] = useState<string>();
   const gesture = useRef<Gesture | undefined>(undefined),
     frame = useRef<number | undefined>(undefined);
   const [version, redraw] = useReducer((n) => n + 1, 0);
@@ -291,7 +303,7 @@ function useDrawingCanvas(
     return true;
   };
   const editLabel = (entry: DrawingEntry) => {
-    if (!choose("text")) return;
+    if (!activate() || !choose("select")) return;
     const current = drawingGeometry(drawings(session.document)).byId.get(
       entry.id,
     );
@@ -303,22 +315,65 @@ function useDrawingCanvas(
         expected: session.document,
       });
   };
-  const remove = () =>
-    safe(() => {
-      deleteDrawings(session, [...selected]);
-      setSelection(new Set());
-    });
-  const duplicate = () =>
-    safe(() =>
-      setSelection(new Set(duplicateDrawings(session, [...selected]))),
-    );
+  const focusDrawing = (id: string) => {
+    setFocused(id);
+    if (activate() && choose("select")) setSelection(new Set([id]));
+  };
+  const drawingKey = (e: ReactKeyboardEvent<SVGGElement>, id: string) => {
+    if (e.ctrlKey || e.metaKey || gesture.current) return;
+    if (
+      (e.altKey && e.key.startsWith("Arrow")) ||
+      e.key === "Home" ||
+      e.key === "End"
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      const nodes = [
+        ...(surface.current?.querySelectorAll<SVGGElement>(
+          "[data-drawing-id]",
+        ) || []),
+      ];
+      const index = nodes.indexOf(e.currentTarget);
+      const next =
+        e.key === "Home"
+          ? 0
+          : e.key === "End"
+            ? nodes.length - 1
+            : (index +
+                (["ArrowLeft", "ArrowUp"].includes(e.key) ? -1 : 1) +
+                nodes.length) %
+              nodes.length;
+      nodes[next]?.focus();
+      return;
+    }
+    if (e.altKey) return;
+    const direction: Record<string, Point> = {
+      ArrowLeft: { x: -1, y: 0 },
+      ArrowRight: { x: 1, y: 0 },
+      ArrowUp: { x: 0, y: -1 },
+      ArrowDown: { x: 0, y: 1 },
+    };
+    const delta = direction[e.key];
+    if (!delta && e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!activate() || !choose("select")) return;
+    const ids = selected.has(id) ? selection : new Set([id]);
+    setSelection(ids);
+    if (delta) {
+      const step = e.shiftKey ? 20 : 5;
+      shared.move({ x: delta.x * step, y: delta.y * step });
+    }
+  };
+  const remove = shared.remove;
+  const duplicate = shared.duplicate;
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (isDialogEvent(e)) return;
       const target = e.target as Element;
       if (
         !visible ||
-        tool === "write" ||
+        (tool === "select" && !selected.size && !gesture.current) ||
         target.closest("input,textarea,select,[contenteditable=true]")
       )
         return;
@@ -343,7 +398,7 @@ function useDrawingCanvas(
         cancel();
         setLabel(undefined);
         setSelection(new Set());
-        setTool("write");
+        setTool("select");
       } else if (command && e.key.toLowerCase() === "d") {
         if (!gesture.current) duplicate();
       } else if (["Delete", "Backspace"].includes(e.key)) {
@@ -368,17 +423,11 @@ function useDrawingCanvas(
     if (e.button !== 0 || e.pointerType === "touch" || gesture.current) return;
     e.preventDefault();
     e.stopPropagation();
-    if (!finishLabel()) return;
+    if (!activate() || !finishLabel()) return;
     const expected = session.document,
       scene = drawingGeometry(drawings(expected)),
       target = scene.pick(p, 7 / zoom);
-    if (tool === "write") {
-      if (target) {
-        setTool("select");
-        setSelection(new Set([target.id]));
-      }
-      return;
-    }
+
     if (tool === "text") {
       setLabel({
         at: p,
@@ -389,7 +438,11 @@ function useDrawingCanvas(
       return;
     }
     const resize = !!(e.target as Element).closest("[data-drawing-resize]"),
-      ids = new Set(selected);
+      ids = new Set(
+        e.shiftKey || (target && selection.has(target.id))
+          ? selection
+          : selected,
+      );
     if (tool === "select" && !resize) {
       if (!e.shiftKey && (!target || !ids.has(target.id))) ids.clear();
       if (target) {
@@ -398,10 +451,19 @@ function useDrawingCanvas(
       }
       setSelection(ids);
     }
+    if (
+      tool === "select" &&
+      !resize &&
+      target &&
+      [...ids].some((id) => !scene.byId.has(id))
+    ) {
+      shared.startMove(e, target.id, [...ids]);
+      return;
+    }
     const g: Gesture = {
       pointer: e.pointerId,
       capture: e.currentTarget,
-      tool,
+      tool: tool,
       start: p,
       last: p,
       expected,
@@ -539,6 +601,7 @@ function useDrawingCanvas(
   );
   return {
     tool,
+    surface,
     choose,
     style,
     setStyle,
@@ -554,17 +617,22 @@ function useDrawingCanvas(
     duplicate,
     remove,
     editLabel,
+    focusDrawing,
+    drawingKey,
+    focused,
     regularize,
     canRegularize: !preview && selectedStroke?.mark.kind === "pen",
-    guidance: preview?.regularized
-      ? `${preview.regularized.kind === "ellipse" ? "Circle" : preview.regularized.kind === "line" ? "Line" : "Rectangle"} preview. Release to accept; move to keep drawing.`
-      : tool === "pen"
-        ? "Draw, then hold still to preview a line, circle or rectangle."
-        : tool === "write"
-          ? "Sketch beside your calculations"
-          : tool === "connector"
-            ? "Drag between shapes · visual only"
-            : "Space-drag to pan · Shift constrains shapes · Esc to write",
+    guidance: preview?.transform
+      ? "Moving / resizing drawings · Release to place · Escape cancels"
+      : preview?.regularized
+        ? `${preview.regularized.kind === "ellipse" ? "Circle" : preview.regularized.kind === "line" ? "Line" : "Rectangle"} preview. Release to accept; move to keep drawing.`
+        : tool === "pen"
+          ? "Draw, then hold still to preview a line, circle or rectangle."
+          : tool === "select"
+            ? "Drag selected objects to move · Double-click to edit · Shift-click adds · Escape clears"
+            : tool === "connector"
+              ? "Drag between shapes · visual only"
+              : "Space-drag to pan · Shift constrains shapes · Esc to Select / Edit",
   };
 }
 type Controller = ReturnType<typeof useDrawingCanvas>;
@@ -575,13 +643,6 @@ function DrawingToolbar({ drawing: d }: { drawing: Controller }) {
       role="toolbar"
       aria-label="Drawing and diagram tools"
     >
-      <button
-        aria-pressed={d.tool === "write"}
-        onClick={() => d.choose("write")}
-        title="Return to equations and notes"
-      >
-        Write
-      </button>
       {tools.map(([tool, name, Icon]) => (
         <button
           key={tool}
@@ -637,7 +698,11 @@ function DrawingToolbar({ drawing: d }: { drawing: Controller }) {
       >
         Regularize
       </button>
-      <span className="drawing-hint" aria-hidden="true">
+      <span
+        className="drawing-hint"
+        aria-hidden="true"
+        hidden={d.tool === "select" && !d.selection.size && !d.preview}
+      >
         {d.guidance}
       </span>
       <span
@@ -645,7 +710,10 @@ function DrawingToolbar({ drawing: d }: { drawing: Controller }) {
         aria-live="polite"
         aria-atomic="true"
       >
-        {d.guidance}
+        {d.guidance}{" "}
+        {d.selection.size
+          ? `${d.selection.size} drawing${d.selection.size === 1 ? "" : "s"} selected.`
+          : "No drawings selected."}
       </span>
     </div>
   );
@@ -745,29 +813,75 @@ const MarkView = memo(function MarkView({
 const DrawingMarks = memo(function DrawingMarks({
   entries,
   erased,
+  zoom,
+  selection,
+  focusDrawing,
+  drawingKey,
+  focused,
 }: {
   entries: readonly DrawingEntry[];
   erased?: ReadonlySet<string>;
+  zoom: number;
+  selection: ReadonlySet<string>;
+  focusDrawing: Controller["focusDrawing"];
+  drawingKey: Controller["drawingKey"];
+  focused: string | undefined;
 }) {
   const geometry = drawingGeometry(entries);
+  const tabStop = entries.some((e) => e.id === focused)
+    ? focused
+    : entries[0]?.id;
   return entries
     .filter((e) => !erased?.has(e.id))
-    .map((entry) => {
+    .map((entry, index) => {
       // Only dense ink needs local-path reuse; simple shapes/connectors keep shared world geometry.
       const local = isInk(entry.mark.kind);
+      const markGeometry = local
+        ? { points: entry.mark.points, bounds: pointBounds(entry.mark.points) }
+        : geometry.geometry(entry);
       return (
         <g
           key={entry.id}
           data-drawing-id={entry.id}
           data-drawing-kind={entry.mark.kind}
-          className="drawing-mark"
+          className={`drawing-mark ${selection.has(entry.id) ? "is-selected" : ""}`}
+          tabIndex={entry.id === tabStop ? 0 : -1}
+          role="button"
+          aria-label={`${entry.mark.kind === "text" ? `Label: ${entry.mark.text}` : entry.mark.kind} drawing ${index + 1}`}
+          aria-pressed={selection.has(entry.id)}
+          aria-describedby="drawing-keyboard-help"
+          onFocus={() => focusDrawing(entry.id)}
+          onKeyDown={(e) => drawingKey(e, entry.id)}
           transform={
             local ? `translate(${entry.view.x} ${entry.view.y})` : undefined
           }
         >
+          <rect
+            className="drawing-focus"
+            x={markGeometry.bounds.x - 8 / zoom}
+            y={markGeometry.bounds.y - 8 / zoom}
+            width={markGeometry.bounds.width + 16 / zoom}
+            height={markGeometry.bounds.height + 16 / zoom}
+            strokeWidth={2 / zoom}
+            strokeDasharray={`${3 / zoom} ${3 / zoom}`}
+          />
+          {/* Match the geometry picker's tolerance in the default pointer tool. */}
+          {["rectangle", "text", "ellipse"].includes(entry.mark.kind) ? (
+            <rect {...markGeometry.bounds} fill="transparent" />
+          ) : (
+            <polyline
+              className="drawing-hit"
+              points={markGeometry.points.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="transparent"
+              strokeWidth={entry.mark.width + 14 / zoom}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
           <MarkView
             mark={entry.mark}
-            geometry={local ? undefined : geometry.geometry(entry)}
+            geometry={local ? undefined : markGeometry}
           />
         </g>
       );
@@ -782,6 +896,10 @@ export function DrawingCanvas({
   visible,
   zoom,
   point,
+  activate,
+  shared,
+  placements,
+  hidden,
 }: {
   session: RegionSession;
   buffers: EditBuffers;
@@ -790,12 +908,45 @@ export function DrawingCanvas({
   visible: boolean;
   zoom: number;
   point: (x: number, y: number) => Point;
+  activate: () => boolean;
+  shared: Parameters<typeof useDrawingCanvas>[6];
+  placements: Record<string, Point>;
+  hidden: ReadonlySet<string>;
 }) {
-  const d = useDrawingCanvas(session, buffers, report, visible, zoom);
+  const d = useDrawingCanvas(
+    session,
+    buffers,
+    report,
+    visible,
+    zoom,
+    activate,
+    shared,
+  );
   if (!visible) return null;
-  const geometry = drawingGeometry(d.entries),
+  const originalGeometry = drawingGeometry(d.entries);
+  const entries = (
+    d.preview?.transform
+      ? d.entries
+      : previewDrawings(
+          d.entries,
+          d.entries
+            .filter((e) => placements[e.id])
+            .map((entry) => {
+              const bounds = originalGeometry.bounds(entry),
+                at = placements[entry.id];
+              return {
+                entry,
+                at: {
+                  x: entry.view.x + at.x - bounds.x,
+                  y: entry.view.y + at.y - bounds.y,
+                },
+              };
+            }),
+        )
+  ).filter((e) => !hidden.has(e.id));
+  const geometry = drawingGeometry(entries),
     b = geometry.selectionBounds(d.selection),
-    active = d.tool !== "write";
+    active = d.tool !== "select";
   const coordinates = (e: DrawingPointer): InkPoint => ({
     ...point(e.clientX, e.clientY),
     pressure: e.pointerType === "pen" ? Math.max(0.05, e.pressure) : 0.75,
@@ -806,8 +957,10 @@ export function DrawingCanvas({
     <>
       {toolbar && createPortal(<DrawingToolbar drawing={d} />, toolbar)}
       <svg
-        className={`drawing-surface ${active ? "is-drawing" : ""}`}
+        ref={d.surface}
+        className={`drawing-surface ${active ? "is-drawing" : ""} ${b ? "has-selection" : ""}`}
         data-drawing-surface=""
+        role="group"
         aria-label="Drawings"
         onPointerDown={(e) => d.down(e, coordinates(e), zoom)}
         onPointerMove={(e) => d.track(e, coordinates(e), zoom)}
@@ -834,7 +987,22 @@ export function DrawingCanvas({
             fill="transparent"
           />
         )}
-        <DrawingMarks entries={d.entries} erased={d.preview?.erased} />
+        <desc id="drawing-keyboard-help">
+          Tab enters or leaves drawings. Alt+Arrow browses drawings; Home and
+          End focus the first or last. Enter or Space selects. Arrow keys move
+          the selection by 5 units; Shift+Arrow moves by 20. Delete removes
+          selected objects. Escape cancels the current action or clears
+          selection.
+        </desc>
+        <DrawingMarks
+          entries={entries}
+          erased={d.preview?.erased}
+          zoom={zoom}
+          selection={d.selection}
+          focusDrawing={d.focusDrawing}
+          drawingKey={d.drawingKey}
+          focused={d.focused}
+        />
         {draft && (
           <g
             pointerEvents="none"
@@ -849,11 +1017,10 @@ export function DrawingCanvas({
             />
           </g>
         )}
-        {b && active && (
+        {b && (
           <g
             className="drawing-selection"
             pointerEvents="none"
-            stroke="#73569c"
             strokeWidth={1 / zoom}
           >
             <rect
@@ -880,10 +1047,9 @@ export function DrawingCanvas({
         )}
         {d.preview?.tool === "lasso" && (
           <polygon
+            className="drawing-lasso"
             pointerEvents="none"
             points={d.preview.points.map((p) => `${p.x},${p.y}`).join(" ")}
-            fill="#73569c18"
-            stroke="#73569c"
             strokeWidth={1 / zoom}
             strokeDasharray="5 3"
           />

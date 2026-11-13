@@ -81,7 +81,7 @@ try {
   await expect(trigger).toBeFocused();
   // Opening reference from the purple-caret writer must not finish or publish its draft.
   const region = page.locator(`[data-region-id="${input}"]`);
-  await region.locator(".er-editable-math").click();
+  await region.locator(".er-editable-math").dblclick();
   const writer = page.getByLabel("Write an engineering region", {
     exact: true,
   });

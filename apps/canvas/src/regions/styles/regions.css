@@ -154,10 +154,14 @@
   box-sizing: border-box;
 }
 .er-selection-outline {
-  background: var(--canvas-accent-tint, #7959a805);
+  background: transparent;
 }
 .er-selection-marquee {
-  background: var(--canvas-accent-tint, #7959a817);
+  background: color-mix(
+    in srgb,
+    var(--canvas-accent, #8b70b0) 10%,
+    transparent
+  );
   z-index: 31;
 }
 .er-selection-tools {
@@ -174,6 +178,33 @@
   box-shadow: 0 4px 18px var(--canvas-shadow, #33234512);
   white-space: nowrap;
   font-size: 13px;
+}
+.er-selection-more > summary {
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+.er-selection-more-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .er-region:not(.is-editing):hover,
+  .cs-tool:hover,
+  .er-plot:hover {
+    outline: 1px solid
+      color-mix(in srgb, var(--canvas-accent, #c5a2f0) 45%, transparent);
+    outline-offset: 5px;
+  }
+}
+.er-region.is-selected:not(.is-editing),
+.er-region.is-selected:not(.is-editing) .er-note {
+  cursor: grab;
+}
+.er-region .er-editable-math {
+  cursor: text;
 }
 .er-selection-tools > span {
   color: var(--canvas-muted, #746b7d);
@@ -337,7 +368,7 @@
   font-size: 16px;
   line-height: 1.8;
   white-space: pre-wrap;
-  cursor: text;
+  cursor: pointer;
   min-height: 35px;
   color: var(--canvas-text, #4d5261);
 }

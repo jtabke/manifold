@@ -90,7 +90,7 @@ try {
   await page
     .locator(`[data-region-id="${input}"]`)
     .getByRole("button", { name: "Edit x", exact: true })
-    .click();
+    .dblclick();
   const editor = page.getByLabel("Write an engineering region", {
     exact: true,
   });

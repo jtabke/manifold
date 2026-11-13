@@ -4,7 +4,7 @@ export type CanvasFrame = Point & {
   id: string;
   width: number;
   height: number;
-  kind: "region" | "plot";
+  kind: "region" | "plot" | "drawing";
 };
 export type CanvasRect = Point & { width: number; height: number };
 export function selectionRect(a: Point, b: Point): CanvasRect {
@@ -46,7 +46,7 @@ export function organizeFrames(
   const ordered = [...frames].sort(
     (a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id),
   );
-  const regions = ordered.filter((f) => f.kind === "region"),
+  const regions = ordered.filter((f) => f.kind !== "plot"),
     plots = ordered.filter((f) => f.kind === "plot");
   const regionWidth = Math.max(500, ...regions.map((f) => f.width)),
     plotWidth = Math.max(0, ...plots.map((f) => f.width));

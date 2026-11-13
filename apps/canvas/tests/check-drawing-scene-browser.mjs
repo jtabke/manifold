@@ -102,7 +102,7 @@ try {
     toolbar.getByRole("button", { name: "Duplicate drawings", exact: true }),
   ).toBeEnabled();
   await toolbar
-    .getByRole("button", { name: "Select drawings", exact: true })
+    .getByRole("button", { name: "Select / Edit", exact: true })
     .click();
   const handle = await page.locator("[data-drawing-resize]").boundingBox();
   assert(handle);

@@ -17,8 +17,14 @@ import {
   canvasObjectSelector,
 } from "./useCanvasOverlaps";
 import { DrawingCanvas } from "../renderers/DrawingCanvas";
+import { CanvasSelectionToolbar } from "../renderers/CanvasSelectionToolbar";
 import { drawings } from "../drawing";
 import { drawingGeometry } from "../drawingGeometry";
+import {
+  duplicateSelection,
+  deleteSelection,
+  selectionEditReason,
+} from "../selectionOperations";
 import { ModelDefinitionEditor } from "../renderers/ModelDefinitionEditor";
 import { parse } from "../../notebook/math";
 import type { ModelSource } from "../authoredModels";
@@ -266,7 +272,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   );
   const drawingFrames = drawingEntries.map((entry) => ({
     id: entry.id,
-    kind: "plot" as const,
+    kind: "drawing" as const,
     ...drawingGeometry(drawingEntries).bounds(entry),
   }));
   const independentViews = modelViews(acceptedDocument);
@@ -489,6 +495,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     | undefined
   >(undefined);
   const suppressCanvasClick = useRef(false);
+  const directDrag = useRef<number | undefined>(undefined);
   const [term, setTerm] = useState<string>(),
     [overlay, setOverlay] = useState<"none" | "dependencies" | "requirements">(
       "none",
@@ -771,7 +778,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     const node = canvas.current;
     if (!node) return [];
     const origin = node.getBoundingClientRect();
-    return [
+    const frames: CanvasFrame[] = [
       ...node.querySelectorAll<HTMLElement>(
         "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
       ),
@@ -817,6 +824,16 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           height: Math.max(30, (bottom - rect.top) / zoom),
         };
       });
+    return [
+      ...frames,
+      ...spatial.frames.filter(
+        (f) =>
+          f.kind === "drawing" &&
+          node
+            .querySelector(`[data-drawing-id="${CSS.escape(f.id)}"]`)
+            ?.getClientRects().length,
+      ),
+    ];
   };
   const overlaps = useCanvasOverlaps({
     canvas,
@@ -857,14 +874,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setZoom,
     places,
     readFrames: readCanvasFrames,
-    extraFrames: modelFrames.map((v) => ({
-      id: v.id,
-      x: v.x,
-      y: v.y,
-      width: v.renderer === "canvas-model-analysis-view@1" ? 546 : 406,
-      height: v.renderer === "canvas-model-analysis-view@1" ? 740 : 470,
-      kind: "plot",
-    })),
+    extraFrames: [
+      ...drawingFrames,
+      ...modelFrames.map((v) => ({
+        id: v.id,
+        x: v.x,
+        y: v.y,
+        width: v.renderer === "canvas-model-analysis-view@1" ? 546 : 406,
+        height: v.renderer === "canvas-model-analysis-view@1" ? 740 : 470,
+        kind: "plot" as const,
+      })),
+    ],
   });
   useEffect(() => {
     drag.current = undefined;
@@ -1043,6 +1063,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     page,
     artifacts,
     artifactHeights,
+    drawingEntries,
     zoom,
     editing,
     term,
@@ -1122,6 +1143,38 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ),
     }));
     setCanvasSelection([]);
+  };
+  const selectionReason = selectionEditReason(session, canvasSelection);
+  const duplicateSelected = () => {
+    try {
+      const placements = Object.fromEntries(
+        readCanvasFrames().map((f) => [f.id, { x: f.x, y: f.y }]),
+      );
+      setCanvasSelection(
+        duplicateSelection(session, canvasSelection, placements),
+      );
+    } catch (error) {
+      setMessage((error as Error).message);
+    }
+  };
+  const deleteSelected = () => {
+    try {
+      deleteSelection(session, canvasSelection);
+      setCanvasSelection([]);
+      setSelected(undefined);
+    } catch (error) {
+      setMessage((error as Error).message);
+    }
+  };
+  const nudgeSelection = (delta: Point) => {
+    const frames = readCanvasFrames().filter((f) =>
+      canvasSelection.includes(f.id),
+    );
+    spatial.patchPositions(
+      Object.fromEntries(
+        frames.map((f) => [f.id, { x: f.x + delta.x, y: f.y + delta.y }]),
+      ),
+    );
   };
   const selectedEvidence = page.regions.find(
     (r) => r.id === (areaSelection || selected),
@@ -1408,8 +1461,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setSelectionSpan(undefined);
     } else {
       setEditing(undefined);
-      if (!session.state.regions.some((r) => r.id === editing))
-        setSelected(undefined);
+      const retained = session.state.regions.some((r) => r.id === editing);
+      setCanvasSelection(retained ? [editing] : []);
+      if (!retained) setSelected(undefined);
     }
     return true;
   };
@@ -1681,6 +1735,51 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         return;
       }
       if (active) return;
+      if (canvasSelection.length && !event.altKey && !event.defaultPrevented) {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === "d"
+        ) {
+          event.preventDefault();
+          duplicateSelected();
+          return;
+        }
+        if (
+          !event.ctrlKey &&
+          !event.metaKey &&
+          ["Delete", "Backspace"].includes(event.key)
+        ) {
+          event.preventDefault();
+          deleteSelected();
+          return;
+        }
+        if (
+          !event.ctrlKey &&
+          !event.metaKey &&
+          event.key.startsWith("Arrow") &&
+          !(event.target as Element).closest(
+            "button,input,textarea,[role=button]",
+          )
+        ) {
+          event.preventDefault();
+          const step = event.shiftKey ? 20 : 5;
+          nudgeSelection({
+            x:
+              event.key === "ArrowLeft"
+                ? -step
+                : event.key === "ArrowRight"
+                  ? step
+                  : 0,
+            y:
+              event.key === "ArrowUp"
+                ? -step
+                : event.key === "ArrowDown"
+                  ? step
+                  : 0,
+          });
+          return;
+        }
+      }
       if (
         (event.target as HTMLElement).closest(
           "button,a,[role=button],summary",
@@ -3761,6 +3860,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         >
           <div
             ref={canvas}
+            tabIndex={-1}
             className={`er-canvas ${relationshipNav.focus?.mode === "arrange" ? "is-relationship-focused" : ""} ${marquee ? "is-box-selecting" : ""} ${navigation.className}`}
             aria-label="Empty engineering page"
             onContextMenu={(e) => {
@@ -3776,13 +3876,23 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               actionPointer.current = { x: e.clientX, y: e.clientY };
               if (navigation.move(e)) return;
               spatial.move(e);
+              if (
+                spatial.moving() &&
+                directDrag.current === e.pointerId &&
+                !e.currentTarget.hasPointerCapture(e.pointerId)
+              )
+                e.currentTarget.setPointerCapture(e.pointerId);
               if (spatial.moving()) suppressCanvasClick.current = true;
               if (spatial.movingSelection()) e.stopPropagation();
             }}
             onPointerUpCapture={(e) => {
+              if (directDrag.current === e.pointerId)
+                directDrag.current = undefined;
               if (!navigation.up(e)) spatial.finishPointer(e);
             }}
             onPointerCancelCapture={(e) => {
+              if (directDrag.current === e.pointerId)
+                directDrag.current = undefined;
               if (!navigation.up(e)) spatial.cancel(e);
             }}
             onLostPointerCapture={(e) => {
@@ -3879,6 +3989,22 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               if (dataSelection && hitRegion && !dataRelatedIds.has(hitRegion))
                 setDataSelection(undefined);
               if (spatial.captureStart(e, canvasSelection)) return;
+              const directObject = canvasObjectId(e.target as Element);
+              if (
+                e.button === 0 &&
+                !e.shiftKey &&
+                directObject &&
+                canvasSelection.includes(directObject) &&
+                !(e.target as Element).closest(
+                  "button,a,summary,input,textarea,select,[role=button]:not(.er-note),[role=slider],[contenteditable],[data-link-source],.er-actions,.er-editable-math,.er-term,.er-note-reference,.er-result",
+                )
+              ) {
+                e.preventDefault();
+                e.stopPropagation();
+                directDrag.current = e.pointerId;
+                spatial.start(directObject, e, false, canvasSelection, true);
+                return;
+              }
               if (
                 (e.target as Element).closest('button[aria-label^="Move "]')
               ) {
@@ -4019,6 +4145,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 return;
               }
               e.preventDefault();
+              e.currentTarget.focus({ preventScroll: true });
               suppressCanvasClick.current = false;
               marqueeGesture.current = {
                 start: canvasPoint(e.clientX, e.clientY),
@@ -4202,6 +4329,39 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     visible={!systemActive}
                     zoom={zoom}
                     point={canvasPoint}
+                    activate={() => {
+                      if (editing) {
+                        skipBlur.current = true;
+                        if (!commit()) {
+                          skipBlur.current = false;
+                          return false;
+                        }
+                      }
+                      setSelected(undefined);
+                      setArtifactFocus(undefined);
+                      setAreaSelection(undefined);
+                      setDataSelection(undefined);
+                      setTerm(undefined);
+                      setLinkMenu(undefined);
+                      return true;
+                    }}
+                    shared={{
+                      ids: canvasSelection,
+                      select: setCanvasSelection,
+                      move: nudgeSelection,
+                      duplicate: duplicateSelected,
+                      remove: deleteSelected,
+                      startMove: (e, id, ids) => {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        spatial.start(id, e, false, ids);
+                      },
+                    }}
+                    placements={Object.fromEntries(
+                      spatial.frames
+                        .filter((f) => f.kind === "drawing")
+                        .map((f) => [f.id, { x: f.x, y: f.y }]),
+                    )}
+                    hidden={spatial.hidden}
                   />
                   {!page.regions.length &&
                     !modelFrames.length &&
@@ -4866,21 +5026,23 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       }
                     />
                   ))}
-                  {selectedFrames.map((frame) => (
-                    <div
-                      key={frame.id}
-                      data-selection-object={frame.id}
-                      className="er-selection-outline"
-                      aria-hidden="true"
-                      style={{
-                        left: frame.x - 6 / zoom,
-                        top: frame.y - 6 / zoom,
-                        width: frame.width + 12 / zoom,
-                        height: frame.height + 12 / zoom,
-                        borderWidth: 1.5 / zoom,
-                      }}
-                    />
-                  ))}
+                  {selectedFrames
+                    .filter((frame) => frame.kind !== "drawing")
+                    .map((frame) => (
+                      <div
+                        key={frame.id}
+                        data-selection-object={frame.id}
+                        className="er-selection-outline"
+                        aria-hidden="true"
+                        style={{
+                          left: frame.x - 6 / zoom,
+                          top: frame.y - 6 / zoom,
+                          width: frame.width + 12 / zoom,
+                          height: frame.height + 12 / zoom,
+                          borderWidth: 1.5 / zoom,
+                        }}
+                      />
+                    ))}
                   {marquee && (
                     <div
                       className="er-selection-marquee"
@@ -4894,107 +5056,125 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       }}
                     />
                   )}
-                  {selectionBounds && !marquee && !spatial.moving() && (
-                    <div
-                      className="er-selection-tools"
-                      role="toolbar"
-                      aria-label="Canvas selection"
-                      style={{
-                        left: Math.max(
-                          canvasScroll.x / zoom + 12 / zoom,
-                          Math.min(
-                            selectionBounds.x,
-                            (canvasScroll.x +
-                              (canvas.current?.clientWidth || viewportWidth) -
-                              240) /
-                              zoom,
-                          ),
-                        ),
-                        top: Math.max(
-                          (canvasScroll.y + 12) / zoom,
-                          selectionBounds.y - 46 / zoom,
-                        ),
-                        transform: `scale(${1 / zoom})`,
-                      }}
-                    >
-                      {canvasSelection.length > 1 && (
+                  {selectionBounds &&
+                    !editing &&
+                    !marquee &&
+                    !spatial.moving() && (
+                      <CanvasSelectionToolbar
+                        bounds={selectionBounds}
+                        zoom={zoom}
+                      >
+                        {canvasSelection.length > 1 && (
+                          <button
+                            aria-label="Move selected objects"
+                            title="Drag selection · Alt bypasses alignment"
+                            onPointerDown={(e) => {
+                              if (e.button !== 0 || !canvasSelection.length)
+                                return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.currentTarget.setPointerCapture(e.pointerId);
+                              spatial.start(
+                                canvasSelection[0],
+                                e,
+                                false,
+                                canvasSelection,
+                              );
+                            }}
+                          >
+                            <GripVertical size={15} />
+                          </button>
+                        )}
+                        <span aria-live="polite">
+                          {selectedFrames.length} selected
+                        </span>
                         <button
-                          aria-label="Move selected objects"
-                          title="Drag selection · Alt bypasses alignment"
-                          onPointerDown={(e) => {
-                            if (e.button !== 0 || !canvasSelection.length)
-                              return;
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.currentTarget.setPointerCapture(e.pointerId);
-                            spatial.start(
-                              canvasSelection[0],
-                              e,
-                              false,
-                              canvasSelection,
-                            );
-                          }}
+                          title={
+                            selectionReason ||
+                            "Duplicate selected objects · Ctrl/Cmd+D"
+                          }
+                          disabled={!!selectionReason}
+                          onClick={duplicateSelected}
                         >
-                          <GripVertical size={15} />
+                          Duplicate
                         </button>
-                      )}
-                      <span aria-live="polite">
-                        {selectedFrames.length} selected
-                      </span>
-                      <button
-                        disabled={selectedFrames.length < 2}
-                        onClick={organizeSelection}
-                      >
-                        <LayoutGrid size={14} /> Organize
-                      </button>
-                      <button
-                        disabled={
-                          !canvasSelection.some((id) =>
-                            accepted.statements.has(id),
-                          )
-                        }
-                        onClick={() =>
-                          pickConnection(
-                            undefined,
-                            canvasSelection.length === 2
-                              ? canvasSelection.find(
-                                  (id) =>
-                                    id !==
-                                    canvasSelection.find(
-                                      (id) =>
-                                        accepted.statements.get(id)
-                                          ?.relation === "=" &&
-                                        !accepted.errors.has(id),
-                                    ),
+                        <button
+                          title={
+                            selectionReason ||
+                            "Delete selected objects · Undo restores them"
+                          }
+                          disabled={!!selectionReason}
+                          onClick={deleteSelected}
+                        >
+                          Delete
+                        </button>
+                        <button
+                          disabled={selectedFrames.length < 2}
+                          onClick={groupSelection}
+                        >
+                          Group
+                        </button>
+                        <details className="er-selection-more">
+                          <summary>More</summary>
+                          <div className="er-selection-more-actions">
+                            <button
+                              disabled={selectedFrames.length < 2}
+                              onClick={organizeSelection}
+                            >
+                              <LayoutGrid size={14} /> Organize
+                            </button>
+                            <button
+                              disabled={
+                                !canvasSelection.some((id) =>
+                                  accepted.statements.has(id),
                                 )
-                              : undefined,
-                          )
-                        }
-                      >
-                        <Link2 size={13} />
-                        Connect
-                      </button>
-                      <button
-                        disabled={selectedFrames.length < 2}
-                        onClick={groupSelection}
-                      >
-                        Group
-                      </button>
-                      <button
-                        onClick={() =>
-                          prepareModel(selectedFrames.map((f) => f.id))
-                        }
-                      >
-                        Make model
-                      </button>
-                      <button
-                        aria-label="Clear canvas selection"
-                        onClick={() => setCanvasSelection([])}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  )}
+                              }
+                              onClick={() =>
+                                pickConnection(
+                                  undefined,
+                                  canvasSelection.length === 2
+                                    ? canvasSelection.find(
+                                        (id) =>
+                                          id !==
+                                          canvasSelection.find(
+                                            (id) =>
+                                              accepted.statements.get(id)
+                                                ?.relation === "=" &&
+                                              !accepted.errors.has(id),
+                                          ),
+                                      )
+                                    : undefined,
+                                )
+                              }
+                            >
+                              <Link2 size={13} />
+                              Connect
+                            </button>
+                            <button
+                              disabled={selectedFrames.some(
+                                (f) => f.kind === "drawing",
+                              )}
+                              title={
+                                selectedFrames.some((f) => f.kind === "drawing")
+                                  ? "Engineering models use worksheet objects, not decorative drawings."
+                                  : undefined
+                              }
+                              onClick={() =>
+                                prepareModel(selectedFrames.map((f) => f.id))
+                              }
+                            >
+                              Make model
+                            </button>
+                          </div>
+                        </details>
+                        <button
+                          aria-label="Clear canvas selection"
+                          onClick={() => setCanvasSelection([])}
+                        >
+                          <X size={14} />
+                        </button>
+                      </CanvasSelectionToolbar>
+                    )}
                   {overlay === "dependencies" && !trials.expand && (
                     <svg
                       className="er-dependencies"
@@ -5296,6 +5476,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         }}
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
+                          if (!e.shiftKey) setCanvasSelection([id]);
                           setSelected(id);
                           setAreaSelection(id);
                           if (
@@ -5792,6 +5973,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                               text={effectiveText}
                               inputVersion={session.document}
                               directEdit={quiet && !variation}
+                              selectOnClick
                               inspectSymbols={(page.dataRelations || []).some(
                                 (r) => r.output === id,
                               )}
@@ -5964,9 +6146,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                                 ? `Edit thought: ${effectiveText}`
                                 : "Write here"
                             }
-                            onClick={() => begin(id)}
+                            onDoubleClick={() => begin(id)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") begin(id);
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                begin(id);
+                              }
                             }}
                           >
                             {effectiveText ? (

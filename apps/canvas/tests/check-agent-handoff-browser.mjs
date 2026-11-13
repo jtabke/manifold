@@ -305,7 +305,7 @@ try {
     if (stage === "computed") {
       await row(page, x.id)
         .getByRole("button", { name: "Edit value 4", exact: true })
-        .click();
+        .dblclick();
       const editor = page.getByLabel("Write an engineering region", {
         exact: true,
       });

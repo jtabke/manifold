@@ -36,22 +36,175 @@ try {
   const marks = async () => drawings((await readWorkspace(page)).document);
   const count = async (n) =>
     expect.poll(async () => (await marks()).length).toBe(n);
+  const pointer = toolbar.getByRole("button", {
+    name: "Select / Edit",
+    exact: true,
+  });
+  await expect(pointer).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    toolbar.getByRole("button", { name: "Write", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    toolbar.getByRole("button", { name: "Select drawings", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".drawing-background")).toHaveCount(0);
   await tool("Rectangle");
   await expect(page.locator(".er-empty")).toBeHidden();
   await drag({ x: 120, y: 120 }, { x: 280, y: 220 });
   await count(1);
   const a = (await marks()).find((e) => e.mark.kind === "rectangle");
+  // The default pointer must hit an unfilled shape's interior and drag on the first press.
+  await tool("Select / Edit");
+  await drag({ x: 200, y: 170 }, { x: 220, y: 190 });
+  await expect
+    .poll(async () => (await marks()).find((e) => e.id === a.id).view.x)
+    .toBe(a.view.x + 20);
+  await expect(
+    toolbar.getByRole("button", { name: "Select / Edit", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(marks).toEqual([a]);
   await tool("Ellipse");
   await drag({ x: 480, y: 120 }, { x: 640, y: 220 });
   await count(2);
   const b = (await marks()).find((e) => e.mark.kind === "ellipse");
+  const beforeKeyboard = await marks();
+  await page.keyboard.press("Escape");
+  await expect(pointer).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".drawing-selection")).toHaveCount(0);
+  await expect(
+    toolbar.getByRole("button", { name: "Duplicate drawings", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    toolbar.getByRole("button", { name: "Delete drawings", exact: true }),
+  ).toBeDisabled();
+  const firstDrawing = page.getByRole("button", {
+    name: /^rectangle drawing \d+$/,
+    exact: true,
+  });
+  await firstDrawing.focus();
+  await expect(firstDrawing).toBeFocused();
+  await expect(firstDrawing).toHaveCSS("cursor", "grab");
+  await expect(firstDrawing).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".drawing-announcement")).toContainText(
+    "1 drawing selected",
+  );
+  await expect(page.locator(".drawing-selection")).toHaveCSS(
+    "stroke",
+    "rgb(197, 162, 240)",
+  );
+  await firstDrawing.press("ArrowRight");
+  await firstDrawing.press("Shift+ArrowDown");
+  await expect
+    .poll(async () => (await marks()).find((e) => e.id === a.id).view)
+    .toEqual({ ...a.view, x: a.view.x + 5, y: a.view.y + 20 });
+  assert.deepEqual((await marks()).find((e) => e.id === a.id).mark, a.mark);
+  await firstDrawing.press("ControlOrMeta+z");
+  await firstDrawing.press("ControlOrMeta+z");
+  await expect.poll(marks).toEqual(beforeKeyboard);
+  const orderedDrawings = page.locator("[data-drawing-id]");
+  await orderedDrawings.first().focus();
+  await expect(page.locator('[data-drawing-id][tabindex="0"]')).toHaveCount(1);
+  await orderedDrawings.first().press("Alt+ArrowRight");
+  await expect(orderedDrawings.nth(1)).toBeFocused();
+  await expect(orderedDrawings.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await orderedDrawings.nth(1).press("Alt+ArrowLeft");
+  await expect(orderedDrawings.first()).toBeFocused();
+  await orderedDrawings.first().press("End");
+  await expect(orderedDrawings.last()).toBeFocused();
+  await orderedDrawings.last().press("Home");
+  await expect(orderedDrawings.first()).toBeFocused();
+  await orderedDrawings.first().press("Tab");
+  await expect(orderedDrawings.first()).not.toBeFocused();
+  await expect(orderedDrawings.nth(1)).not.toBeFocused();
+  await firstDrawing.focus();
+  await firstDrawing.press("Escape");
+  await expect(firstDrawing).toHaveAttribute("aria-pressed", "false");
+  await firstDrawing.press("Enter");
+  await expect(firstDrawing).toHaveAttribute("aria-pressed", "true");
+  await firstDrawing.press("Escape");
+  await firstDrawing.press("Space");
+  await expect(firstDrawing).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(marks).toEqual(beforeKeyboard);
+  // Clearing a drawing must leave the same pointer ready for ordinary worksheet writing.
+  await page.mouse.click(box.x + 800, box.y + 650);
+  await expect(page.locator(".drawing-selection")).toHaveCount(0);
+  const writer = page.getByLabel("Write an engineering region", {
+    exact: true,
+  });
+  await expect(writer).toHaveCount(0);
+  await page.keyboard.type("mass = 2 kg");
+  await expect(writer).toHaveValue("mass = 2 kg");
+  await writer.press("Enter");
+  await writer.press("Escape");
+  const quantity = page.locator('.er-region[data-kind="quantity"]');
+  await expect(quantity).toHaveCount(1);
+  await quantity.click({ modifiers: ["Shift"] });
+  await expect(page.locator(".er-selection-outline")).toHaveCount(1);
+  await page.mouse.click(box.x + 560, box.y + 170);
+  await expect(page.locator(".drawing-selection")).toBeVisible();
+  await expect(page.locator(".er-selection-outline")).toHaveCount(0);
+  await quantity.click({ modifiers: ["Shift"] });
+  await expect(page.locator(".drawing-selection")).toBeVisible();
+  await expect(page.locator(".er-selection-outline")).toHaveCount(1);
+  const actions = page.getByRole("toolbar", {
+    name: "Canvas selection",
+    exact: true,
+  });
+  await expect(actions).toContainText("2 selected");
+  const beforeMixedMove = await marks();
+  await page.keyboard.down("Alt");
+  await drag({ x: 560, y: 170 }, { x: 590, y: 190 });
+  await page.keyboard.up("Alt");
+  await expect
+    .poll(async () => (await marks()).find((e) => e.id === b.id).view.x)
+    .toBe(b.view.x + 30);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(marks).toEqual(beforeMixedMove);
+  await actions.getByRole("button", { name: "Group", exact: true }).click();
+  await expect(page.locator(".cs-group")).toHaveCount(1);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.locator(".cs-group")).toHaveCount(0);
+  await quantity.click();
+  await page.keyboard.down("Shift");
+  await page.mouse.click(box.x + 560, box.y + 170);
+  await page.keyboard.up("Shift");
+  await expect(actions).toContainText("2 selected");
+  await actions.getByRole("button", { name: "Duplicate", exact: true }).click();
+  await count(3);
+  await expect(quantity).toHaveCount(2);
+  await expect
+    .poll(async () =>
+      (await readWorkspace(page)).page.regions.some((r) =>
+        r.text.startsWith("mass_copy"),
+      ),
+    )
+    .toBe(true);
+  await actions.getByRole("button", { name: "Delete", exact: true }).click();
+  await count(2);
+  await expect(quantity).toHaveCount(1);
+  await page.keyboard.press("ControlOrMeta+z");
+  await count(3);
+  await page.keyboard.press("ControlOrMeta+z");
+  await count(2);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(quantity).toHaveCount(0);
+  // With no selection, Enter still starts a worksheet editor without changing tools.
+  await page.mouse.click(box.x + 800, box.y + 750);
+  await expect(writer).toBeVisible();
+  await writer.press("Escape");
+  await page.keyboard.press("Enter");
+  await expect(writer).toBeVisible();
+  await writer.press("Escape");
+  await expect(pointer).toHaveAttribute("aria-pressed", "true");
   await tool("Visual connector");
   await drag({ x: 280, y: 170 }, { x: 480, y: 170 });
   await count(3);
   let connector = (await marks()).find((e) => e.mark.kind === "connector");
   assert.equal(connector.mark.start.target.item, a.id);
   assert.equal(connector.mark.end.target.item, b.id);
-  await tool("Select drawings");
+  await tool("Select / Edit");
   await drag({ x: 380, y: 170 }, { x: 400, y: 250 });
   await expect
     .poll(
@@ -179,7 +332,7 @@ try {
   await count(4);
   const ink = (await marks()).find((e) => e.mark.kind === "pen");
   assert(new Set(ink.mark.points.map((p) => p.pressure.toFixed(1))).size >= 2);
-  await tool("Select drawings");
+  await tool("Select / Edit");
   const inkPath = page.locator(`[data-drawing-id="${ink.id}"] path`),
     inkBefore = await inkPath.getAttribute("d"),
     inkBox = await inkPath.boundingBox();
@@ -242,7 +395,7 @@ try {
   );
   assert(tap);
   const tapPoints = await page
-    .locator(`[data-drawing-id="${tap.id}"] polyline`)
+    .locator(`[data-drawing-id="${tap.id}"] polyline:not(.drawing-hit)`)
     .getAttribute("points");
   assert.equal(
     tapPoints.trim().split(/\s+/).length,
@@ -283,6 +436,13 @@ try {
     "release coordinates are sampled even without a final pointermove",
   );
   assert.equal(finalLine.mark.points[1].y, 420);
+  await tool("Select / Edit");
+  // Six pixels off the visible stroke still lies within the selection tolerance.
+  await page.mouse.click(box.x + 400, box.y + 416);
+  await expect(
+    toolbar.getByRole("button", { name: "Select / Edit", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".drawing-selection")).toBeVisible();
   await toolbar
     .getByRole("button", { name: "Drawing label", exact: true })
     .focus();
@@ -324,6 +484,16 @@ try {
     beforeUnchangedLabel,
     "finishing unchanged text creates no revision or Undo step",
   );
+  // Double-click editing an existing label must not enter a label-creation mode.
+  await tool("Select / Edit");
+  await page.mouse.dblclick(box.x + 510, box.y + 360);
+  await expect(
+    page.getByRole("textbox", { name: "Drawing label text" }),
+  ).toHaveValue("Beam load\nF = 20 N");
+  await page
+    .getByRole("textbox", { name: "Drawing label text" })
+    .press("Enter");
+  await expect(pointer).toHaveAttribute("aria-pressed", "true");
   // Lasso two shapes, resize as one operation, duplicate, delete and Undo.
   await tool("Lasso drawings");
   await page.mouse.move(box.x + 90, box.y + 90);
@@ -339,7 +509,7 @@ try {
   await expect(
     toolbar.getByRole("button", { name: "Duplicate drawings" }),
   ).toBeEnabled();
-  await tool("Select drawings");
+  await tool("Select / Edit");
   const handle = page.locator("[data-drawing-resize]");
   await expect(handle).toBeVisible();
   const h = await handle.boundingBox();
@@ -486,6 +656,29 @@ try {
   opened.dispose();
   assert.deepEqual(errors, []);
   await context.close();
+  // Hover affordances are intentionally desktop-only; the main context emulates touch.
+  const desktop = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+  });
+  const desktopPage = await desktop.newPage();
+  await desktopPage.goto(base);
+  await desktopPage
+    .getByRole("button", { name: "Rectangle", exact: true })
+    .click();
+  const desktopCanvas = await desktopPage.locator(".er-canvas").boundingBox();
+  await desktopPage.mouse.move(desktopCanvas.x + 120, desktopCanvas.y + 120);
+  await desktopPage.mouse.down();
+  await desktopPage.mouse.move(desktopCanvas.x + 240, desktopCanvas.y + 180);
+  await desktopPage.mouse.up();
+  await desktopPage.keyboard.press("Escape");
+  const hoverDrawing = desktopPage.locator("[data-drawing-id]");
+  await hoverDrawing.hover();
+  await expect(hoverDrawing).toHaveAttribute("aria-pressed", "false");
+  await expect(hoverDrawing.locator(".drawing-focus")).not.toHaveCSS(
+    "stroke",
+    "rgba(0, 0, 0, 0)",
+  );
+  await desktop.close();
   console.log(
     "Drawing browser: mouse shapes, stylus pressure, connectors, drag/cancel/resize/lasso, labels, eraser, Undo/Redo and touch-safe local recovery pass.",
   );

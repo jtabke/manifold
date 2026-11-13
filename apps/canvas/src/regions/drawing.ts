@@ -2,6 +2,7 @@
 import * as f from "@manifold/foundation";
 import type { RegionSession, Point } from "./document.ts";
 import { drawingGeometry } from "./drawingGeometry.ts";
+import { detachMember } from "./canvasScene.ts";
 import { sameJson } from "./immutableJson.ts";
 export const DRAWING = "canvas-drawing@1";
 export const DRAWING_RENDERER = "canvas-drawing-view@1";
@@ -239,6 +240,27 @@ export function deleteDrawings(
   ids: string[],
   expected = session.document,
 ) {
+  if (
+    session.scene.groups.some((group) =>
+      group.members.some((id) => ids.includes(id)),
+    )
+  ) {
+    f.assert(
+      session.document === expected,
+      "Drawing changed; start the edit again",
+    );
+    session.atomic((staged) => {
+      staged.setScene((scene) => ({
+        ...scene,
+        groups: ids.reduce(
+          (groups, id) => detachMember(groups, id),
+          scene.groups,
+        ),
+      }));
+      deleteDrawings(staged, ids);
+    });
+    return;
+  }
   const entries = drawings(expected),
     geometry = drawingGeometry(entries),
     removed = new Set(ids),

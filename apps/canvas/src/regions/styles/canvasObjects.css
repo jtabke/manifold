@@ -126,7 +126,7 @@
   z-index: 10;
   border: 1px solid var(--canvas-border, #d9d3df);
   border-radius: 8px;
-  background: var(--canvas-accent-tint, #86709802);
+  background: transparent;
   pointer-events: none;
 }
 .cs-group-head {
@@ -136,6 +136,8 @@
   gap: 7px;
   padding: 0 5px;
   color: var(--canvas-accent, #92849f);
+  background: var(--canvas-surface, #222027);
+  border-radius: 7px 7px 0 0;
   position: relative;
   pointer-events: auto;
 }
