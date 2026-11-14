@@ -53,6 +53,16 @@ focus, menus and navigation remain personal attention; an explicit named viewpoi
 model scope and camera. Tool move/resize previews locally and submits one atomic edit on completion.
 Do not create a local-storage layout owner or a bespoke Undo patch callback.
 
+Pointer previews use the latest-input frame task in `interaction/frameTask.ts`, not an
+unbounded event queue. Marquee coordinates update only the overlay; unchanged selection
+membership and ordinary camera scrolling do not render the application shell. Zoom bursts
+accumulate their anchored camera before one display-frame commit. Snapshot drag bounds and
+source-group departure geometry once; size observers invalidate affected measurements outside
+movement. Dock dwell and completion still remeasure to reject changed geometry. Flush queued
+scene input before completion, and cancel queued previews on cancellation/unmount. Drawing
+representations preserve unchanged entry/geometry identities and memoize individual SVG marks;
+selection must not rebuild unrelated paths or mathematical subtrees.
+
 [Shared layout input](decisions/0033-atomic-layout-and-renderer-input-boundaries.md) uses
 `useLayoutGesture` for renderer-local geometry and an application completion callback. The callback
 submits `useCanvasScene.finishPositions(placements, stagedEdit, expectedDocument)`; sizing and docking

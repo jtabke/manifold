@@ -25,6 +25,7 @@ import {
   UNTITLED_DOCUMENT,
 } from "../documentTitle";
 import { CanvasSelectionToolbar } from "../renderers/CanvasSelectionToolbar";
+import { CanvasConnectionPopover } from "../renderers/CanvasConnectionPopover";
 import { drawings } from "../drawing";
 import { drawingGeometry } from "../drawingGeometry";
 import {
@@ -172,6 +173,7 @@ import {
 } from "../systemExploration";
 
 import { useCanvasNavigation } from "../interaction/useCanvasNavigation";
+import { useFrameTask } from "../interaction/frameTask";
 import { assessConstraint } from "../systemAssessment";
 import { type NestedModel } from "../models";
 import {
@@ -231,6 +233,8 @@ const measurementCaption = (
 };
 
 export default function Regions({ initial }: { initial: InitialWorkspace }) {
+  const renders = useRef(0);
+  renders.current++;
   // Product authoring includes persistence; explicit research trials stay isolated.
   const params = new URLSearchParams(window.location.search);
   const artifactMode = params.has("artifacts") || !params.has("trial");
@@ -304,9 +308,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const [artifactHeights, setArtifactHeights] = useState<
     Record<string, number>
   >({});
-  const artifactFrames = artifacts
-    .flatMap((a) => [a, ...(a.views || [])])
-    .map((v) => ({ ...v, height: artifactHeights[v.id] || v.height }));
+  const artifactFrames = useMemo(
+    () =>
+      artifacts
+        .flatMap((a) => [a, ...(a.views || [])])
+        .map((v) => ({ ...v, height: artifactHeights[v.id] || v.height })),
+    [artifacts, artifactHeights],
+  );
   const [, refresh] = useReducer((n) => n + 1, 0);
   useEffect(() => session.subscribe(refresh), [session]);
   const page = session.state;
@@ -315,18 +323,44 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     () => drawings(acceptedDocument),
     [acceptedDocument],
   );
-  const drawingFrames = drawingEntries.map((entry) => ({
-    id: entry.id,
-    kind: "drawing" as const,
-    ...drawingGeometry(drawingEntries).bounds(entry),
-  }));
-  const independentViews = modelViews(acceptedDocument);
-  const analysisFrames = analysisViews(acceptedDocument);
-  const modelFrames = [
-    ...independentViews,
-    ...analysisFrames,
-    ...optimizationViews(acceptedDocument),
-  ];
+  const drawingFrames = useMemo(() => {
+    const geometry = drawingGeometry(drawingEntries);
+    return drawingEntries.map((entry) => ({
+      id: entry.id,
+      kind: "drawing" as const,
+      ...geometry.bounds(entry),
+    }));
+  }, [drawingEntries]);
+  const independentViews = useMemo(
+    () => modelViews(acceptedDocument),
+    [acceptedDocument],
+  );
+  const analysisFrames = useMemo(
+    () => analysisViews(acceptedDocument),
+    [acceptedDocument],
+  );
+  const modelFrames = useMemo(
+    () => [
+      ...independentViews,
+      ...analysisFrames,
+      ...optimizationViews(acceptedDocument),
+    ],
+    [acceptedDocument, independentViews, analysisFrames],
+  );
+  const extraFrames = useMemo(
+    () => [
+      ...drawingFrames,
+      ...modelFrames.map((v) => ({
+        id: v.id,
+        x: v.x,
+        y: v.y,
+        width: v.renderer === "canvas-model-analysis-view@1" ? 546 : 406,
+        height: v.renderer === "canvas-model-analysis-view@1" ? 740 : 470,
+        kind: "plot" as const,
+      })),
+    ],
+    [drawingFrames, modelFrames],
+  );
   const [resume] = useState(() => {
     if (!artifactMode || saved?.blocked) return;
     try {
@@ -406,7 +440,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const [regionHeights, setRegionHeights] = useState<Record<string, number>>(
     () => Object.create(null),
   );
-  const basePlaces = positions(page, regionHeights);
+  const basePlaces = useMemo(
+    () => positions(page, regionHeights),
+    [page, regionHeights],
+  );
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
   const trials = {
     scrub: !trial || trial === "scrub",
@@ -530,8 +567,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     target?: LinkTarget;
   }>();
   const [selectedFrames, setSelectedFrames] = useState<CanvasFrame[]>([]);
-  const [marquee, setMarquee] = useState<CanvasRect>();
-  const [canvasScroll, setCanvasScroll] = useState({ x: 0, y: 0 });
+  const [marquee, setMarquee] = useState(false);
+  const marqueeRect = useRef<CanvasRect | undefined>(undefined);
+  const marqueeElement = useRef<HTMLDivElement>(null);
   const marqueeGesture = useRef<
     | {
         start: Point;
@@ -541,6 +579,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         previous: string[];
         additive: boolean;
         frames?: CanvasFrame[];
+        areaIds?: Set<string>;
       }
     | undefined
   >(undefined);
@@ -606,6 +645,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   });
   const title = page.title ?? legacyTitle ?? UNTITLED_DOCUMENT;
   const [dragPreview, setDragPreview] = useState<Record<string, Point>>({});
+  const dragFrame = useFrameTask<Record<string, Point>>(setDragPreview);
   useEffect(() => {
     document.title = `${title} — Manifold`;
     if (!artifactMode) return;
@@ -619,39 +659,42 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       }
     }
   }, [title, page.title, legacyTitle, session, artifactMode]);
-  let places = { ...basePlaces, ...dragPreview };
-  if (dataSelection && !!dataSelection.detail && dataSelection.rows.length) {
-    const expanded = (page.dataRelations || []).filter(
-      (r) =>
-        r.dataset === dataSelection.dataset &&
-        (!dataSelection.relation || r.id === dataSelection.relation) &&
-        !(dataSelection.detail === "calculation"
-          ? page.layout[r.output]
-          : page.layout[dataSelection.view || ""]) &&
-        editing !== r.output,
-    );
-    for (const r of page.regions)
-      if (!page.layout[r.id])
-        for (const relation of expanded)
-          if (
-            basePlaces[r.id].y >
-            basePlaces[
-              dataSelection.detail === "requirement"
-                ? dataSelection.view!
-                : relation.output
-            ].y
-          )
-            places[r.id] = {
-              ...places[r.id],
-              y:
-                places[r.id].y +
-                (dataSelection.detail === "requirement"
-                  ? 115
-                  : dataSelection.rows.length > 1
-                    ? 170
-                    : 145),
-            };
-  }
+  const flowPlaces = useMemo(() => {
+    const places = { ...basePlaces, ...dragPreview };
+    if (dataSelection && !!dataSelection.detail && dataSelection.rows.length) {
+      const expanded = (page.dataRelations || []).filter(
+        (r) =>
+          r.dataset === dataSelection.dataset &&
+          (!dataSelection.relation || r.id === dataSelection.relation) &&
+          !(dataSelection.detail === "calculation"
+            ? page.layout[r.output]
+            : page.layout[dataSelection.view || ""]) &&
+          editing !== r.output,
+      );
+      for (const r of page.regions)
+        if (!page.layout[r.id])
+          for (const relation of expanded)
+            if (
+              basePlaces[r.id].y >
+              basePlaces[
+                dataSelection.detail === "requirement"
+                  ? dataSelection.view!
+                  : relation.output
+              ].y
+            )
+              places[r.id] = {
+                ...places[r.id],
+                y:
+                  places[r.id].y +
+                  (dataSelection.detail === "requirement"
+                    ? 115
+                    : dataSelection.rows.length > 1
+                      ? 170
+                      : 145),
+              };
+    }
+    return places;
+  }, [basePlaces, dragPreview, dataSelection, page, editing]);
 
   const editor = useRef<HTMLTextAreaElement>(null),
     canvas = useRef<HTMLDivElement>(null),
@@ -767,61 +810,79 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             ),
       }
     : { x: 110, y: 110 };
-  if (inlineAttachment) {
-    places = { ...places };
-    for (const region of page.regions)
-      if (
-        region.id !== attachmentAnchor &&
-        !page.layout[region.id] &&
-        basePlaces[region.id].y > anchor!.y
-      )
-        places[region.id] = {
-          ...places[region.id],
-          y: places[region.id].y + attachmentHeight + (expansionId ? 100 : 25),
-        };
-    for (const plot of page.plots)
-      if (!plot.at)
-        places[plot.id] = { ...places[plot.id], y: places[plot.output].y };
-  }
-  if (expansionId && !focusedInput)
-    for (const region of page.regions)
-      if (
-        region.id !== expansionId &&
-        !page.layout[region.id] &&
-        basePlaces[region.id].y > basePlaces[expansionId].y
-      )
-        places[region.id] = {
-          ...places[region.id],
-          y: places[region.id].y + 85,
-        };
-  // Automatic flow finds room around fixed work; authored placements never move.
-  if (artifactMode) {
-    const occupied = [
-      ...artifactFrames.map((a) => ({
-        ...a.at,
-        width: a.width,
-        height: a.height,
-      })),
-      ...page.regions
-        .filter((r) => page.layout[r.id])
-        .map((r) => ({
-          ...page.layout[r.id],
-          width: 500,
-          height: regionAdvance(r.text, regionHeights[r.id]) - 16,
-        })),
-    ];
-    let nextY = page.origin.y;
-    for (const r of page.regions) {
-      if (page.layout[r.id] || dragPreview[r.id]) continue;
-      const height = regionAdvance(r.text, regionHeights[r.id]);
-      places[r.id] = freeRegionPosition(
-        { ...places[r.id], y: Math.max(places[r.id].y, nextY) },
-        height,
-        occupied,
-      );
-      nextY = places[r.id].y + height;
+  let places = useMemo(() => {
+    const places = { ...flowPlaces };
+    if (inlineAttachment) {
+      for (const region of page.regions)
+        if (
+          region.id !== attachmentAnchor &&
+          !page.layout[region.id] &&
+          basePlaces[region.id].y > anchor!.y
+        )
+          places[region.id] = {
+            ...places[region.id],
+            y:
+              places[region.id].y + attachmentHeight + (expansionId ? 100 : 25),
+          };
+      for (const plot of page.plots)
+        if (!plot.at)
+          places[plot.id] = { ...places[plot.id], y: places[plot.output].y };
     }
-  }
+    if (expansionId && !focusedInput)
+      for (const region of page.regions)
+        if (
+          region.id !== expansionId &&
+          !page.layout[region.id] &&
+          basePlaces[region.id].y > basePlaces[expansionId].y
+        )
+          places[region.id] = {
+            ...places[region.id],
+            y: places[region.id].y + 85,
+          };
+    // Automatic flow finds room around fixed work; authored placements never move.
+    if (artifactMode) {
+      const occupied = [
+        ...artifactFrames.map((a) => ({
+          ...a.at,
+          width: a.width,
+          height: a.height,
+        })),
+        ...page.regions
+          .filter((r) => page.layout[r.id])
+          .map((r) => ({
+            ...page.layout[r.id],
+            width: 500,
+            height: regionAdvance(r.text, regionHeights[r.id]) - 16,
+          })),
+      ];
+      let nextY = page.origin.y;
+      for (const r of page.regions) {
+        if (page.layout[r.id] || dragPreview[r.id]) continue;
+        const height = regionAdvance(r.text, regionHeights[r.id]);
+        places[r.id] = freeRegionPosition(
+          { ...places[r.id], y: Math.max(places[r.id].y, nextY) },
+          height,
+          occupied,
+        );
+        nextY = places[r.id].y + height;
+      }
+    }
+    return places;
+  }, [
+    flowPlaces,
+    inlineAttachment,
+    page,
+    basePlaces,
+    anchor,
+    attachmentAnchor,
+    attachmentHeight,
+    expansionId,
+    focusedInput,
+    artifactMode,
+    artifactFrames,
+    regionHeights,
+    dragPreview,
+  ]);
   const canvasPoint = (clientX: number, clientY: number): Point => {
     const node = canvas.current!,
       rect = node.getBoundingClientRect();
@@ -830,17 +891,23 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       y: (clientY - rect.top + viewportScroll(node).y) / zoom,
     };
   };
-  const readCanvasFrames = (): CanvasFrame[] => {
-    if (marqueeGesture.current?.frames) return marqueeGesture.current.frames;
+  const readCanvasFrames = (ids?: ReadonlySet<string>): CanvasFrame[] => {
+    if (marqueeGesture.current?.frames)
+      return marqueeGesture.current.frames.filter((f) => !ids || ids.has(f.id));
     const node = canvas.current;
     if (!node) return [];
-    const origin = node.getBoundingClientRect();
+    const origin = node.getBoundingClientRect(),
+      scroll = viewportScroll(node);
     const frames: CanvasFrame[] = [
       ...node.querySelectorAll<HTMLElement>(
         "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
       ),
     ]
-      .filter((el) => el.getClientRects().length > 0)
+      .filter(
+        (el) =>
+          (!ids || ids.has(canvasObjectId(el)!)) &&
+          el.getClientRects().length > 0,
+      )
       .map((el) => {
         const rect = el.getBoundingClientRect(),
           region = el.dataset.regionId;
@@ -875,20 +942,26 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             el.dataset.dataRelationId ||
             el.dataset.plotId!,
           kind: region ? "region" : "plot",
-          x: (rect.left - origin.left + viewportScroll(node).x) / zoom,
-          y: (rect.top - origin.top + viewportScroll(node).y) / zoom,
+          x: (rect.left - origin.left + scroll.x) / zoom,
+          y: (rect.top - origin.top + scroll.y) / zoom,
           width: Math.max(30, (right - rect.left) / zoom),
           height: Math.max(30, (bottom - rect.top) / zoom),
         };
       });
+    // One traversal, not one selector search per drawing (quadratic on dense scenes).
+    const visibleDrawings = new Set(
+      [...node.querySelectorAll<HTMLElement>("[data-drawing-id]")]
+        .filter(
+          (el) =>
+            (!ids || ids.has(el.dataset.drawingId!)) &&
+            el.getClientRects().length,
+        )
+        .map((el) => el.dataset.drawingId!),
+    );
     return [
       ...frames,
       ...spatial.frames.filter(
-        (f) =>
-          f.kind === "drawing" &&
-          node
-            .querySelector(`[data-drawing-id="${CSS.escape(f.id)}"]`)
-            ?.getClientRects().length,
+        (f) => f.kind === "drawing" && visibleDrawings.has(f.id),
       ),
     ];
   };
@@ -904,6 +977,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     if (!gesture.moved) {
       // Measure once, after any writer commit has rendered, not on every move.
       gesture.frames = readCanvasFrames();
+      gesture.areaIds = new Set(
+        drawingEntries.filter((e) => e.mark.kind === "area").map((e) => e.id),
+      );
+      setMarquee(true);
       setSelected(undefined);
       setArtifactFocus(undefined);
       setTerm(undefined);
@@ -912,13 +989,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     gesture.moved = true;
     suppressCanvasClick.current = true;
     const rect = selectionRect(gesture.start, canvasPoint(clientX, clientY));
-    setMarquee(rect);
+    marqueeRect.current = rect;
+    paintMarquee();
     // A marquee inside an area selects its contents, not the entire physical area.
-    const areaIds = new Set(
-      drawings(session.document)
-        .filter((e) => e.mark.kind === "area")
-        .map((e) => e.id),
-    );
+    const areaIds = gesture.areaIds!;
     const hits = gesture
       .frames!.filter(
         (f) =>
@@ -939,6 +1013,19 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         : ids,
     );
   }
+  function paintMarquee() {
+    const node = marqueeElement.current,
+      rect = marqueeRect.current;
+    if (!node || !rect) return;
+    node.style.transform = `translate(${rect.x}px, ${rect.y}px)`;
+    node.style.width = `${rect.width}px`;
+    node.style.height = `${rect.height}px`;
+  }
+  useLayoutEffect(paintMarquee, [marquee]);
+  const marqueeFrame = useFrameTask(
+    (event: { clientX: number; clientY: number; pointerId: number }) =>
+      updateMarquee(event.clientX, event.clientY, event.pointerId),
+  );
   const overlaps = useCanvasOverlaps({
     canvas,
     zoom,
@@ -978,23 +1065,23 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setZoom,
     places,
     readFrames: readCanvasFrames,
-    extraFrames: [
-      ...drawingFrames,
-      ...modelFrames.map((v) => ({
-        id: v.id,
-        x: v.x,
-        y: v.y,
-        width: v.renderer === "canvas-model-analysis-view@1" ? 546 : 406,
-        height: v.renderer === "canvas-model-analysis-view@1" ? 740 : 470,
-        kind: "plot" as const,
-      })),
-    ],
+    extraFrames,
   });
   useEffect(() => {
+    dragFrame.cancel();
     drag.current = undefined;
     setDragPreview({});
-  }, [spatial.cancelVersion]);
+  }, [spatial.cancelVersion, dragFrame]);
   places = { ...places, ...spatial.preview };
+  const drawingPlacements = useMemo(
+    () =>
+      Object.fromEntries(
+        spatial.frames
+          .filter((f) => f.kind === "drawing")
+          .map((f) => [f.id, { x: f.x, y: f.y }]),
+      ),
+    [spatial.frames],
+  );
   const [viewName, setViewName] = useState("");
   const [modelReview, setModelReview] = useState<{
     members: string[];
@@ -1157,10 +1244,22 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
 
   useLayoutEffect(() => {
     const frames = canvasSelection.length
-      ? readCanvasFrames().filter((f) => canvasSelection.includes(f.id))
+      ? (spatial.moving() ? spatial.frames : readCanvasFrames()).filter((f) =>
+          canvasSelection.includes(f.id),
+        )
       : [];
     setSelectedFrames((previous) =>
-      JSON.stringify(previous) === JSON.stringify(frames) ? previous : frames,
+      previous.length === frames.length &&
+      previous.every(
+        (f, i) =>
+          f.id === frames[i].id &&
+          f.x === frames[i].x &&
+          f.y === frames[i].y &&
+          f.width === frames[i].width &&
+          f.height === frames[i].height,
+      )
+        ? previous
+        : frames,
     );
   }, [
     canvasSelection,
@@ -1967,10 +2066,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           return;
         }
         if (marqueeGesture.current) {
+          marqueeFrame.cancel();
           const gesture = marqueeGesture.current;
           setCanvasSelection(gesture.previous);
           marqueeGesture.current = undefined;
-          setMarquee(undefined);
+          setMarquee(false);
           suppressCanvasClick.current = true;
           if (canvas.current?.hasPointerCapture(gesture.pointerId))
             canvas.current.releasePointerCapture(gesture.pointerId);
@@ -2701,8 +2801,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setLinkMenu({
       source: id,
       at: {
-        x: (canvasScroll.x + 180) / zoom,
-        y: (canvasScroll.y + 120) / zoom,
+        x: (viewportScroll(canvas.current).x + 180) / zoom,
+        y: (viewportScroll(canvas.current).y + 120) / zoom,
       },
       mode: "choose",
       target: target ? { region: target } : undefined,
@@ -3110,8 +3210,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 : connection.source,
             mode: "review",
             at: {
-              x: (canvasScroll.x + 160) / zoom,
-              y: (canvasScroll.y + 120) / zoom,
+              x: (viewportScroll(canvas.current).x + 160) / zoom,
+              y: (viewportScroll(canvas.current).y + 120) / zoom,
             },
             target: {
               region:
@@ -4185,7 +4285,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 )
                   e.preventDefault();
               }}
-              onScroll={(e) => setCanvasScroll(recenterCanvas(e.currentTarget))}
+              onScroll={(e) => {
+                recenterCanvas(e.currentTarget);
+              }}
               onPointerMoveCapture={(e) => {
                 actionPointer.current = { x: e.clientX, y: e.clientY };
                 if (navigation.move(e)) return;
@@ -4212,9 +4314,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               onLostPointerCapture={(e) => {
                 const gesture = marqueeGesture.current;
                 if (gesture?.pointerId === e.pointerId) {
+                  marqueeFrame.cancel();
                   marqueeGesture.current = undefined;
                   setCanvasSelection(gesture.previous);
-                  setMarquee(undefined);
+                  setMarquee(false);
                   suppressCanvasClick.current = true;
                 }
                 navigation.end();
@@ -4489,23 +4592,29 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               onPointerMove={(e) => {
                 if (marqueeGesture.current?.pointerId !== e.pointerId) return;
                 e.preventDefault();
-                updateMarquee(e.clientX, e.clientY, e.pointerId);
+                marqueeFrame.schedule({
+                  clientX: e.clientX,
+                  clientY: e.clientY,
+                  pointerId: e.pointerId,
+                });
               }}
               onPointerUp={(e) => {
                 if (marqueeGesture.current?.pointerId !== e.pointerId) return;
+                marqueeFrame.cancel();
                 updateMarquee(e.clientX, e.clientY, e.pointerId);
                 marqueeGesture.current = undefined;
-                setMarquee(undefined);
+                setMarquee(false);
                 if (e.currentTarget.hasPointerCapture(e.pointerId))
                   e.currentTarget.releasePointerCapture(e.pointerId);
               }}
               onPointerCancel={(e) => {
                 const gesture = marqueeGesture.current;
                 if (gesture?.pointerId !== e.pointerId) return;
+                marqueeFrame.cancel();
                 setCanvasSelection(gesture.previous);
                 marqueeGesture.current = undefined;
                 suppressCanvasClick.current = true;
-                setMarquee(undefined);
+                setMarquee(false);
               }}
               onClick={(e) => {
                 if (suppressCanvasClick.current) {
@@ -4618,6 +4727,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 <div className="er-world">
                   <div
                     className={`er-paper ${systemActive ? "is-system-overview" : ""}`}
+                    data-canvas-renders={renders.current}
                     style={{ width, height, transform: `scale(${zoom})` }}
                   >
                     <DrawingCanvas
@@ -4658,11 +4768,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                           spatial.start(id, e, false, ids);
                         },
                       }}
-                      placements={Object.fromEntries(
-                        spatial.frames
-                          .filter((f) => f.kind === "drawing")
-                          .map((f) => [f.id, { x: f.x, y: f.y }]),
-                      )}
+                      placements={drawingPlacements}
                       hidden={spatial.hidden}
                     />
                     {!page.regions.length &&
@@ -5019,41 +5125,16 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       </div>
                     )}
                     {linkMenu && (
-                      <div
-                        className="er-link-popover"
-                        role="dialog"
-                        aria-label={
+                      <CanvasConnectionPopover
+                        at={linkMenu.at}
+                        zoom={zoom}
+                        label={
                           linkMenu.mode === "review"
                             ? "Review connection"
                             : linkMenu.mode === "inspect"
                               ? "Connections"
                               : "Link actions"
                         }
-                        style={{
-                          left: Math.max(
-                            (canvasScroll.x + 12) / zoom,
-                            Math.min(
-                              linkMenu.at.x,
-                              (canvasScroll.x +
-                                (canvas.current?.clientWidth || viewportWidth) -
-                                348) /
-                                zoom,
-                            ),
-                          ),
-                          top: Math.max(
-                            (canvasScroll.y + 12) / zoom,
-                            Math.min(
-                              linkMenu.at.y,
-                              (canvasScroll.y +
-                                (canvas.current?.clientHeight || 800) -
-                                350) /
-                                zoom,
-                            ),
-                          ),
-                          transform: `scale(${1 / zoom})`,
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => e.stopPropagation()}
                       >
                         <header>
                           <Link2 size={16} />
@@ -5322,7 +5403,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             )}
                           </>
                         )}
-                      </div>
+                      </CanvasConnectionPopover>
                     )}
                     {spatial.guides.map((guide) => (
                       <div
@@ -5366,15 +5447,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       ))}
                     {marquee && (
                       <div
+                        ref={marqueeElement}
                         className="er-selection-marquee"
                         aria-hidden="true"
-                        style={{
-                          left: marquee.x,
-                          top: marquee.y,
-                          width: marquee.width,
-                          height: marquee.height,
-                          borderWidth: 1 / zoom,
-                        }}
+                        style={{ left: 0, top: 0, borderWidth: 1 / zoom }}
                       />
                     )}
                     {selectionBounds &&
@@ -5721,7 +5797,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                           const node = e.currentTarget as HTMLElement;
                           const move = (event: globalThis.PointerEvent) => {
                             if (drag.current?.id === relation.id)
-                              setDragPreview({
+                              dragFrame.schedule({
                                 [relation.id]: {
                                   x:
                                     drag.current.start.x +
@@ -5737,6 +5813,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             node.removeEventListener("pointerup", end);
                             node.removeEventListener("pointercancel", cancel);
                             if (drag.current?.id === relation.id) {
+                              dragFrame.cancel();
                               spatial.finishPositions({
                                 [relation.id]: {
                                   x:
@@ -5752,6 +5829,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             }
                           };
                           const cancel = () => {
+                            dragFrame.cancel();
                             node.removeEventListener("pointermove", move);
                             node.removeEventListener("pointerup", end);
                             node.removeEventListener("pointercancel", cancel);
@@ -5843,7 +5921,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             }}
                             onPointerMove={(e) => {
                               if (drag.current?.id === id)
-                                setDragPreview({
+                                dragFrame.schedule({
                                   [id]: {
                                     x:
                                       drag.current.start.x +
@@ -5856,6 +5934,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             }}
                             onPointerUp={(e) => {
                               if (drag.current) {
+                                dragFrame.cancel();
                                 spatial.finishPositions({
                                   [id]: {
                                     x:
@@ -5874,6 +5953,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                               }
                             }}
                             onPointerCancel={() => {
+                              dragFrame.cancel();
                               drag.current = undefined;
                               setDragPreview({});
                             }}

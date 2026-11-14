@@ -267,6 +267,21 @@ comparison. With no `--baseline`, no historical file is read and no baseline ide
 `check-worksheet-diagnostics` verifies this in a temporary working/output directory while rejecting
 all attempts to read ignored reports, including on machines that retain local history.
 
+The default `check-canvas-interaction-browser` enforces deterministic interaction work budgets
+on a mixed 256-row worksheet and 100-drawing document: steady marquee movement and ordinary
+panning must neither render the scene nor measure its objects; object dragging must reuse
+captured geometry; selecting a drawing must retain unrelated SVG/math subtrees; a burst of
+wheel events must have a bounded render count. Same-task move/release, cancellation, anchored
+zoom, single-step Undo and unchanged authored bytes are checked too. `data-canvas-renders` and
+`data-drawing-renders` expose render diagnostics in the committed DOM alongside the existing
+mathematical render counts. These are work/correctness gates, not a hardware-independent FPS promise or a
+capacity increase.
+
+```sh
+npm run build
+npm run test:browser -- check-canvas-interaction-browser check-canvas-navigation-browser
+```
+
 For the worksheet browser rendering and interaction observations, build once and run:
 
 ```sh

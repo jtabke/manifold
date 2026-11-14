@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { flushSync } from "react-dom";
+import { useFrameTask } from "./frameTask";
 import {
   attachCanvasViewport,
   canvasScroll,
@@ -58,17 +59,29 @@ export function useCanvasNavigation(
   const pending = useRef<
     { zoom: number; left: number; top: number } | undefined
   >(undefined);
+  const zoomFrame = useFrameTask(() => {
+    const next = pending.current;
+    if (!next) return;
+    // One anchored commit per display frame, not one full render per wheel event.
+    flushSync(() => current.current.setZoom(next.zoom));
+    if (gesture.current && canvas.current) {
+      gesture.current.left = canvasScroll(canvas.current).x;
+      gesture.current.top = canvasScroll(canvas.current).y;
+    }
+  });
   useLayoutEffect(() => {
     if (canvas.current) attachCanvasViewport(canvas.current);
   }, [canvas, enabled]);
 
   useLayoutEffect(() => {
     const next = pending.current;
-    if (next && next.zoom === zoom && canvas.current) {
+    if (!next) return;
+    if (next.zoom === zoom && canvas.current)
       scrollCanvasTo(canvas.current, { left: next.left, top: next.top });
-      pending.current = undefined;
-    }
-  }, [canvas, zoom]);
+    // Fit/named views may supersede a not-yet-displayed wheel request.
+    pending.current = undefined;
+    zoomFrame.cancel();
+  }, [canvas, zoom, zoomFrame]);
 
   const zoomAt = useCallback(
     (value: number, x?: number, y?: number) => {
@@ -89,14 +102,9 @@ export function useCanvasNavigation(
         left: (before.left + px) * ratio - px,
         top: (before.top + py) * ratio - py,
       };
-      // Commit dimensions before applying the anchored scroll, even during wheel bursts.
-      flushSync(() => current.current.setZoom(next));
-      if (gesture.current) {
-        gesture.current.left = canvasScroll(node).x;
-        gesture.current.top = canvasScroll(node).y;
-      }
+      zoomFrame.schedule(undefined);
     },
-    [canvas],
+    [canvas, zoomFrame],
   );
   const zoomBy = useCallback(
     (delta: number) =>
@@ -157,6 +165,7 @@ export function useCanvasNavigation(
         return;
       }
       e.preventDefault();
+      zoomFrame.flush();
       const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX,
         dy = e.shiftKey && !e.deltaX ? 0 : e.deltaY;
       scrollCanvasBy(
@@ -178,7 +187,9 @@ export function useCanvasNavigation(
       setSpace(false);
       end();
     };
+    const settleZoom = () => zoomFrame.flush();
     const keydown = (e: KeyboardEvent) => {
+      settleZoom();
       if (isCanvasControlEvent(e)) return;
       if ((e.target as Element).closest(editable)) return;
       // Shift+Space belongs to the pie menu; unmodified Space still pans.
@@ -225,19 +236,23 @@ export function useCanvasNavigation(
       if (document.hidden) reset();
     };
     node.addEventListener("wheel", wheel, { passive: false });
+    // Settle before React dispatches a new object gesture, so its coordinates
+    // and closures use the displayed camera rather than a pending wheel value.
+    window.addEventListener("pointerdown", settleZoom, true);
     window.addEventListener("keydown", keydown, true);
     window.addEventListener("keyup", keyup, true);
     window.addEventListener("blur", reset);
     document.addEventListener("visibilitychange", visibility);
     return () => {
       node.removeEventListener("wheel", wheel);
+      window.removeEventListener("pointerdown", settleZoom, true);
       window.removeEventListener("keydown", keydown, true);
       window.removeEventListener("keyup", keyup, true);
       window.removeEventListener("blur", reset);
       document.removeEventListener("visibilitychange", visibility);
       reset();
     };
-  }, [canvas, enabled, end, hand, zoomAt, zoomBy]);
+  }, [canvas, enabled, end, hand, zoomAt, zoomBy, zoomFrame]);
 
   const down = (e: ReactPointerEvent<HTMLDivElement>) => {
     ignoreClick.current = false;
@@ -299,7 +314,10 @@ export function useCanvasNavigation(
       });
       const a = center(before),
         b = center(after);
-      scrollCanvasBy(e.currentTarget, a.x - b.x, a.y - b.y);
+      if (pending.current) {
+        pending.current.left += a.x - b.x;
+        pending.current.top += a.y - b.y;
+      } else scrollCanvasBy(e.currentTarget, a.x - b.x, a.y - b.y);
       if (before.length === 2 && after.length === 2) {
         const oldDistance = Math.hypot(
           before[0].x - before[1].x,
@@ -312,7 +330,8 @@ export function useCanvasNavigation(
         const rect = e.currentTarget.getBoundingClientRect();
         if (oldDistance > 5 && newDistance > 5)
           zoomAt(
-            (current.current.zoom * newDistance) / oldDistance,
+            ((pending.current?.zoom ?? current.current.zoom) * newDistance) /
+              oldDistance,
             b.x - rect.left,
             b.y - rect.top,
           );
@@ -335,6 +354,7 @@ export function useCanvasNavigation(
   };
   const up = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (touches.current.delete(e.pointerId)) {
+      zoomFrame.flush();
       e.preventDefault();
       e.stopPropagation();
       setPanning(touches.current.size > 0);

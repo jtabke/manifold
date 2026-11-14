@@ -7,9 +7,9 @@ import {
   DRAWING_RENDERER,
   MAX_DRAWINGS,
 } from "../src/regions/drawing.ts";
-export function drawingFixture(count) {
+export function drawingFixture(count, page) {
   assert(Number.isInteger(count) && count >= 10 && count < MAX_DRAWINGS);
-  const session = new RegionSession(),
+  const session = new RegionSession(page),
     document = session.document.document;
   const kinds = [
     "rectangle",

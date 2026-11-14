@@ -3,6 +3,7 @@ import { canvasScroll, scrollCanvasTo } from "../interaction/canvasViewport";
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -32,6 +33,7 @@ import {
 import type { SpatialDrag } from "../renderers/CanvasObjects";
 import { sameJson } from "../immutableJson.ts";
 import { positionDrawings } from "../selectionOperations.ts";
+import { useFrameTask } from "../interaction/frameTask";
 const STALE_GESTURE =
   "This workspace changed during the gesture. Try the move again.";
 type Options = {
@@ -42,7 +44,7 @@ type Options = {
   zoom: number;
   setZoom: Dispatch<SetStateAction<number>>;
   places: Record<string, Point>;
-  readFrames: () => CanvasFrame[];
+  readFrames: (ids?: ReadonlySet<string>) => CanvasFrame[];
   extraFrames?: CanvasFrame[];
   sceneError?: string;
 };
@@ -51,6 +53,10 @@ type SceneGesture = SpatialDrag & {
   pointer: number;
   last?: { clientX: number; clientY: number };
   released?: boolean;
+  frames: CanvasFrame[];
+  visibleIds: Set<string>;
+  departure: ReturnType<typeof planDetach>;
+  bounds: ReturnType<typeof frameBounds>;
 };
 type DockTarget = NonNullable<ReturnType<typeof dockTarget>>;
 type PendingDock = {
@@ -81,10 +87,18 @@ export function useCanvasScene(o: Options) {
     [focus, setFocus] = useState<{ id: string; camera: Camera } | undefined>(),
     [viewMenu, setViewMenu] = useState(false),
     [cancelVersion, setCancelVersion] = useState(0);
+  const previewValue = useRef(preview);
+  const showPreview = (next: Record<string, Point>) => {
+    previewValue.current = next;
+    setPreview(next);
+  };
   const [guides, setGuides] = useState<AlignmentGuide[]>([]);
   const gesture = useRef<SceneGesture | undefined>(undefined),
     pendingDock = useRef<PendingDock | undefined>(undefined),
     cache = useRef(new Map<string, CanvasFrame>());
+  const latest = useRef(o);
+  latest.current = o;
+  const [measureVersion, measured] = useState(0);
   const clearDock = (render = true) => {
     if (pendingDock.current?.timer !== undefined)
       window.clearTimeout(pendingDock.current.timer);
@@ -98,76 +112,137 @@ export function useCanvasScene(o: Options) {
       pending.displayed = true;
   }, [dock]);
   useLayoutEffect(() => {
+    const node = o.canvas.current;
+    if (!node) return;
     const current = new Set(raw.map((frame) => frame.id));
     for (const id of cache.current.keys())
       if (!current.has(id)) cache.current.delete(id);
-    for (const f of o.readFrames())
-      if (f.width > 0 && f.height > 0) cache.current.set(f.id, f);
-  });
-  const raw: CanvasFrame[] = [
-    ...(o.extraFrames || []).map((f) => ({
-      ...f,
-      height: cache.current.get(f.id)?.height || f.height,
-    })),
-    ...(o.page.models || []).map((m) => ({
-      id: m.id,
-      kind: "plot" as const,
-      ...(o.places[m.id] || o.page.layout[m.id] || { x: 120, y: 140 }),
-      width: cache.current.get(m.id)?.width || 370,
-      height: cache.current.get(m.id)?.height || 260,
-    })),
-    ...o.page.regions.map((r) => ({
-      id: r.id,
-      kind: "region" as const,
-      ...o.places[r.id],
-      width: cache.current.get(r.id)?.width || 500,
-      height: cache.current.get(r.id)?.height || 70,
-    })),
-    ...(o.page.dataRelations || []).map((r) => ({
-      id: r.id,
-      kind: "plot" as const,
-      ...o.places[r.id],
-      width: 550,
-      height: cache.current.get(r.id)?.height || 470,
-    })),
-    ...o.page.plots.map((p) => ({
-      id: p.id,
-      kind: "plot" as const,
-      ...(p.at || o.places[p.id]),
-      width: p.width,
-      height: p.height,
-    })),
-    ...o.artifacts
-      .flatMap((a) => [a, ...(a.views || [])])
-      .map((a) => ({
-        id: a.id,
-        kind: "plot" as const,
-        ...a.at,
-        width: a.width,
-        height: cache.current.get(a.id)?.height || a.height,
+    const measure = (ids?: ReadonlySet<string>) => {
+      if (gesture.current?.moved) return;
+      let changed = false;
+      for (const f of latest.current.readFrames(ids)) {
+        if (f.width <= 0 || f.height <= 0) continue;
+        const before = cache.current.get(f.id);
+        if (
+          !before ||
+          Math.abs(before.width - f.width) > 0.5 ||
+          Math.abs(before.height - f.height) > 0.5
+        )
+          changed = true;
+        cache.current.set(f.id, f);
+      }
+      if (changed) measured((v) => v + 1);
+    };
+    measure();
+    const observer = new ResizeObserver((entries) => {
+      const ids = new Set(
+        entries.map(({ target }) => {
+          const data = (target as HTMLElement).dataset;
+          return (
+            data.regionId ||
+            data.plotId ||
+            data.viewId ||
+            data.toolId ||
+            data.dataRelationId ||
+            data.modelId!
+          );
+        }),
+      );
+      measure(ids);
+    });
+    for (const target of node.querySelectorAll(
+      "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
+    ))
+      observer.observe(target);
+    return () => observer.disconnect();
+  }, [
+    o.page,
+    o.artifacts,
+    scene,
+    o.zoom,
+    o.extraFrames,
+    o.canvas,
+    cancelVersion,
+    !!gesture.current?.moved,
+  ]);
+  const raw = useMemo<CanvasFrame[]>(
+    () => [
+      ...(o.extraFrames || []).map((f) => ({
+        ...f,
+        height: cache.current.get(f.id)?.height || f.height,
       })),
-    ...scene.tools.map((t) => {
-      return {
-        id: t.id,
+      ...(o.page.models || []).map((m) => ({
+        id: m.id,
         kind: "plot" as const,
-        ...t.at,
-        width: t.width,
-        height: t.editor === "python" && t.collapsed !== false ? 40 : t.height,
-      };
-    }),
-  ];
-  const automatic: Record<string, Point> = Object.create(null);
-  for (const g of scene.groups) {
-    if (
-      !g.auto ||
-      (gesture.current &&
-        (gesture.current.id === g.id || g.members.includes(gesture.current.id)))
-    )
-      continue;
-    Object.assign(automatic, groupPlacements(g, raw));
-  }
-  const displayed = { ...automatic, ...preview };
-  const frames = raw.map((f) => ({ ...f, ...displayed[f.id] }));
+        ...(o.places[m.id] || o.page.layout[m.id] || { x: 120, y: 140 }),
+        width: cache.current.get(m.id)?.width || 370,
+        height: cache.current.get(m.id)?.height || 260,
+      })),
+      ...o.page.regions.map((r) => ({
+        id: r.id,
+        kind: "region" as const,
+        ...o.places[r.id],
+        width: cache.current.get(r.id)?.width || 500,
+        height: cache.current.get(r.id)?.height || 70,
+      })),
+      ...(o.page.dataRelations || []).map((r) => ({
+        id: r.id,
+        kind: "plot" as const,
+        ...o.places[r.id],
+        width: 550,
+        height: cache.current.get(r.id)?.height || 470,
+      })),
+      ...o.page.plots.map((p) => ({
+        id: p.id,
+        kind: "plot" as const,
+        ...(p.at || o.places[p.id]),
+        width: p.width,
+        height: p.height,
+      })),
+      ...o.artifacts
+        .flatMap((a) => [a, ...(a.views || [])])
+        .map((a) => ({
+          id: a.id,
+          kind: "plot" as const,
+          ...a.at,
+          width: a.width,
+          height: cache.current.get(a.id)?.height || a.height,
+        })),
+      ...scene.tools.map((t) => {
+        return {
+          id: t.id,
+          kind: "plot" as const,
+          ...t.at,
+          width: t.width,
+          height:
+            t.editor === "python" && t.collapsed !== false ? 40 : t.height,
+        };
+      }),
+    ],
+    [o.extraFrames, o.page, o.places, o.artifacts, scene.tools, measureVersion],
+  );
+  const automatic = useMemo(() => {
+    const positions: Record<string, Point> = Object.create(null);
+    for (const g of scene.groups) {
+      if (
+        !g.auto ||
+        (gesture.current &&
+          (gesture.current.id === g.id ||
+            g.members.includes(gesture.current.id)))
+      )
+        continue;
+      Object.assign(positions, groupPlacements(g, raw));
+    }
+    return positions;
+  }, [scene.groups, raw, gesture.current?.id]);
+  const displayed = useMemo(
+    () => ({ ...automatic, ...preview }),
+    [automatic, preview],
+  );
+  const frames = useMemo(
+    () => raw.map((f) => ({ ...f, ...displayed[f.id] })),
+    [raw, displayed],
+  );
   const compact = (g: CanvasGroup) =>
     (!!g.collapsed || o.zoom < 0.65) && focus?.id !== g.id;
   const hidden = new Set(
@@ -355,6 +430,10 @@ export function useCanvasScene(o: Options) {
     )
       return;
     clearDock();
+    moveFrame.cancel();
+    const measured = o.readFrames(),
+      allFrames = measuredFrames(measured);
+    for (const f of measured) cache.current.set(f.id, f);
     const multiple = !group && selection.includes(id) && selection.length > 1;
     const members = multiple
         ? selection
@@ -362,7 +441,7 @@ export function useCanvasScene(o: Options) {
           ? groupMembers(scene.groups, id)
           : [id],
       origins = Object.fromEntries(
-        frames
+        allFrames
           .filter((f) => members.includes(f.id))
           .map((f) => [f.id, { x: f.x, y: f.y }]),
       );
@@ -376,6 +455,10 @@ export function useCanvasScene(o: Options) {
       moved: false,
       group: group || multiple || direct,
       multiple,
+      frames: allFrames,
+      visibleIds: new Set(measured.map((f) => f.id)),
+      departure: planDetach(scene.groups, members, allFrames),
+      bounds: frameBounds(allFrames.filter((f) => members.includes(f.id))),
     };
   };
   const captureStart = (e: PointerEvent, selection: string[] = []) => {
@@ -472,9 +555,11 @@ export function useCanvasScene(o: Options) {
       setDock({ ...target, plan });
     }, 450);
   };
-  const move = (
-    e: Pick<PointerEvent, "pointerId" | "clientX" | "clientY" | "altKey">,
-  ) => {
+  type Move = Pick<
+    PointerEvent,
+    "pointerId" | "clientX" | "clientY" | "altKey"
+  >;
+  const renderMove = (e: Move) => {
     const g = gesture.current;
     if (!g || g.released || g.pointer !== e.pointerId) return;
     g.last = { clientX: e.clientX, clientY: e.clientY };
@@ -487,28 +572,19 @@ export function useCanvasScene(o: Options) {
     )
       return;
     g.moved = true;
-    const measured = o.readFrames(),
-      visibleIds = new Set(measured.map((f) => f.id)),
-      departure = planDetach(
-        scene.groups,
-        Object.keys(g.members),
-        measuredFrames(measured),
-      );
+    const visibleIds = g.visibleIds,
+      departure = g.departure;
     if (!departure) {
       cancel();
       return;
     }
-    const moving = frameBounds(
-      frames
-        .filter((f) => g.members[f.id])
-        .map((f) => ({ ...f, ...g.members[f.id] })),
-    );
+    const moving = g.bounds;
     if (moving) {
       const aligned = e.altKey
         ? { dx: 0, dy: 0, guides: [] }
         : alignSelection(
             { ...moving, x: moving.x + dx, y: moving.y + dy },
-            frames.filter(
+            g.frames.filter(
               (f) =>
                 !g.members[f.id] &&
                 !hidden.has(f.id) &&
@@ -522,11 +598,13 @@ export function useCanvasScene(o: Options) {
         dx += aligned.dx;
         dy += aligned.dy;
       }
-      setGuides(aligned.guides);
+      setGuides((previous) =>
+        sameJson(previous, aligned.guides) ? previous : aligned.guides,
+      );
     }
     // Closing a gap in the source group must be visible before release too.
     if (g.group || departure.destinations.length)
-      setPreview({
+      showPreview({
         ...departure.placements,
         ...(g.group
           ? Object.fromEntries(
@@ -537,25 +615,47 @@ export function useCanvasScene(o: Options) {
             )
           : {}),
       });
+  };
+  const moveFrame = useFrameTask(renderMove);
+  const move = (e: Move) => {
+    const g = gesture.current;
+    if (!g || g.released || g.pointer !== e.pointerId) return;
+    if (
+      !g.moved &&
+      Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < 5
+    )
+      return;
+    g.moved = true;
+    g.last = { clientX: e.clientX, clientY: e.clientY };
+    // Dwell ownership changes immediately, even if the next display frame is delayed.
     hoverDock(
       g,
       e.altKey || g.multiple
         ? undefined
         : dockTarget(
             g.id,
-            p,
-            frames.filter(
+            point(e),
+            g.frames.filter(
               (f) =>
-                !hidden.has(f.id) && !closed.has(f.id) && visibleIds.has(f.id),
+                !hidden.has(f.id) &&
+                !closed.has(f.id) &&
+                g.visibleIds.has(f.id),
             ),
             scene.groups,
           ),
       e,
     );
+    moveFrame.schedule({
+      pointerId: e.pointerId,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      altKey: e.altKey,
+    });
   };
   const clearGesture = () => {
+    moveFrame.cancel();
     gesture.current = undefined;
-    setPreview({});
+    showPreview({});
     clearDock();
     setGuides([]);
   };
@@ -581,6 +681,8 @@ export function useCanvasScene(o: Options) {
           return completion.edit?.(staged);
         }
       : undefined;
+    moveFrame.flush();
+    const proposed = previewValue.current;
     const g = gesture.current,
       pending = pendingDock.current,
       docking =
@@ -633,9 +735,9 @@ export function useCanvasScene(o: Options) {
           })
         : fresh.destinations.every(
             (f) =>
-              Object.hasOwn(preview, f.id) &&
-              Math.abs(f.x - preview[f.id].x) <= tolerance &&
-              Math.abs(f.y - preview[f.id].y) <= tolerance,
+              Object.hasOwn(proposed, f.id) &&
+              Math.abs(f.x - proposed[f.id].x) <= tolerance &&
+              Math.abs(f.y - proposed[f.id].y) <= tolerance,
           ));
     if (!fresh || !matches) {
       setError("The layout changed during the preview. Try the move again.");
@@ -645,14 +747,14 @@ export function useCanvasScene(o: Options) {
     const positions = docking
       ? { ...placements, ...docking.placements }
       : g.group
-        ? { ...placements, ...preview }
+        ? { ...placements, ...proposed }
         : candidate
           ? {
-              ...preview,
+              ...proposed,
               ...placements,
               [candidate.tool.id]: candidate.tool.at,
             }
-          : { ...preview, ...placements };
+          : { ...proposed, ...placements };
     patchPositions(positions, true, groups, update, edit);
   };
   const cancel = (event?: { pointerId: number }) => {
@@ -785,6 +887,7 @@ export function useCanvasScene(o: Options) {
     finishPointer: (event: { pointerId: number }) => {
       const current = gesture.current;
       if (!current || current.pointer !== event.pointerId) return;
+      moveFrame.flush();
       if (!current.moved) {
         clearGesture();
         return;

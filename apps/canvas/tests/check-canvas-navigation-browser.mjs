@@ -60,9 +60,15 @@ try {
     );
   const start = await camera();
   expect(await pinch(-40)).toBe(false);
+  await expect
+    .poll(async () => (await camera()).zoom)
+    .toBeCloseTo(start.zoom * Math.exp(0.4), 2);
   const enlarged = await camera();
   expect(enlarged.zoom).toBeCloseTo(start.zoom * Math.exp(0.4), 2);
   expect(await pinch(80)).toBe(false);
+  await expect
+    .poll(async () => (await camera()).zoom)
+    .toBeCloseTo(start.zoom * Math.exp(-0.4), 2);
   const reduced = await camera();
   expect(reduced.zoom).toBeCloseTo(start.zoom * Math.exp(-0.4), 2);
   // Zoom text is rounded to whole percentages; allow that precision here.
@@ -84,9 +90,46 @@ try {
     .poll(async () => (await camera()).y)
     .toBeCloseTo(after.y + 35, 0);
   expect((await camera()).zoom).toBe(after.zoom);
+
+  // Real two-contact input must accumulate both scale and center movement
+  // correctly while several pointer events share one queued display frame.
+  await page.keyboard.press("ControlOrMeta+0");
+  await expect.poll(async () => (await camera()).zoom).toBe(1);
+  const touchBefore = await camera();
+  const cdp = await page.context().newCDPSession(page);
+  const center = { x: bounds.x + anchor.x, y: bounds.y + anchor.y };
+  const contacts = (distance, dy) =>
+    [-1, 1].map((side, i) => ({
+      x: center.x + (side * distance) / 2,
+      y: center.y + dy,
+      id: i + 1,
+    }));
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: contacts(200, 0),
+  });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: contacts(240, 10),
+  });
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await expect.poll(async () => (await camera()).zoom).toBeCloseTo(1.2, 2);
+  const touchAfter = await camera();
+  expect((touchAfter.x + anchor.x) / touchAfter.zoom).toBeCloseTo(
+    touchBefore.x + anchor.x,
+    0,
+  );
+  expect((touchAfter.y + anchor.y + 10) / touchAfter.zoom).toBeCloseTo(
+    touchBefore.y + anchor.y,
+    0,
+  );
+  await cdp.detach();
   expect(errors).toEqual([]);
   console.log(
-    "Two-finger pan, bidirectional pointer-anchored pinch and pan after zoom passed.",
+    "Two-finger pan, bidirectional pointer-anchored wheel/pinch, two-contact touch zoom and pan after zoom passed.",
   );
 } finally {
   await browser.close();

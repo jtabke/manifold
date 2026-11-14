@@ -1144,6 +1144,101 @@ const MarkView = memo(function MarkView({
     </g>
   );
 });
+const DrawingMark = memo(function DrawingMark({
+  entry,
+  index,
+  selected,
+  tabStop,
+  dimensioned,
+  shape,
+  zoom,
+  focusDrawing,
+  drawingKey,
+}: {
+  entry: DrawingEntry;
+  index: number;
+  selected: boolean;
+  tabStop: boolean;
+  dimensioned: boolean;
+  shape?: MarkGeometry;
+  zoom: number;
+  focusDrawing: Controller["focusDrawing"];
+  drawingKey: Controller["drawingKey"];
+}) {
+  const renders = useRef(0);
+  renders.current++;
+  // Ink paths and hit geometry do not change when selection or camera position changes.
+  const local = isInk(entry.mark.kind);
+  const markGeometry = useMemo(
+    () =>
+      shape ?? {
+        points: entry.mark.points,
+        bounds: pointBounds(entry.mark.points),
+      },
+    [shape, entry.mark],
+  );
+  const hitPoints = useMemo(
+    () =>
+      ["area", "rectangle", "text", "ellipse"].includes(entry.mark.kind)
+        ? undefined
+        : markGeometry.points.map((p) => `${p.x},${p.y}`).join(" "),
+    [entry.mark.kind, markGeometry.points],
+  );
+  return (
+    <g
+      data-drawing-id={entry.id}
+      data-drawing-kind={entry.mark.kind}
+      data-drawing-renders={renders.current}
+      className={`drawing-mark ${selected ? "is-selected" : ""}`}
+      tabIndex={tabStop ? 0 : -1}
+      role="button"
+      aria-label={
+        entry.mark.kind === "area"
+          ? `${entry.mark.scale!.name} scaled drawing area (${entry.mark.scale!.unit})`
+          : `${entry.mark.kind === "text" ? `Label: ${entry.mark.text}` : entry.mark.kind} drawing ${index + 1}`
+      }
+      aria-pressed={selected}
+      aria-describedby={`drawing-keyboard-help${dimensioned ? ` dimension-${entry.id}` : ""}`}
+      onFocus={() => focusDrawing(entry.id)}
+      onKeyDown={(e) => drawingKey(e, entry.id)}
+      transform={
+        local ? `translate(${entry.view.x} ${entry.view.y})` : undefined
+      }
+    >
+      <rect
+        className="drawing-focus"
+        x={markGeometry.bounds.x - 8 / zoom}
+        y={markGeometry.bounds.y - 8 / zoom}
+        width={markGeometry.bounds.width + 16 / zoom}
+        height={markGeometry.bounds.height + 16 / zoom}
+        strokeWidth={2 / zoom}
+        strokeDasharray={`${3 / zoom} ${3 / zoom}`}
+      />
+      {entry.mark.kind === "area" ? (
+        <rect
+          {...markGeometry.bounds}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={14 / zoom}
+          pointerEvents="stroke"
+        />
+      ) : ["rectangle", "text", "ellipse"].includes(entry.mark.kind) ? (
+        <rect {...markGeometry.bounds} fill="transparent" />
+      ) : (
+        <polyline
+          className="drawing-hit"
+          points={hitPoints}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={entry.mark.width + 14 / zoom}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+      <MarkView mark={entry.mark} geometry={local ? undefined : markGeometry} />
+    </g>
+  );
+});
 const DrawingMarks = memo(function DrawingMarks({
   entries,
   erased,
@@ -1178,66 +1273,19 @@ const DrawingMarks = memo(function DrawingMarks({
         (selection.has(entry.id) ||
           scale.allDimensions ||
           !!entry.mark.dimensionPlacement);
-      const markGeometry = local
-        ? { points: entry.mark.points, bounds: pointBounds(entry.mark.points) }
-        : geometry.geometry(entry);
       return (
-        <g
+        <DrawingMark
           key={entry.id}
-          data-drawing-id={entry.id}
-          data-drawing-kind={entry.mark.kind}
-          className={`drawing-mark ${selection.has(entry.id) ? "is-selected" : ""}`}
-          tabIndex={entry.id === tabStop ? 0 : -1}
-          role="button"
-          aria-label={
-            entry.mark.kind === "area"
-              ? `${entry.mark.scale!.name} scaled drawing area (${entry.mark.scale!.unit})`
-              : `${entry.mark.kind === "text" ? `Label: ${entry.mark.text}` : entry.mark.kind} drawing ${index + 1}`
-          }
-          aria-pressed={selection.has(entry.id)}
-          aria-describedby={`drawing-keyboard-help${dimensioned ? ` dimension-${entry.id}` : ""}`}
-          onFocus={() => focusDrawing(entry.id)}
-          onKeyDown={(e) => drawingKey(e, entry.id)}
-          transform={
-            local ? `translate(${entry.view.x} ${entry.view.y})` : undefined
-          }
-        >
-          <rect
-            className="drawing-focus"
-            x={markGeometry.bounds.x - 8 / zoom}
-            y={markGeometry.bounds.y - 8 / zoom}
-            width={markGeometry.bounds.width + 16 / zoom}
-            height={markGeometry.bounds.height + 16 / zoom}
-            strokeWidth={2 / zoom}
-            strokeDasharray={`${3 / zoom} ${3 / zoom}`}
-          />
-          {/* Match the geometry picker's tolerance in the default pointer tool. */}
-          {entry.mark.kind === "area" ? (
-            <rect
-              {...markGeometry.bounds}
-              fill="none"
-              stroke="transparent"
-              strokeWidth={14 / zoom}
-              pointerEvents="stroke"
-            />
-          ) : ["rectangle", "text", "ellipse"].includes(entry.mark.kind) ? (
-            <rect {...markGeometry.bounds} fill="transparent" />
-          ) : (
-            <polyline
-              className="drawing-hit"
-              points={markGeometry.points.map((p) => `${p.x},${p.y}`).join(" ")}
-              fill="none"
-              stroke="transparent"
-              strokeWidth={entry.mark.width + 14 / zoom}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          )}
-          <MarkView
-            mark={entry.mark}
-            geometry={local ? undefined : markGeometry}
-          />
-        </g>
+          entry={entry}
+          index={index}
+          selected={selection.has(entry.id)}
+          tabStop={entry.id === tabStop}
+          dimensioned={!!dimensioned}
+          shape={local ? undefined : geometry.geometry(entry)}
+          zoom={zoom}
+          focusDrawing={focusDrawing}
+          drawingKey={drawingKey}
+        />
       );
     });
 });
@@ -1284,17 +1332,25 @@ export function DrawingCanvas({
     shared,
     hand,
   );
-  if (!visible) return null;
-  const originalGeometry = drawingGeometry(d.entries);
-  const entries = (
-    d.preview?.transform
+  const latest = useRef(d);
+  useLayoutEffect(() => {
+    latest.current = d;
+  });
+  const [events] = useState(() => ({
+    focusDrawing: (id: string) => latest.current.focusDrawing(id),
+    drawingKey: ((event, id) =>
+      latest.current.drawingKey(event, id)) as Controller["drawingKey"],
+  }));
+  const entries = useMemo(() => {
+    const geometry = drawingGeometry(d.entries);
+    const placed = d.preview?.transform
       ? d.entries
       : previewDrawings(
           d.entries,
           d.entries
             .filter((e) => placements[e.id])
             .map((entry) => {
-              const bounds = originalGeometry.bounds(entry),
+              const bounds = geometry.bounds(entry),
                 at = placements[entry.id];
               return {
                 entry,
@@ -1304,8 +1360,12 @@ export function DrawingCanvas({
                 },
               };
             }),
-        )
-  ).filter((e) => !hidden.has(e.id));
+        );
+    return placed.some((e) => hidden.has(e.id))
+      ? placed.filter((e) => !hidden.has(e.id))
+      : placed;
+  }, [d.entries, !!d.preview?.transform, placements, hidden]);
+  if (!visible) return null;
   const geometry = drawingGeometry(entries),
     b = geometry.selectionBounds(d.selection),
     active = !hand && d.tool !== "select";
@@ -1385,8 +1445,8 @@ export function DrawingCanvas({
           erased={d.preview?.erased}
           zoom={zoom}
           selection={d.selection}
-          focusDrawing={d.focusDrawing}
-          drawingKey={d.drawingKey}
+          focusDrawing={events.focusDrawing}
+          drawingKey={events.drawingKey}
           focused={d.focused}
         />
         <DrawingDimensions

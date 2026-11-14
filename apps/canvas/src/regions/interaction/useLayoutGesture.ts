@@ -1,6 +1,7 @@
 import { isDialogEvent } from "./modalInput";
 /** Renderer-local input geometry. Only completion may submit an authored operation. */
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useFrameTask } from "./frameTask";
 import type { Point } from "../document";
 export type LayoutGeometry = Readonly<{
   at: Readonly<Point>;
@@ -33,7 +34,9 @@ export function useLayoutGesture(options: {
       }
     | undefined
   >(undefined);
+  const previewFrame = useFrameTask<LayoutGeometry>(setPreview);
   const clear = () => {
+    previewFrame.cancel();
     // Native pointer-up/unmount releases capture; early release retargets the ensuing click.
     gesture.current = undefined;
     setPreview(undefined);
@@ -103,7 +106,7 @@ export function useLayoutGesture(options: {
             ),
           }
         : { ...g.start, at: { x: g.start.at.x + dx, y: g.start.at.y + dy } };
-      setPreview(g.value);
+      previewFrame.schedule(g.value);
     },
     finish(event: PointerEvent) {
       const g = gesture.current;

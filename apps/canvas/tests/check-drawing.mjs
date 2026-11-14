@@ -77,6 +77,23 @@ assert.deepEqual(
 const initial = drawings(s.document),
   geometry = drawingGeometry(initial);
 assert.equal(drawingGeometry(initial), geometry);
+assert.equal(
+  previewDrawings(initial, []),
+  initial,
+  "an empty preview retains scene identity",
+);
+assert.equal(
+  previewDrawings(
+    initial,
+    initial.map((entry) => ({
+      entry,
+      at: { x: entry.view.x, y: entry.view.y },
+      mark: entry.mark,
+    })),
+  ),
+  initial,
+  "unchanged placements retain cached drawing and geometry identities",
+);
 const originalA = entry(a),
   originalPoints = geometry.points(originalA);
 assert.equal(

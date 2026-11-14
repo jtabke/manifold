@@ -337,7 +337,17 @@ export function previewDrawings(
   entries: readonly DrawingEntry[],
   edits: readonly DrawingEdit[],
 ) {
-  const changed = new Map(edits.map((e) => [e.entry.id, e]));
+  const changed = new Map(
+    edits
+      .filter(
+        ({ entry, mark, at }) =>
+          (mark !== undefined && mark !== entry.mark) ||
+          (at !== undefined &&
+            (at.x !== entry.view.x || at.y !== entry.view.y)),
+      )
+      .map((e) => [e.entry.id, e]),
+  );
+  if (!changed.size) return entries;
   return entries.map((entry) => {
     const edit = changed.get(entry.id);
     return edit

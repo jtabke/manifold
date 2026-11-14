@@ -112,8 +112,14 @@ assert(!geometry.hit(splineEntry, p(50, 40), 0));
 const copies = duplicateDrawings(s, [id, splineId]);
 assert.equal(copies.length, 2);
 assert.deepEqual(
-  drawings(s.document).find((e) => e.id === copies[0]).mark,
-  entry().mark,
+  drawings(s.document)
+    .filter((e) => copies.includes(e.id))
+    .map((e) => e.mark)
+    .toSorted((a, b) => a.kind.localeCompare(b.kind)),
+  [entry().mark, splineEntry.mark].toSorted((a, b) =>
+    a.kind.localeCompare(b.kind),
+  ),
+  "both curve copies preserve their source marks regardless of document view order",
 );
 deleteDrawings(s, copies);
 s.undo();
