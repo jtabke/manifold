@@ -1,4 +1,6 @@
 import { toCanvas } from "html-to-image";
+import { canvasImageStyles } from "./canvasImageStyles";
+import { canvasZoom } from "../interaction/canvasViewport";
 import type { CommandTarget } from "../interaction/commands";
 
 const attributes = [
@@ -38,6 +40,7 @@ export async function selectionPng(
   target: CommandTarget,
   zoom: number,
 ): Promise<Blob> {
+  zoom = canvasZoom(root, zoom);
   const ids = target.ids || [target.view || target.owner || target.id];
   const nodes = ids.map((id) => {
     const node =
@@ -93,6 +96,7 @@ export async function selectionPng(
     );
   for (const { node, bounds: b } of ordered) {
     const image = await toCanvas(node, {
+      fontEmbedCSS: await canvasImageStyles(node),
       width: Math.ceil(b.width / zoom),
       height: Math.ceil(b.height / zoom),
       pixelRatio: ratio,
@@ -100,6 +104,8 @@ export async function selectionPng(
       filter: (child) => !(child instanceof Element && child.matches(chrome)),
       style: {
         transform: "none",
+        translate: "none",
+        contentVisibility: "visible",
         position: "relative",
         left: "0",
         top: "0",

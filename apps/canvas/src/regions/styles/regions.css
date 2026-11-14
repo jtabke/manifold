@@ -387,6 +387,29 @@
   color: var(--canvas-muted, #9296a2);
   font-size: 11px;
 }
+/* Browser viewport overscan, with real measured sizes and no DOM unmounting.
+   Active input and overflow menus must never be paint-contained. */
+.er-paper [data-canvas-cull][data-canvas-offscreen] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--canvas-object-width) auto
+    var(--canvas-object-height);
+}
+.er-paper
+  [data-canvas-cull]:is(
+    :hover,
+    :focus-within,
+    .is-selected,
+    .is-editing,
+    :has(
+      textarea,
+      [contenteditable="true"],
+      [open],
+      [role="menu"],
+      [role="dialog"]
+    )
+  ) {
+  content-visibility: visible;
+}
 .er-region {
   position: absolute;
   width: 485px;

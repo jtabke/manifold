@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type { Point } from "../document";
-import { canvasScroll } from "../interaction/canvasViewport";
+import { canvasScroll, canvasZoom } from "../interaction/canvasViewport";
 import { useFrameTask } from "../interaction/frameTask";
 
 /** Clamp an open connection dialog without rerendering the scene while panning. */
@@ -22,9 +22,10 @@ export function CanvasConnectionPopover({
     if (!node || !canvas) return;
     const camera = canvasScroll(canvas),
       size = node.getBoundingClientRect(),
-      margin = 12;
-    node.style.left = `${Math.max((camera.x + margin) / zoom, Math.min(at.x, (camera.x + canvas.clientWidth - size.width - margin) / zoom))}px`;
-    node.style.top = `${Math.max((camera.y + margin) / zoom, Math.min(at.y, (camera.y + canvas.clientHeight - size.height - margin) / zoom))}px`;
+      margin = 12,
+      scale = canvasZoom(canvas, zoom);
+    node.style.left = `${Math.max((camera.x + margin) / scale, Math.min(at.x, (camera.x + canvas.clientWidth - size.width - margin) / scale))}px`;
+    node.style.top = `${Math.max((camera.y + margin) / scale, Math.min(at.y, (camera.y + canvas.clientHeight - size.height - margin) / scale))}px`;
   };
   const frame = useFrameTask(place);
   useLayoutEffect(() => {
@@ -37,10 +38,12 @@ export function CanvasConnectionPopover({
     observer.observe(node);
     observer.observe(canvas);
     canvas.addEventListener("scroll", schedule);
+    canvas.addEventListener("canvaszoom", schedule);
     return () => {
       frame.cancel();
       observer.disconnect();
       canvas.removeEventListener("scroll", schedule);
+      canvas.removeEventListener("canvaszoom", schedule);
     };
   }, [at, zoom, frame]);
   return (
@@ -49,7 +52,7 @@ export function CanvasConnectionPopover({
       className="er-link-popover"
       role="dialog"
       aria-label={label}
-      style={{ transform: `scale(${1 / zoom})` }}
+      style={{ transform: `scale(calc(1 / var(--canvas-zoom, ${zoom})))` }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >

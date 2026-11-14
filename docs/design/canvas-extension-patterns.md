@@ -45,7 +45,12 @@ Transient form buffers register through [useEditBuffer.ts](../../apps/canvas/src
 over `createEditBuffers` in
 [workspaceFiles.ts](../../apps/canvas/src/regions/app/workspaceFiles.ts). Their `read` participates in
 async Open guards; `finish` validates/accepts a draft before Export/Open/New proceeds. Unregister on
-unmount. A deliberately submitted preview is a transient proposal, never an implicitly accepted
+unmount. Worksheet character/caret/reference-menu state stays in `RegionEditor`; its synchronous
+buffer remains readable by that same completion/file facade without rendering `Regions` per
+keystroke. Preserve IME handling and fresh draft/link reads at completion. Editor width changes
+must not invalidate the entire scene; meaningful height changes may still update worksheet flow.
+Resolve palette/action commands only while those surfaces are open. `RegionCommandMenu` owns its
+own disclosure state and lazily mounts/resolves its controls. A deliberately submitted preview is a transient proposal, never an implicitly accepted
 input. The common workspace facade owns file transitions and saving; representations do not create
 their own persistence mechanism. Authored groups/tools/closed/pins and named layouts use ordinary records through
 [the scene adapter](decisions/0032-portable-authored-canvas-scene.md). Active camera, selection,
@@ -56,12 +61,35 @@ Do not create a local-storage layout owner or a bespoke Undo patch callback.
 Pointer previews use the latest-input frame task in `interaction/frameTask.ts`, not an
 unbounded event queue. Marquee coordinates update only the overlay; unchanged selection
 membership and ordinary camera scrolling do not render the application shell. Zoom bursts
-accumulate their anchored camera before one display-frame commit. Snapshot drag bounds and
-source-group departure geometry once; size observers invalidate affected measurements outside
-movement. Dock dwell and completion still remeasure to reject changed geometry. Flush queued
-scene input before completion, and cancel queued previews on cancellation/unmount. Drawing
-representations preserve unchanged entry/geometry identities and memoize individual SVG marks;
-selection must not rebuild unrelated paths or mathematical subtrees.
+accumulate one anchored camera and preview the paper transform/scroll once per display frame;
+only semantic-detail transitions, idle or a new input boundary settle application zoom. Synchronous
+React settlement belongs at those boundaries, not every zoom frame. `canvasZoom` in
+`interaction/canvasViewport.ts` reads the displayed scale for coordinates, capture and attention
+memory; do not divide live DOM measurements by an older settled zoom. Lightweight navigation
+controls and clamped overlays follow that displayed camera independently.
+
+Snapshot drag bounds and source-group departure geometry once; size observers invalidate affected
+measurements outside movement. `interaction/scenePreview.ts` translates affected HTML objects,
+selection outlines and group extents without rendering the shell per move. The SVG scene owns
+its local mixed-object preview, including connected visual references, dimensions and selection.
+Preserve unchanged entry/geometry identities and memoize individual marks; movement must not
+rebuild unrelated paths or mathematical subtrees. Dock dwell and completion still remeasure to
+reject changed geometry. Flush the release's final coordinates before completion; clear borrowed
+presentation styles and cancel queued previews on cancellation/unmount. Never restore an older
+accepted record as a cancellation mechanism.
+
+At 64 or more HTML objects, measured intrinsic sizes and an 800px viewport overscan enable native
+`content-visibility` culling outside the viewport. Keep all object DOM, accessibility and offscreen
+frames; do not unmount editors or derive missing geometry from a zero-sized placeholder. Accepted
+changes are measured without skipped content before refreshing sizes. Visible, focused, edited and
+overflow-menu objects must not be paint-contained. Raster exports disable culling in their clones
+through `canvasImageStyles`, never by changing live document/camera/input state. Unsupported browsers
+retain normal rendering. This does not virtualize SVG geometry or increase document limits.
+
+Attention-memory listeners remain stable while their latest snapshot changes. Debounce selection,
+camera and semantic-zoom changes; cleanup flushes only on disable/unmount, not every dependency
+change. Page exit/hidden visibility flushes the displayed camera and removes a pending duplicate;
+optional storage failure must not block navigation.
 
 [Shared layout input](decisions/0033-atomic-layout-and-renderer-input-boundaries.md) uses
 `useLayoutGesture` for renderer-local geometry and an application completion callback. The callback
@@ -70,7 +98,8 @@ compose in one existing `session.atomic`. Capture the authored baseline at point
 current docking intent at completion. Cancellation clears transient geometry without a restoration
 write. Do not persist per-pointer movement. Both renderer and scene gestures retain the originating
 pointer ID: other pointers cannot move, complete or cancel that work. Root pointer-up uses
-`useCanvasScene.finishPointer(event)`; its deferred completion is bound to the exact gesture,
+`useCanvasScene.finishPointer(event)`. Scene-owned positions finish directly; renderer-local
+completion is deferred to allow its size/edit to compose, and is bound to the exact gesture,
 not merely a pointer ID that may be reused. Pointer-up freezes the displayed docking intent
 and stops its timer before deferred completion. Owned capture loss before pointer-up cancels;
 normal release after pointer-up must not cancel that deferred completion. Preserve

@@ -1,6 +1,7 @@
 import { useShortcutMatcher } from "../app/useShortcutPreferences";
 import type { ShortcutAction } from "../interaction/shortcutBindings";
 import { isCanvasControlEvent } from "../interaction/modalInput";
+import { canvasZoom } from "../interaction/canvasViewport";
 import {
   memo,
   useEffect,
@@ -9,6 +10,8 @@ import {
   useReducer,
   useRef,
   useState,
+  type RefObject,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -294,11 +297,17 @@ function useDrawingCanvas(
   };
   useEffect(() => clearGesture, []);
   useEffect(() => {
-    const g = gesture.current;
-    if (g?.hold && g.hold.zoom !== zoom) {
-      clearHold(g);
-      redraw();
-    }
+    const changed = () => {
+      const g = gesture.current;
+      const canvas = g?.capture.closest<HTMLElement>(".er-canvas") || null;
+      if (g?.hold && g.hold.zoom !== canvasZoom(canvas, zoom)) {
+        clearHold(g);
+        redraw();
+      }
+    };
+    changed();
+    window.addEventListener("canvaszoom", changed, true);
+    return () => window.removeEventListener("canvaszoom", changed, true);
   }, [zoom]);
   useEffect(() => {
     if (
@@ -1241,6 +1250,7 @@ const DrawingMark = memo(function DrawingMark({
 });
 const DrawingMarks = memo(function DrawingMarks({
   entries,
+  baseline = entries,
   erased,
   zoom,
   selection,
@@ -1249,6 +1259,7 @@ const DrawingMarks = memo(function DrawingMarks({
   focused,
 }: {
   entries: readonly DrawingEntry[];
+  baseline?: readonly DrawingEntry[];
   erased?: ReadonlySet<string>;
   zoom: number;
   selection: ReadonlySet<string>;
@@ -1256,7 +1267,8 @@ const DrawingMarks = memo(function DrawingMarks({
   drawingKey: Controller["drawingKey"];
   focused: string | undefined;
 }) {
-  const geometry = drawingGeometry(entries);
+  const geometry = drawingGeometry(entries),
+    source = drawingGeometry(baseline);
   const tabStop = entries.some((e) => e.id === focused)
     ? focused
     : entries[0]?.id;
@@ -1281,7 +1293,20 @@ const DrawingMarks = memo(function DrawingMarks({
           selected={selection.has(entry.id)}
           tabStop={entry.id === tabStop}
           dimensioned={!!dimensioned}
-          shape={local ? undefined : geometry.geometry(entry)}
+          shape={
+            local
+              ? undefined
+              : (entry.mark.kind === "connector" &&
+                [entry.mark.start, entry.mark.end].every(
+                  (anchor) =>
+                    !anchor ||
+                    geometry.byId.get(anchor.target.item) ===
+                      source.byId.get(anchor.target.item),
+                )
+                  ? source
+                  : geometry
+                ).geometry(entry)
+          }
           zoom={zoom}
           focusDrawing={focusDrawing}
           drawingKey={drawingKey}
@@ -1289,6 +1314,51 @@ const DrawingMarks = memo(function DrawingMarks({
       );
     });
 });
+/** Shared mixed-object movement updates this SVG scene, not the worksheet shell.
+ * Unchanged marks retain entry/geometry identity, including unrelated connectors. */
+function DrawingScenePreview({
+  entries,
+  surface,
+  children,
+}: {
+  entries: readonly DrawingEntry[];
+  surface: RefObject<SVGSVGElement | null>;
+  children: (
+    entries: readonly DrawingEntry[],
+    geometry: ReturnType<typeof drawingGeometry>,
+    baseline: readonly DrawingEntry[],
+  ) => ReactNode;
+}) {
+  const [positions, setPositions] = useState<Record<string, Point>>({});
+  useEffect(() => {
+    const node = surface.current;
+    const preview = (event: Event) =>
+      setPositions((event as CustomEvent<Record<string, Point>>).detail);
+    node?.addEventListener("canvasscenepreview", preview);
+    return () => node?.removeEventListener("canvasscenepreview", preview);
+  }, [surface]);
+  const shown = useMemo(() => {
+    const source = drawingGeometry(entries);
+    return previewDrawings(
+      entries,
+      Object.entries(positions).flatMap(([id, at]) => {
+        const entry = source.byId.get(id);
+        if (!entry) return [];
+        const before = source.bounds(entry);
+        return [
+          {
+            entry,
+            at: {
+              x: entry.view.x + at.x - before.x,
+              y: entry.view.y + at.y - before.y,
+            },
+          },
+        ];
+      }),
+    );
+  }, [entries, positions]);
+  return children(shown, drawingGeometry(shown), entries);
+}
 /** Keep pointer samples and editor buffers out of the application shell's render loop. */
 export function DrawingCanvas({
   session,
@@ -1373,6 +1443,8 @@ export function DrawingCanvas({
     ...point(e.clientX, e.clientY),
     pressure: e.pointerType === "pen" ? Math.max(0.05, e.pressure) : 0.75,
   });
+  const scale = (node: SVGSVGElement) =>
+    canvasZoom(node.closest<HTMLElement>(".er-canvas"), zoom);
   const draft = d.pathDraft ?? d.preview?.regularized ?? d.preview?.mark,
     stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
   return (
@@ -1393,9 +1465,11 @@ export function DrawingCanvas({
         tabIndex={-1}
         role="group"
         aria-label="Drawings"
-        onPointerDown={(e) => d.down(e, coordinates(e), zoom)}
-        onPointerMove={(e) => d.track(e, coordinates(e), zoom)}
-        onPointerUp={(e) => d.track(e, coordinates(e), zoom)}
+        onPointerDown={(e) => d.down(e, coordinates(e), scale(e.currentTarget))}
+        onPointerMove={(e) =>
+          d.track(e, coordinates(e), scale(e.currentTarget))
+        }
+        onPointerUp={(e) => d.track(e, coordinates(e), scale(e.currentTarget))}
         onPointerCancel={(e) => {
           stop(e);
           d.cancel(e);
@@ -1413,200 +1487,220 @@ export function DrawingCanvas({
           if (entry?.mark.kind === "text") d.editLabel(entry);
         }}
       >
-        {entries
-          .filter((e) => e.mark.kind === "area")
-          .map((area) => (
-            <DrawingAreaGrid
-              key={area.id}
-              entry={area}
-              bounds={geometry.bounds(area)}
-              zoom={zoom}
-            />
-          ))}
-        {active && (
-          <rect
-            className="drawing-background"
-            x={-1_000_000}
-            y={-1_000_000}
-            width={2_000_000}
-            height={2_000_000}
-            fill="transparent"
-          />
-        )}
-        <desc id="drawing-keyboard-help">
-          Tab enters or leaves drawings. Alt+Arrow browses drawings; Home and
-          End focus the first or last. Enter or Space selects. Arrow keys move
-          the selection by 5 units; Shift+Arrow moves by 20. Delete removes
-          selected objects. Escape cancels the current action or clears
-          selection.
-        </desc>
-        <DrawingMarks
-          entries={entries}
-          erased={d.preview?.erased}
-          zoom={zoom}
-          selection={d.selection}
-          focusDrawing={events.focusDrawing}
-          drawingKey={events.drawingKey}
-          focused={d.focused}
-        />
-        <DrawingDimensions
-          entries={entries}
-          zoom={zoom}
-          session={session}
-          buffers={buffers}
-          selection={d.selection}
-          enabled={!hand && d.tool === "select" && !d.preview}
-          point={point}
-          select={d.select}
-          activate={activate}
-          report={report}
-          onShortcut={onShortcut}
-        />
-        {draft && (
-          <g
-            pointerEvents="none"
-            data-regularized-preview={d.preview?.regularized?.kind}
-          >
-            <MarkView
-              mark={draft}
-              geometry={geometry.geometry({
-                mark: draft,
-                view: { x: 0, y: 0 },
-              })}
-            />
-          </g>
-        )}
-        {b && (
-          <g
-            className="drawing-selection"
-            pointerEvents="none"
-            strokeWidth={1 / zoom}
-          >
-            <rect
-              x={b.x - 5 / zoom}
-              y={b.y - 5 / zoom}
-              width={b.width + 10 / zoom}
-              height={b.height + 10 / zoom}
-              fill="none"
-              strokeDasharray={`${5 / zoom} ${3 / zoom}`}
-            />
-            {d.tool === "select" && (
-              <rect
-                data-drawing-resize=""
-                className="drawing-resize"
-                pointerEvents="all"
-                x={b.x + b.width - 5 / zoom}
-                y={b.y + b.height - 5 / zoom}
-                width={10 / zoom}
-                height={10 / zoom}
-                fill="white"
-              />
-            )}
-          </g>
-        )}
-        {!hand &&
-          d.tool === "select" &&
-          d.selection.size === 1 &&
-          entries
-            .filter(
-              (entry) => d.selection.has(entry.id) && isCurve(entry.mark.kind),
-            )
-            .map((entry) => (
-              <g key={entry.id} className="drawing-curve-controls">
-                <polyline
-                  points={geometry
-                    .points(entry)
-                    .map((p) => `${p.x},${p.y}`)
-                    .join(" ")}
-                  fill="none"
-                  stroke="#8da9ce"
-                  strokeWidth={1 / zoom}
-                  strokeDasharray={`${4 / zoom} ${4 / zoom}`}
-                  pointerEvents="none"
-                />
-                {geometry.points(entry).map((p, i) => (
-                  <circle
-                    key={i}
-                    data-curve-point={i}
-                    data-canvas-controls=""
-                    pointerEvents="all"
-                    style={{ cursor: "move" }}
-                    cx={p.x}
-                    cy={p.y}
-                    r={5 / zoom}
-                    fill="white"
-                    stroke="#487bbf"
-                    strokeWidth={1.5 / zoom}
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`${entry.mark.kind === "curve" && i === 1 ? "Control point" : "Knot"} ${i + 1}; arrow keys to move`}
-                    onKeyDown={(e) => {
-                      const action = matchShortcut(e.nativeEvent);
-                      if (action) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onShortcut(action);
-                        return;
-                      }
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        d.surface.current
-                          ?.querySelector<SVGGElement>(
-                            `[data-drawing-id="${entry.id}"]`,
-                          )
-                          ?.focus();
-                        return;
-                      }
-                      const delta: Record<string, Point> = {
-                        ArrowLeft: { x: -1, y: 0 },
-                        ArrowRight: { x: 1, y: 0 },
-                        ArrowUp: { x: 0, y: -1 },
-                        ArrowDown: { x: 0, y: 1 },
-                      };
-                      const step = delta[e.key];
-                      if (!step) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      try {
-                        const current = drawings(session.document).find(
-                          (drawing) => drawing.id === entry.id,
-                        );
-                        if (!current) return;
-                        editDrawings(session, [
-                          {
-                            entry: current,
-                            mark: {
-                              ...current.mark,
-                              points: current.mark.points.map((p, index) =>
-                                index === i
-                                  ? {
-                                      ...p,
-                                      x: p.x + step.x * (e.shiftKey ? 20 : 5),
-                                      y: p.y + step.y * (e.shiftKey ? 20 : 5),
-                                    }
-                                  : p,
-                              ),
-                            },
-                          },
-                        ]);
-                      } catch (error) {
-                        report((error as Error).message);
-                      }
-                    }}
+        <DrawingScenePreview entries={entries} surface={d.surface}>
+          {(entries, geometry, baseline) => {
+            const b = geometry.selectionBounds(d.selection);
+            return (
+              <>
+                {entries
+                  .filter((e) => e.mark.kind === "area")
+                  .map((area) => (
+                    <DrawingAreaGrid
+                      key={area.id}
+                      entry={area}
+                      bounds={geometry.bounds(area)}
+                      zoom={zoom}
+                    />
+                  ))}
+                {active && (
+                  <rect
+                    className="drawing-background"
+                    x={-1_000_000}
+                    y={-1_000_000}
+                    width={2_000_000}
+                    height={2_000_000}
+                    fill="transparent"
                   />
-                ))}
-              </g>
-            ))}
-        {d.preview?.tool === "lasso" && (
-          <polygon
-            className="drawing-lasso"
-            pointerEvents="none"
-            points={d.preview.points.map((p) => `${p.x},${p.y}`).join(" ")}
-            strokeWidth={1 / zoom}
-            strokeDasharray="5 3"
-          />
-        )}
+                )}
+                <desc id="drawing-keyboard-help">
+                  Tab enters or leaves drawings. Alt+Arrow browses drawings;
+                  Home and End focus the first or last. Enter or Space selects.
+                  Arrow keys move the selection by 5 units; Shift+Arrow moves by
+                  20. Delete removes selected objects. Escape cancels the
+                  current action or clears selection.
+                </desc>
+                <DrawingMarks
+                  entries={entries}
+                  baseline={baseline}
+                  erased={d.preview?.erased}
+                  zoom={zoom}
+                  selection={d.selection}
+                  focusDrawing={events.focusDrawing}
+                  drawingKey={events.drawingKey}
+                  focused={d.focused}
+                />
+                <DrawingDimensions
+                  entries={entries}
+                  zoom={zoom}
+                  session={session}
+                  buffers={buffers}
+                  selection={d.selection}
+                  enabled={!hand && d.tool === "select" && !d.preview}
+                  point={point}
+                  select={d.select}
+                  activate={activate}
+                  report={report}
+                  onShortcut={onShortcut}
+                />
+                {draft && (
+                  <g
+                    pointerEvents="none"
+                    data-regularized-preview={d.preview?.regularized?.kind}
+                  >
+                    <MarkView
+                      mark={draft}
+                      geometry={geometry.geometry({
+                        mark: draft,
+                        view: { x: 0, y: 0 },
+                      })}
+                    />
+                  </g>
+                )}
+                {b && (
+                  <g
+                    className="drawing-selection"
+                    pointerEvents="none"
+                    strokeWidth={1 / zoom}
+                  >
+                    <rect
+                      x={b.x - 5 / zoom}
+                      y={b.y - 5 / zoom}
+                      width={b.width + 10 / zoom}
+                      height={b.height + 10 / zoom}
+                      fill="none"
+                      strokeDasharray={`${5 / zoom} ${3 / zoom}`}
+                    />
+                    {d.tool === "select" && (
+                      <rect
+                        data-drawing-resize=""
+                        className="drawing-resize"
+                        pointerEvents="all"
+                        x={b.x + b.width - 5 / zoom}
+                        y={b.y + b.height - 5 / zoom}
+                        width={10 / zoom}
+                        height={10 / zoom}
+                        fill="white"
+                      />
+                    )}
+                  </g>
+                )}
+                {!hand &&
+                  d.tool === "select" &&
+                  d.selection.size === 1 &&
+                  entries
+                    .filter(
+                      (entry) =>
+                        d.selection.has(entry.id) && isCurve(entry.mark.kind),
+                    )
+                    .map((entry) => (
+                      <g key={entry.id} className="drawing-curve-controls">
+                        <polyline
+                          points={geometry
+                            .points(entry)
+                            .map((p) => `${p.x},${p.y}`)
+                            .join(" ")}
+                          fill="none"
+                          stroke="#8da9ce"
+                          strokeWidth={1 / zoom}
+                          strokeDasharray={`${4 / zoom} ${4 / zoom}`}
+                          pointerEvents="none"
+                        />
+                        {geometry.points(entry).map((p, i) => (
+                          <circle
+                            key={i}
+                            data-curve-point={i}
+                            data-canvas-controls=""
+                            pointerEvents="all"
+                            style={{ cursor: "move" }}
+                            cx={p.x}
+                            cy={p.y}
+                            r={5 / zoom}
+                            fill="white"
+                            stroke="#487bbf"
+                            strokeWidth={1.5 / zoom}
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`${entry.mark.kind === "curve" && i === 1 ? "Control point" : "Knot"} ${i + 1}; arrow keys to move`}
+                            onKeyDown={(e) => {
+                              const action = matchShortcut(e.nativeEvent);
+                              if (action) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onShortcut(action);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                d.surface.current
+                                  ?.querySelector<SVGGElement>(
+                                    `[data-drawing-id="${entry.id}"]`,
+                                  )
+                                  ?.focus();
+                                return;
+                              }
+                              const delta: Record<string, Point> = {
+                                ArrowLeft: { x: -1, y: 0 },
+                                ArrowRight: { x: 1, y: 0 },
+                                ArrowUp: { x: 0, y: -1 },
+                                ArrowDown: { x: 0, y: 1 },
+                              };
+                              const step = delta[e.key];
+                              if (!step) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              try {
+                                const current = drawings(session.document).find(
+                                  (drawing) => drawing.id === entry.id,
+                                );
+                                if (!current) return;
+                                editDrawings(session, [
+                                  {
+                                    entry: current,
+                                    mark: {
+                                      ...current.mark,
+                                      points: current.mark.points.map(
+                                        (p, index) =>
+                                          index === i
+                                            ? {
+                                                ...p,
+                                                x:
+                                                  p.x +
+                                                  step.x *
+                                                    (e.shiftKey ? 20 : 5),
+                                                y:
+                                                  p.y +
+                                                  step.y *
+                                                    (e.shiftKey ? 20 : 5),
+                                              }
+                                            : p,
+                                      ),
+                                    },
+                                  },
+                                ]);
+                              } catch (error) {
+                                report((error as Error).message);
+                              }
+                            }}
+                          />
+                        ))}
+                      </g>
+                    ))}
+                {d.preview?.tool === "lasso" && (
+                  <polygon
+                    className="drawing-lasso"
+                    pointerEvents="none"
+                    points={d.preview.points
+                      .map((p) => `${p.x},${p.y}`)
+                      .join(" ")}
+                    strokeWidth={1 / zoom}
+                    strokeDasharray="5 3"
+                  />
+                )}
+              </>
+            );
+          }}
+        </DrawingScenePreview>
       </svg>
       {d.label && (
         <div

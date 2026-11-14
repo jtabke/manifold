@@ -1,5 +1,6 @@
 import { toCanvas } from "html-to-image";
 import { selectionPng } from "./selectionPng";
+import { canvasImageStyles } from "./canvasImageStyles";
 import { canvasScroll } from "../interaction/canvasViewport";
 import type { CanvasImage } from "../assistantCanvas";
 
@@ -49,6 +50,7 @@ export async function captureAssistantCanvas(
       throw Error("Canvas viewport is unavailable or too large");
     const ratio = Math.min(1, 1280 / width, 960 / height);
     source = await toCanvas(world, {
+      fontEmbedCSS: await canvasImageStyles(world),
       width,
       height,
       pixelRatio: ratio,

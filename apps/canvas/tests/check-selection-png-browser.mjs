@@ -102,6 +102,40 @@ try {
   await page.getByRole("button").filter({ hasText: "Copy as PNG" }).click();
   await expect.poll(() => page.evaluate(() => window.pngCopies.length)).toBe(2);
 
+  // Export a natively skipped object without revealing or modifying its live
+  // subtree. The raster clone must disable viewport culling, not capture a box.
+  await open();
+  await power.evaluate((node) => {
+    node.style.setProperty("--canvas-object-width", `${node.clientWidth}px`);
+    node.style.setProperty("--canvas-object-height", `${node.clientHeight}px`);
+    node.dataset.canvasCull = "";
+    node.dataset.canvasOffscreen = "";
+    node.style.contentVisibility = "auto";
+    node.closest(".er-canvas").scrollLeft += 20000;
+  });
+  await expect
+    .poll(() =>
+      power
+        .locator(".er-math-line")
+        .evaluate((node) =>
+          node.checkVisibility({ contentVisibilityAuto: true }),
+        ),
+    )
+    .toBe(false);
+  const culled = await copy();
+  expect(culled.painted).toBeGreaterThan(200);
+  expect(Math.abs(culled.width - single.width)).toBeLessThanOrEqual(2);
+  expect(await power.evaluate((node) => node.style.contentVisibility)).toBe(
+    "auto",
+  );
+  expect((await readWorkspace(page)).page).toEqual(before);
+  await power.evaluate((node) => {
+    node.style.removeProperty("content-visibility");
+    delete node.dataset.canvasCull;
+    delete node.dataset.canvasOffscreen;
+  });
+  await power.scrollIntoViewIfNeeded();
+
   // A refused clipboard write downloads the same PNG, not a second render.
   await page.evaluate(() => {
     window.rejectPngCopy = true;

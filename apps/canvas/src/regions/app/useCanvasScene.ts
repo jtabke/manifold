@@ -1,5 +1,9 @@
 import { isDialogEvent } from "../interaction/modalInput";
-import { canvasScroll, scrollCanvasTo } from "../interaction/canvasViewport";
+import {
+  canvasScroll,
+  canvasZoom,
+  scrollCanvasTo,
+} from "../interaction/canvasViewport";
 import {
   useEffect,
   useLayoutEffect,
@@ -13,7 +17,8 @@ import {
 } from "react";
 import type { Artifact } from "../artifacts";
 import { type Page, type Point, type RegionSession } from "../document";
-import { alignSelection, type AlignmentGuide } from "../alignment";
+import { alignSelection } from "../alignment";
+import { createScenePreview } from "../interaction/scenePreview";
 import { frameBounds, type CanvasFrame } from "../selection";
 import {
   groupMembers,
@@ -57,6 +62,9 @@ type SceneGesture = SpatialDrag & {
   visibleIds: Set<string>;
   departure: ReturnType<typeof planDetach>;
   bounds: ReturnType<typeof frameBounds>;
+  automatic: Record<string, Point>;
+  ownsPositions: boolean;
+  presentation: ReturnType<typeof createScenePreview>;
 };
 type DockTarget = NonNullable<ReturnType<typeof dockTarget>>;
 type PendingDock = {
@@ -80,19 +88,15 @@ export function useCanvasScene(o: Options) {
     }
   };
   const [error, setError] = useState(o.sceneError || ""),
-    [preview, setPreview] = useState<Record<string, Point>>({}),
+    [, setMoving] = useState(false),
     [dock, setDock] = useState<
       (DockTarget & { plan?: GroupLayoutPlan }) | undefined
     >(),
     [focus, setFocus] = useState<{ id: string; camera: Camera } | undefined>(),
     [viewMenu, setViewMenu] = useState(false),
     [cancelVersion, setCancelVersion] = useState(0);
-  const previewValue = useRef(preview);
-  const showPreview = (next: Record<string, Point>) => {
-    previewValue.current = next;
-    setPreview(next);
-  };
-  const [guides, setGuides] = useState<AlignmentGuide[]>([]);
+  const previewValue = useRef<Record<string, Point>>({});
+  const guideLayer = useRef<HTMLDivElement>(null);
   const gesture = useRef<SceneGesture | undefined>(undefined),
     pendingDock = useRef<PendingDock | undefined>(undefined),
     cache = useRef(new Map<string, CanvasFrame>());
@@ -105,7 +109,14 @@ export function useCanvasScene(o: Options) {
     pendingDock.current = undefined;
     if (render) setDock(undefined);
   };
-  useEffect(() => () => clearDock(false), []);
+  useEffect(
+    () => () => {
+      clearDock(false);
+      gesture.current?.presentation.clear();
+    },
+    [],
+  );
+  useLayoutEffect(() => gesture.current?.presentation.refresh());
   useLayoutEffect(() => {
     const pending = pendingDock.current;
     if (dock?.plan && pending?.plan === dock.plan && !pending.gesture.released)
@@ -133,28 +144,70 @@ export function useCanvasScene(o: Options) {
       }
       if (changed) measured((v) => v + 1);
     };
+    const targets = [
+      ...node.querySelectorAll<HTMLElement>(
+        "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
+      ),
+    ];
+    // Measure accepted changes without skipped content before caching intrinsic
+    // sizes. Native viewport culling keeps offscreen DOM/accessible objects and
+    // their measured frames, rather than unmounting editors or inventing bounds.
+    if (!gesture.current?.moved)
+      for (const target of targets) delete target.dataset.canvasCull;
     measure();
     const observer = new ResizeObserver((entries) => {
       const ids = new Set(
-        entries.map(({ target }) => {
-          const data = (target as HTMLElement).dataset;
-          return (
-            data.regionId ||
-            data.plotId ||
-            data.viewId ||
-            data.toolId ||
-            data.dataRelationId ||
-            data.modelId!
-          );
-        }),
+        entries
+          .filter(({ target }) => !target.matches(".is-editing"))
+          .map(({ target }) => {
+            const data = (target as HTMLElement).dataset;
+            return (
+              data.regionId ||
+              data.plotId ||
+              data.viewId ||
+              data.toolId ||
+              data.dataRelationId ||
+              data.modelId!
+            );
+          }),
       );
-      measure(ids);
+      if (ids.size) measure(ids);
+      if (targets.length >= 64)
+        for (const { target, contentRect } of entries) {
+          const element = target as HTMLElement;
+          if (contentRect.width <= 0 || contentRect.height <= 0) continue;
+          element.style.setProperty(
+            "--canvas-object-width",
+            `${contentRect.width}px`,
+          );
+          element.style.setProperty(
+            "--canvas-object-height",
+            `${contentRect.height}px`,
+          );
+          element.dataset.canvasCull = "";
+        }
     });
-    for (const target of node.querySelectorAll(
-      "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
-    ))
+    const visibility =
+      targets.length >= 64
+        ? new IntersectionObserver(
+            (entries) => {
+              for (const { target, isIntersecting } of entries) {
+                const element = target as HTMLElement;
+                if (isIntersecting) delete element.dataset.canvasOffscreen;
+                else element.dataset.canvasOffscreen = "";
+              }
+            },
+            { root: node, rootMargin: "800px" },
+          )
+        : undefined;
+    for (const target of targets) {
       observer.observe(target);
-    return () => observer.disconnect();
+      visibility?.observe(target);
+    }
+    return () => {
+      observer.disconnect();
+      visibility?.disconnect();
+    };
   }, [
     o.page,
     o.artifacts,
@@ -222,23 +275,15 @@ export function useCanvasScene(o: Options) {
     [o.extraFrames, o.page, o.places, o.artifacts, scene.tools, measureVersion],
   );
   const automatic = useMemo(() => {
+    if (gesture.current) return gesture.current.automatic;
     const positions: Record<string, Point> = Object.create(null);
     for (const g of scene.groups) {
-      if (
-        !g.auto ||
-        (gesture.current &&
-          (gesture.current.id === g.id ||
-            g.members.includes(gesture.current.id)))
-      )
-        continue;
+      if (!g.auto) continue;
       Object.assign(positions, groupPlacements(g, raw));
     }
     return positions;
   }, [scene.groups, raw, gesture.current?.id]);
-  const displayed = useMemo(
-    () => ({ ...automatic, ...preview }),
-    [automatic, preview],
-  );
+  const displayed = automatic;
   const frames = useMemo(
     () => raw.map((f) => ({ ...f, ...displayed[f.id] })),
     [raw, displayed],
@@ -411,10 +456,11 @@ export function useCanvasScene(o: Options) {
   };
   const point = (e: { clientX: number; clientY: number }): Point => {
     const node = o.canvas.current!,
-      rect = node.getBoundingClientRect();
+      rect = node.getBoundingClientRect(),
+      scale = canvasZoom(node, o.zoom);
     return {
-      x: (e.clientX - rect.left + canvasScroll(node).x) / o.zoom,
-      y: (e.clientY - rect.top + canvasScroll(node).y) / o.zoom,
+      x: (e.clientX - rect.left + canvasScroll(node).x) / scale,
+      y: (e.clientY - rect.top + canvasScroll(node).y) / scale,
     };
   };
   const start = (
@@ -431,6 +477,9 @@ export function useCanvasScene(o: Options) {
       return;
     clearDock();
     moveFrame.cancel();
+    gesture.current?.presentation.clear();
+    previewValue.current = {};
+    setMoving(false);
     const measured = o.readFrames(),
       allFrames = measuredFrames(measured);
     for (const f of measured) cache.current.set(f.id, f);
@@ -454,11 +503,21 @@ export function useCanvasScene(o: Options) {
       members: origins,
       moved: false,
       group: group || multiple || direct,
+      ownsPositions: group || multiple || direct,
       multiple,
       frames: allFrames,
       visibleIds: new Set(measured.map((f) => f.id)),
       departure: planDetach(scene.groups, members, allFrames),
       bounds: frameBounds(allFrames.filter((f) => members.includes(f.id))),
+      automatic,
+      presentation: createScenePreview(
+        o.canvas.current!,
+        allFrames,
+        scene.groups,
+        compact,
+        guideLayer,
+        o.zoom,
+      ),
     };
   };
   const captureStart = (e: PointerEvent, selection: string[] = []) => {
@@ -478,6 +537,11 @@ export function useCanvasScene(o: Options) {
       obj?.dataset.dataRelationId;
     if (id) {
       start(id, e, false, selection);
+      if (
+        gesture.current &&
+        (obj?.dataset.regionId || obj?.dataset.dataRelationId)
+      )
+        gesture.current.ownsPositions = true;
       if (
         gesture.current?.multiple &&
         gesture.current.pointer === e.pointerId
@@ -571,7 +635,6 @@ export function useCanvasScene(o: Options) {
       Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < 5
     )
       return;
-    g.moved = true;
     const visibleIds = g.visibleIds,
       departure = g.departure;
     if (!departure) {
@@ -579,10 +642,9 @@ export function useCanvasScene(o: Options) {
       return;
     }
     const moving = g.bounds;
-    if (moving) {
-      const aligned = e.altKey
-        ? { dx: 0, dy: 0, guides: [] }
-        : alignSelection(
+    const aligned =
+      moving && !e.altKey
+        ? alignSelection(
             { ...moving, x: moving.x + dx, y: moving.y + dy },
             g.frames.filter(
               (f) =>
@@ -593,20 +655,17 @@ export function useCanvasScene(o: Options) {
             ),
             (g.group ? 4 : 1) / o.zoom,
             120 / o.zoom,
-          );
-      if (g.group) {
-        dx += aligned.dx;
-        dy += aligned.dy;
-      }
-      setGuides((previous) =>
-        sameJson(previous, aligned.guides) ? previous : aligned.guides,
-      );
+          )
+        : { dx: 0, dy: 0, guides: [] };
+    if (moving && g.group) {
+      dx += aligned.dx;
+      dy += aligned.dy;
     }
     // Closing a gap in the source group must be visible before release too.
-    if (g.group || departure.destinations.length)
-      showPreview({
+    if (g.ownsPositions || departure.destinations.length) {
+      const next = {
         ...departure.placements,
-        ...(g.group
+        ...(g.ownsPositions
           ? Object.fromEntries(
               Object.entries(g.members).map(([id, at]) => [
                 id,
@@ -614,7 +673,10 @@ export function useCanvasScene(o: Options) {
               ]),
             )
           : {}),
-      });
+      };
+      previewValue.current = next;
+      g.presentation.show(next, aligned.guides);
+    } else g.presentation.show({}, aligned.guides);
   };
   const moveFrame = useFrameTask(renderMove);
   const move = (e: Move) => {
@@ -625,6 +687,7 @@ export function useCanvasScene(o: Options) {
       Math.hypot(e.clientX - g.client.x, e.clientY - g.client.y) < 5
     )
       return;
+    if (!g.moved) setMoving(true);
     g.moved = true;
     g.last = { clientX: e.clientX, clientY: e.clientY };
     // Dwell ownership changes immediately, even if the next display frame is delayed.
@@ -654,10 +717,11 @@ export function useCanvasScene(o: Options) {
   };
   const clearGesture = () => {
     moveFrame.cancel();
+    gesture.current?.presentation.clear();
     gesture.current = undefined;
-    showPreview({});
+    previewValue.current = {};
     clearDock();
-    setGuides([]);
+    setMoving(false);
   };
   const end = (
     tool?: CanvasTool,
@@ -746,7 +810,7 @@ export function useCanvasScene(o: Options) {
     const groups = docking?.groups || fresh.groups;
     const positions = docking
       ? { ...placements, ...docking.placements }
-      : g.group
+      : g.ownsPositions
         ? { ...placements, ...proposed }
         : candidate
           ? {
@@ -848,7 +912,7 @@ export function useCanvasScene(o: Options) {
   latestEnd.current = end;
   return {
     cancelVersion,
-    guides,
+    guideLayer,
     movingSelection: () => !!gesture.current?.multiple,
     moving: () => !!gesture.current?.moved,
     scene,
@@ -884,9 +948,18 @@ export function useCanvasScene(o: Options) {
       if (!event || event.pointerId === gesture.current?.pointer)
         latestEnd.current();
     },
-    finishPointer: (event: { pointerId: number }) => {
+    finishPointer: (event: Move) => {
       const current = gesture.current;
       if (!current || current.pointer !== event.pointerId) return;
+      if (
+        Math.hypot(
+          event.clientX - current.client.x,
+          event.clientY - current.client.y,
+        ) >= 5
+      ) {
+        current.moved = true;
+        moveFrame.schedule(event);
+      }
       moveFrame.flush();
       if (!current.moved) {
         clearGesture();
@@ -899,6 +972,11 @@ export function useCanvasScene(o: Options) {
         pending.timer = undefined;
       }
       if (!pending?.displayed) clearDock();
+      // Scene-owned moves have no renderer-local resize/edit to compose.
+      if (current.ownsPositions) {
+        latestEnd.current();
+        return;
+      }
       requestAnimationFrame(() => {
         if (gesture.current === current) latestEnd.current();
       });

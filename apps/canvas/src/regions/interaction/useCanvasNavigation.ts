@@ -14,6 +14,7 @@ import { flushSync } from "react-dom";
 import { useFrameTask } from "./frameTask";
 import {
   attachCanvasViewport,
+  displayCanvasZoom,
   canvasScroll,
   scrollCanvasTo,
   scrollCanvasBy,
@@ -21,6 +22,11 @@ import {
 
 const editable = "input,textarea,select,[contenteditable=true]";
 const clampZoom = (value: number) => Math.min(2, Math.max(0.1, value));
+const detailLevel = (zoom: number) => (zoom < 0.65 ? 0 : zoom <= 1.2 ? 1 : 2);
+export type ZoomDisplay = {
+  read: () => number;
+  subscribe: (listener: () => void) => () => void;
+};
 
 // Camera gestures never write to the document, object positions or Undo history.
 export function useCanvasNavigation(
@@ -33,6 +39,25 @@ export function useCanvasNavigation(
   const [hand, setHand] = useState(false);
   const [space, setSpace] = useState(false);
   const [panning, setPanning] = useState(false);
+  const [display] = useState(() => {
+    let value = zoom;
+    const listeners = new Set<() => void>();
+    return {
+      read: () => value,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      publish: (next: number) => {
+        if (next === value) return;
+        value = next;
+        for (const listener of listeners) listener();
+      },
+    };
+  });
+  const idle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const current = useRef({ zoom, setZoom, fit });
   current.current = { zoom, setZoom, fit };
   const held = useRef(false);
@@ -62,26 +87,57 @@ export function useCanvasNavigation(
   const zoomFrame = useFrameTask(() => {
     const next = pending.current;
     if (!next) return;
-    // One anchored commit per display frame, not one full render per wheel event.
-    flushSync(() => current.current.setZoom(next.zoom));
-    if (gesture.current && canvas.current) {
-      gesture.current.left = canvasScroll(canvas.current).x;
-      gesture.current.top = canvasScroll(canvas.current).y;
+    const node = canvas.current;
+    if (!node) return;
+    displayCanvasZoom(node, next.zoom);
+    scrollCanvasTo(node, { left: next.left, top: next.top });
+    display.publish(next.zoom);
+    if (gesture.current) {
+      gesture.current.left = canvasScroll(node).x;
+      gesture.current.top = canvasScroll(node).y;
     }
+    // Only semantic-detail transitions need the scene, not every camera frame.
+    if (detailLevel(next.zoom) !== detailLevel(current.current.zoom))
+      settleZoom();
   });
+  const settleZoom = useCallback(() => {
+    const next = pending.current,
+      node = canvas.current;
+    if (!next || !node) return;
+    pending.current = undefined;
+    zoomFrame.cancel();
+    clearTimeout(idle.current);
+    // New object gestures must see the displayed camera in their React closures.
+    // This is a boundary commit, never the continuous zoom rendering path.
+    flushSync(() => current.current.setZoom(next.zoom));
+    displayCanvasZoom(node, next.zoom);
+    scrollCanvasTo(node, { left: next.left, top: next.top });
+    display.publish(next.zoom);
+    if (gesture.current) {
+      gesture.current.left = canvasScroll(node).x;
+      gesture.current.top = canvasScroll(node).y;
+    }
+  }, [canvas, display, zoomFrame]);
+  useEffect(
+    () => () => {
+      clearTimeout(idle.current);
+      pending.current = undefined;
+      zoomFrame.cancel();
+    },
+    [zoomFrame],
+  );
   useLayoutEffect(() => {
     if (canvas.current) attachCanvasViewport(canvas.current);
   }, [canvas, enabled]);
 
   useLayoutEffect(() => {
-    const next = pending.current;
-    if (!next) return;
-    if (next.zoom === zoom && canvas.current)
-      scrollCanvasTo(canvas.current, { left: next.left, top: next.top });
-    // Fit/named views may supersede a not-yet-displayed wheel request.
+    // Fit/named views supersede any not-yet-settled wheel request.
     pending.current = undefined;
     zoomFrame.cancel();
-  }, [canvas, zoom, zoomFrame]);
+    clearTimeout(idle.current);
+    if (canvas.current) displayCanvasZoom(canvas.current, zoom);
+    display.publish(zoom);
+  }, [canvas, zoom, zoomFrame, display]);
 
   const zoomAt = useCallback(
     (value: number, x?: number, y?: number) => {
@@ -103,8 +159,10 @@ export function useCanvasNavigation(
         top: (before.top + py) * ratio - py,
       };
       zoomFrame.schedule(undefined);
+      clearTimeout(idle.current);
+      idle.current = setTimeout(settleZoom, 120);
     },
-    [canvas, zoomFrame],
+    [canvas, zoomFrame, settleZoom],
   );
   const zoomBy = useCallback(
     (delta: number) =>
@@ -165,7 +223,7 @@ export function useCanvasNavigation(
         return;
       }
       e.preventDefault();
-      zoomFrame.flush();
+      settleZoom();
       const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX,
         dy = e.shiftKey && !e.deltaX ? 0 : e.deltaY;
       scrollCanvasBy(
@@ -187,7 +245,10 @@ export function useCanvasNavigation(
       setSpace(false);
       end();
     };
-    const settleZoom = () => zoomFrame.flush();
+    const stop = () => {
+      settleZoom();
+      reset();
+    };
     const keydown = (e: KeyboardEvent) => {
       settleZoom();
       if (isCanvasControlEvent(e)) return;
@@ -233,7 +294,7 @@ export function useCanvasNavigation(
       }
     };
     const visibility = () => {
-      if (document.hidden) reset();
+      if (document.hidden) stop();
     };
     node.addEventListener("wheel", wheel, { passive: false });
     // Settle before React dispatches a new object gesture, so its coordinates
@@ -241,18 +302,20 @@ export function useCanvasNavigation(
     window.addEventListener("pointerdown", settleZoom, true);
     window.addEventListener("keydown", keydown, true);
     window.addEventListener("keyup", keyup, true);
-    window.addEventListener("blur", reset);
+    window.addEventListener("blur", stop);
+    window.addEventListener("pagehide", stop);
     document.addEventListener("visibilitychange", visibility);
     return () => {
       node.removeEventListener("wheel", wheel);
       window.removeEventListener("pointerdown", settleZoom, true);
       window.removeEventListener("keydown", keydown, true);
       window.removeEventListener("keyup", keyup, true);
-      window.removeEventListener("blur", reset);
+      window.removeEventListener("blur", stop);
+      window.removeEventListener("pagehide", stop);
       document.removeEventListener("visibilitychange", visibility);
       reset();
     };
-  }, [canvas, enabled, end, hand, zoomAt, zoomBy, zoomFrame]);
+  }, [canvas, enabled, end, hand, zoomAt, zoomBy, settleZoom]);
 
   const down = (e: ReactPointerEvent<HTMLDivElement>) => {
     ignoreClick.current = false;
@@ -317,6 +380,9 @@ export function useCanvasNavigation(
       if (pending.current) {
         pending.current.left += a.x - b.x;
         pending.current.top += a.y - b.y;
+        zoomFrame.schedule(undefined);
+        clearTimeout(idle.current);
+        idle.current = setTimeout(settleZoom, 120);
       } else scrollCanvasBy(e.currentTarget, a.x - b.x, a.y - b.y);
       if (before.length === 2 && after.length === 2) {
         const oldDistance = Math.hypot(
@@ -345,16 +411,24 @@ export function useCanvasNavigation(
     if (Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > 4)
       g.moved = true;
     const node = e.currentTarget;
-    g.left -= e.clientX - g.x;
-    g.top -= e.clientY - g.y;
-    scrollCanvasTo(node, { left: g.left, top: g.top });
+    if (pending.current) {
+      pending.current.left -= e.clientX - g.x;
+      pending.current.top -= e.clientY - g.y;
+      zoomFrame.schedule(undefined);
+      clearTimeout(idle.current);
+      idle.current = setTimeout(settleZoom, 120);
+    } else {
+      g.left -= e.clientX - g.x;
+      g.top -= e.clientY - g.y;
+      scrollCanvasTo(node, { left: g.left, top: g.top });
+    }
     g.x = e.clientX;
     g.y = e.clientY;
     return true;
   };
   const up = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (touches.current.delete(e.pointerId)) {
-      zoomFrame.flush();
+      settleZoom();
       e.preventDefault();
       e.stopPropagation();
       setPanning(touches.current.size > 0);
@@ -391,6 +465,7 @@ export function useCanvasNavigation(
     hand,
     setHand,
     zoomBy,
+    display,
     down,
     move,
     up,

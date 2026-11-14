@@ -1,4 +1,8 @@
-import { canvasScroll, scrollCanvasTo } from "../interaction/canvasViewport";
+import {
+  canvasScroll,
+  canvasZoom,
+  scrollCanvasTo,
+} from "../interaction/canvasViewport";
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import {
   documentKey,
@@ -23,7 +27,8 @@ export function useWorkspaceMemory(o: {
   system?: WorkspaceMemory["system"];
 }) {
   const ready = useRef(!o.initial),
-    latest = useRef(o);
+    latest = useRef(o),
+    scheduleSave = useRef<(() => void) | undefined>(undefined);
   latest.current = o;
   useLayoutEffect(() => {
     if (!o.initial) return;
@@ -40,8 +45,11 @@ export function useWorkspaceMemory(o: {
   }, []);
   useEffect(() => {
     if (!o.enabled) return;
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined,
+      saved: string | undefined;
     const save = () => {
+      clearTimeout(timer);
+      timer = undefined;
       const next = latest.current,
         node = next.canvas.current;
       if (!ready.current || !node || !next.stable) return;
@@ -52,7 +60,7 @@ export function useWorkspaceMemory(o: {
         camera: {
           x: canvasScroll(node).x,
           y: canvasScroll(node).y,
-          zoom: next.zoom,
+          zoom: canvasZoom(node, next.zoom),
         },
         selected: next.selected,
         selection: next.selection,
@@ -61,7 +69,10 @@ export function useWorkspaceMemory(o: {
         ...(next.system ? { system: next.system } : {}),
       };
       try {
-        localStorage.setItem(MEMORY_STORAGE, JSON.stringify(memory));
+        const serialized = JSON.stringify(memory);
+        if (serialized === saved) return;
+        localStorage.setItem(MEMORY_STORAGE, serialized);
+        saved = serialized;
       } catch {
         /* Navigation remains usable without optional view storage. */
       }
@@ -70,8 +81,10 @@ export function useWorkspaceMemory(o: {
       clearTimeout(timer);
       timer = setTimeout(save, 120);
     };
+    scheduleSave.current = schedule;
     const node = o.canvas.current;
     node?.addEventListener("scroll", schedule);
+    node?.addEventListener("canvaszoom", schedule);
     window.addEventListener("pagehide", save);
     const visibility = () => {
       if (document.hidden) save();
@@ -79,28 +92,36 @@ export function useWorkspaceMemory(o: {
     document.addEventListener("visibilitychange", visibility);
     schedule();
     return () => {
-      clearTimeout(timer);
       save();
+      scheduleSave.current = undefined;
       node?.removeEventListener("scroll", schedule);
+      node?.removeEventListener("canvaszoom", schedule);
       window.removeEventListener("pagehide", save);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [
-    o.enabled,
-    o.page,
-    o.zoom,
-    o.scope,
-    o.selected,
-    o.selection,
-    o.history,
-    o.stable,
-    o.system?.open,
-    o.system?.investigating,
-    o.system?.anchor,
-    o.system?.response,
-    o.system?.positions,
-    o.system?.input,
-    o.system?.output,
-    o.system?.failure,
-  ]);
+  }, [o.enabled, o.canvas]);
+  // Updating the snapshot must not run the listener cleanup: that flushes on
+  // exit, not on every camera/selection change during a gesture.
+  useEffect(
+    () => scheduleSave.current?.(),
+    [
+      o.enabled,
+      o.document,
+      o.page,
+      o.zoom,
+      o.scope,
+      o.selected,
+      o.selection,
+      o.history,
+      o.stable,
+      o.system?.open,
+      o.system?.investigating,
+      o.system?.anchor,
+      o.system?.response,
+      o.system?.positions,
+      o.system?.input,
+      o.system?.output,
+      o.system?.failure,
+    ],
+  );
 }

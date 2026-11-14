@@ -269,18 +269,36 @@ all attempts to read ignored reports, including on machines that retain local hi
 
 The default `check-canvas-interaction-browser` enforces deterministic interaction work budgets
 on a mixed 256-row worksheet and 100-drawing document: steady marquee movement and ordinary
-panning must neither render the scene nor measure its objects; object dragging must reuse
-captured geometry; selecting a drawing must retain unrelated SVG/math subtrees; a burst of
-wheel events must have a bounded render count. Same-task move/release, cancellation, anchored
-zoom, single-step Undo and unchanged authored bytes are checked too. `data-canvas-renders` and
-`data-drawing-renders` expose render diagnostics in the committed DOM alongside the existing
-mathematical render counts. These are work/correctness gates, not a hardware-independent FPS promise or a
+panning must neither render the scene nor measure its objects; steady object dragging and zoom
+must not render the application scene; typing/caret/reference-menu feedback stays local. Mixed
+SVG/worksheet movement preserves live connector endpoints without rebuilding unrelated marks.
+Closed region disclosures mount no command controls. Native viewport culling retains offscreen
+DOM/geometry and reveals the same mathematical subtree. Same-task move/release with distinct final
+coordinates, cancellation, anchored zoom, single-step Undo and unchanged authored bytes are checked
+too. A controlled-clock reload separately checks navigation-memory debouncing across camera
+snapshot/detail changes and one latest-camera exit flush. `check-canvas-navigation-browser` covers
+constant-distance touch rotation and middle-pan/zoom overlap as well as pinch anchoring.
+`data-canvas-renders` and `data-drawing-renders` expose render diagnostics alongside mathematical
+render counts. These are work/correctness gates, not a hardware-independent FPS promise or a
 capacity increase.
 
 ```sh
 npm run build
 npm run test:browser -- check-canvas-interaction-browser check-canvas-navigation-browser
+# Optional larger mixed workloads, after the same build (1,000 or 1,999 drawings):
+MANIFOLD_INTERACTION_DRAWINGS=1999 npm run test:browser -- check-canvas-interaction-browser
 ```
+
+The mixed check writes ignored `evidence/current/canvas/interaction-<drawing-count>-results.json`
+with source/environment metadata, deterministic work counts and raw timing observations plus
+median/p95/max. Page-side timestamps cover pointer-down to owned-capture feedback, movement to
+preview DOM/rendering opportunity, input to settled character/caret, release to settled layout,
+and edit to accepted DOM/rendering opportunity/`Saved locally`. A subsequent IndexedDB read
+checks the saved edit. The first observations are retained as cold samples; these are small bounded
+observations, not a statistical latency guarantee. Timing uses the real clock/RAF before the
+separate fake-clock reload used for debounce assertions. Mutation observation and two RAF callbacks
+establish DOM availability and a rendering opportunity, not compositor paint or physical input
+latency. No historical baseline, speedup or off-thread execution claim is inferred.
 
 For the worksheet browser rendering and interaction observations, build once and run:
 

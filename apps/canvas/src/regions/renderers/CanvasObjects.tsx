@@ -266,8 +266,8 @@ export function CanvasGroupView({
       style={{
         left: bounds.x - 12,
         top: Math.max(4, bounds.y - 40),
-        width: compact ? 270 : bounds.width + 24,
-        height: compact ? 74 : bounds.height + 52,
+        width: `var(--gesture-width, ${compact ? 270 : bounds.width + 24}px)`,
+        height: `var(--gesture-height, ${compact ? 74 : bounds.height + 52}px)`,
       }}
       onDoubleClick={(e) => {
         if (!(e.target as Element).closest("button")) focus();

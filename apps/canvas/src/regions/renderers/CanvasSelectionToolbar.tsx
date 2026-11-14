@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import type { CanvasRect } from "../selection";
+import { canvasZoom } from "../interaction/canvasViewport";
 
 /** Keep selection actions outside the selected content whenever viewport space permits. */
 export function CanvasSelectionToolbar({
@@ -20,6 +21,7 @@ export function CanvasSelectionToolbar({
     const canvas = toolbar?.closest<HTMLElement>(".er-canvas");
     if (!toolbar || !paper || !canvas) return;
     const place = () => {
+      const scale = canvasZoom(canvas, zoom);
       const viewport = canvas.getBoundingClientRect();
       const origin = paper.getBoundingClientRect();
       const margin = 12,
@@ -31,10 +33,10 @@ export function CanvasSelectionToolbar({
         right = viewport.left + canvas.clientWidth - margin,
         bottom = viewport.top + canvas.clientHeight - margin;
       const selection = {
-        x: origin.left + bounds.x * zoom,
-        y: origin.top + bounds.y * zoom,
-        width: bounds.width * zoom,
-        height: bounds.height * zoom,
+        x: origin.left + bounds.x * scale,
+        y: origin.top + bounds.y * scale,
+        width: bounds.width * scale,
+        height: bounds.height * scale,
       };
       let x = selection.x,
         y = selection.y - size.height - gap;
@@ -51,17 +53,19 @@ export function CanvasSelectionToolbar({
       }
       x = Math.max(left, Math.min(x, right - size.width));
       y = Math.max(top, Math.min(y, bottom - size.height));
-      toolbar.style.left = `${(x - origin.left) / zoom}px`;
-      toolbar.style.top = `${(y - origin.top) / zoom}px`;
+      toolbar.style.left = `${(x - origin.left) / scale}px`;
+      toolbar.style.top = `${(y - origin.top) / scale}px`;
     };
     place();
     const observer = new ResizeObserver(place);
     observer.observe(toolbar);
     observer.observe(canvas);
     canvas.addEventListener("scroll", place);
+    canvas.addEventListener("canvaszoom", place);
     return () => {
       observer.disconnect();
       canvas.removeEventListener("scroll", place);
+      canvas.removeEventListener("canvaszoom", place);
     };
   }, [bounds, zoom]);
   return (
@@ -88,7 +92,7 @@ export function CanvasSelectionToolbar({
       role="toolbar"
       aria-label="Canvas selection"
       style={{
-        transform: `scale(${1 / zoom})`,
+        transform: `scale(calc(1 / var(--canvas-zoom, ${zoom})))`,
         flexWrap: "wrap",
         boxSizing: "border-box",
       }}

@@ -1,9 +1,11 @@
 import { Hand, HelpCircle } from "lucide-react";
+import { useSyncExternalStore } from "react";
+import type { ZoomDisplay } from "../interaction/useCanvasNavigation";
 export function CanvasNavigationControls({
   visible,
   hand,
   setHand,
-  zoom,
+  display,
   zoomBy,
   fit,
   shortcuts,
@@ -12,12 +14,13 @@ export function CanvasNavigationControls({
   visible: boolean;
   hand: boolean;
   setHand: (value: boolean) => void;
-  zoom: number;
+  display: ZoomDisplay;
   zoomBy: (delta: number) => void;
   fit: () => void;
   shortcuts: () => void;
   fitShortcut: string;
 }) {
+  const zoom = useSyncExternalStore(display.subscribe, display.read);
   return (
     <div
       className="er-zoom"

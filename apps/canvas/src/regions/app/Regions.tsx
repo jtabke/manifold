@@ -42,10 +42,16 @@ import { CanvasNavigationControls } from "../renderers/CanvasNavigationControls"
 import { concepts } from "../renderers/paletteConcepts";
 import { presentCommand } from "../renderers/commandPresentation";
 import { MathLine } from "../renderers/MathLine";
+import {
+  RegionEditor,
+  type RegionEditorDraft,
+} from "../renderers/RegionEditor";
+import { RegionCommandMenu } from "../renderers/RegionCommandMenu";
 import { ReferencedNote } from "../renderers/ReferencedNote";
 import { CurveRegion } from "../renderers/CurveRegion";
 import {
   canvasScroll as viewportScroll,
+  canvasZoom,
   scrollCanvasTo,
   recenterCanvas,
   SCROLL_SURFACE,
@@ -195,12 +201,7 @@ import { CanvasToolView, CanvasGroupView } from "../renderers/CanvasObjects";
 import { dockObjects } from "../canvasScene";
 import type { EditorProps } from "../renderers/AreaEditors";
 import { sourceSpans } from "../editing";
-import {
-  planConnection,
-  connectionChoices,
-  plotChoices,
-  quantityDescription,
-} from "../linking";
+import { planConnection, connectionChoices, plotChoices } from "../linking";
 import {
   frameBounds,
   organizeFrames,
@@ -458,12 +459,22 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const [selected, setSelected] = useState<string | undefined>(
       resume?.selected,
     ),
-    [editing, setEditing] = useState<string>(),
-    [draft, setDraft] = useState(""),
-    [selectionSpan, setSelectionSpan] = useState<{
-      start: number;
-      end: number;
-    }>();
+    [editing, setEditing] = useState<string>();
+  const [writing] = useState<RegionEditorDraft>(() => ({
+    text: "",
+    links: {},
+    revision: 0,
+  }));
+  const setDraft = (text: string) => {
+    writing.text = text;
+    writing.revision++;
+  };
+  const setDraftLinks = (links: Record<string, string>) => {
+    writing.links = links;
+  };
+  const setSelectionSpan = (selection: RegionEditorDraft["selection"]) => {
+    writing.selection = selection;
+  };
   const [canvasSelection, setCanvasSelection] = useState<string[]>(
     resume?.selection || [],
   );
@@ -475,10 +486,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const lastCanvasPress = useRef<{ id?: string; point: Point } | undefined>(
     undefined,
   );
-  const [draftLinks, setDraftLinks] = useState<Record<string, string>>({});
-  const [caret, setCaret] = useState(0);
-  const [mentionIndex, setMentionIndex] = useState(0);
-  const [mentionDismissed, setMentionDismissed] = useState(false);
   type LinkTarget = {
     region?: string;
     artifact?: string;
@@ -644,8 +651,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     }
   });
   const title = page.title ?? legacyTitle ?? UNTITLED_DOCUMENT;
-  const [dragPreview, setDragPreview] = useState<Record<string, Point>>({});
-  const dragFrame = useFrameTask<Record<string, Point>>(setDragPreview);
   useEffect(() => {
     document.title = `${title} — Manifold`;
     if (!artifactMode) return;
@@ -660,7 +665,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     }
   }, [title, page.title, legacyTitle, session, artifactMode]);
   const flowPlaces = useMemo(() => {
-    const places = { ...basePlaces, ...dragPreview };
+    const places = { ...basePlaces };
     if (dataSelection && !!dataSelection.detail && dataSelection.rows.length) {
       const expanded = (page.dataRelations || []).filter(
         (r) =>
@@ -694,14 +699,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               };
     }
     return places;
-  }, [basePlaces, dragPreview, dataSelection, page, editing]);
+  }, [basePlaces, dataSelection, page, editing]);
 
   const editor = useRef<HTMLTextAreaElement>(null),
     canvas = useRef<HTMLDivElement>(null),
-    skipBlur = useRef(false),
-    drag = useRef<
-      { id: string; x: number; y: number; start: Point } | undefined
-    >(undefined);
+    skipBlur = useRef(false);
   const navigation = useCanvasNavigation(
     canvas,
     zoom,
@@ -857,7 +859,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ];
       let nextY = page.origin.y;
       for (const r of page.regions) {
-        if (page.layout[r.id] || dragPreview[r.id]) continue;
+        if (page.layout[r.id]) continue;
         const height = regionAdvance(r.text, regionHeights[r.id]);
         places[r.id] = freeRegionPosition(
           { ...places[r.id], y: Math.max(places[r.id].y, nextY) },
@@ -881,14 +883,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     artifactMode,
     artifactFrames,
     regionHeights,
-    dragPreview,
   ]);
   const canvasPoint = (clientX: number, clientY: number): Point => {
     const node = canvas.current!,
       rect = node.getBoundingClientRect();
+    const scale = canvasZoom(node, zoom);
     return {
-      x: (clientX - rect.left + viewportScroll(node).x) / zoom,
-      y: (clientY - rect.top + viewportScroll(node).y) / zoom,
+      x: (clientX - rect.left + viewportScroll(node).x) / scale,
+      y: (clientY - rect.top + viewportScroll(node).y) / scale,
     };
   };
   const readCanvasFrames = (ids?: ReadonlySet<string>): CanvasFrame[] => {
@@ -897,7 +899,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     const node = canvas.current;
     if (!node) return [];
     const origin = node.getBoundingClientRect(),
-      scroll = viewportScroll(node);
+      scroll = viewportScroll(node),
+      scale = canvasZoom(node, zoom);
     const frames: CanvasFrame[] = [
       ...node.querySelectorAll<HTMLElement>(
         "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
@@ -928,7 +931,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           if (parts.length) {
             right = Math.max(...parts.map((r) => r.right));
             bottom = Math.max(
-              rect.top + 50 * zoom,
+              rect.top + 50 * scale,
               ...parts.map((r) => r.bottom),
             );
           }
@@ -942,10 +945,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             el.dataset.dataRelationId ||
             el.dataset.plotId!,
           kind: region ? "region" : "plot",
-          x: (rect.left - origin.left + scroll.x) / zoom,
-          y: (rect.top - origin.top + scroll.y) / zoom,
-          width: Math.max(30, (right - rect.left) / zoom),
-          height: Math.max(30, (bottom - rect.top) / zoom),
+          x: (rect.left - origin.left + scroll.x) / scale,
+          y: (rect.top - origin.top + scroll.y) / scale,
+          width: Math.max(30, (right - rect.left) / scale),
+          height: Math.max(30, (bottom - rect.top) / scale),
         };
       });
     // One traversal, not one selector search per drawing (quadratic on dense scenes).
@@ -1067,11 +1070,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     readFrames: readCanvasFrames,
     extraFrames,
   });
-  useEffect(() => {
-    dragFrame.cancel();
-    drag.current = undefined;
-    setDragPreview({});
-  }, [spatial.cancelVersion, dragFrame]);
   places = { ...places, ...spatial.preview };
   const drawingPlacements = useMemo(
     () =>
@@ -1271,7 +1269,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     editing,
     term,
     overlay,
-    dragPreview,
     spatial.preview,
   ]);
   // Measured heights are presentation state, never accepted layout or history.
@@ -1548,8 +1545,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setEditing(id);
     setDraft(accepted.texts[id] ?? "");
     setDraftLinks(page.links?.[id] || {});
-    setCaret(span?.start ?? (accepted.texts[id] || "").length);
-    setMentionDismissed(false);
     setLinkMenu(undefined);
     setSelectionSpan(
       exploration?.input === id
@@ -1560,23 +1555,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setMessage("");
     skipBlur.current = false;
   };
-  useEffect(() => {
-    if (editing) {
-      editor.current?.focus();
-      const end = editor.current?.value.length || 0;
-      editor.current?.setSelectionRange(
-        selectionSpan?.start ?? end,
-        selectionSpan?.end ?? end,
-      );
-    }
-  }, [editing, selectionSpan]);
-  useLayoutEffect(() => {
-    if (editing)
-      revealCanvasElement(editor.current, {
-        block: "nearest",
-        inline: "nearest",
-      });
-  }, [editing, draft, selectionSpan]);
   const writingPoint = () => {
     const at = {
       x: viewportScroll(canvas.current).x / zoom + 110,
@@ -1609,14 +1587,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setDraft(text);
     setSelectionSpan(undefined);
     setDraftLinks({});
-    setCaret(0);
-    setMentionDismissed(false);
     setLinkMenu(undefined);
     setTerm(undefined);
     skipBlur.current = false;
   };
   const commit = (continuation = false) => {
     if (!editing) return true;
+    const draft = writing.text,
+      draftLinks = writing.links;
     let result: ReturnType<RegionSession["write"]>;
     try {
       result = session.atomic((staged) => {
@@ -1659,8 +1637,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setEditing(result.next);
       setDraft("");
       setDraftLinks({});
-      setCaret(0);
-      setMentionDismissed(false);
       setSelectionSpan(undefined);
     } else {
       setEditing(undefined);
@@ -2414,55 +2390,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setMessage(`Could not save workspace file: ${(error as Error).message}`);
     }
   };
-  const mention =
-    editing && !mentionDismissed
-      ? /@([A-Za-z_0-9 ]*)$/.exec(draft.slice(0, caret))
-      : null;
-  const mentionCandidates = mention
-    ? page.regions
-        .filter((r) => {
-          const s = accepted.statements.get(r.id);
-          if (
-            r.data &&
-            !/^\s*[A-Za-z_][A-Za-z_0-9]*\s*(?::=|=|<=|>=|<|>|≤|≥)/.test(draft)
-          )
-            return r.data.name
-              .toLowerCase()
-              .includes(mention[1].toLowerCase().trim());
-          return (
-            r.id !== editing &&
-            s?.relation === "=" &&
-            accepted.sources[s.name]?.length === 1 &&
-            !accepted.errors.has(r.id) &&
-            accepted.solved.values.has(s.name) &&
-            `${s.name} ${quantityDescription(s.name)}`
-              .toLowerCase()
-              .includes(mention[1].toLowerCase().trim())
-          );
-        })
-        .slice(0, 8)
-    : [];
-  useEffect(() => setMentionIndex(0), [mention?.[1]]);
-  const insertReference = (source: string) => {
-    if (!mention) return;
-    const evidence = page.regions.find((r) => r.id === source)?.data;
-    let name =
-      accepted.statements.get(source)?.name ||
-      `data_${(evidence?.name || "source").replace(/\.csv$/i, "").replace(/[^A-Za-z_0-9]/g, "_")}`;
-    if (evidence) {
-      const base = name;
-      let n = 2;
-      while (draftLinks[name] && draftLinks[name] !== source)
-        name = `${base}_${n++}`;
-    }
-    const start = caret - mention[0].length,
-      end = start + name.length;
-    setDraft(draft.slice(0, start) + name + draft.slice(caret));
-    setDraftLinks((bindings) => ({ ...bindings, [name]: source }));
-    setCaret(end);
-    setSelectionSpan({ start: end, end });
-    setMentionDismissed(false);
-  };
   const targetAt = (x: number, y: number): LinkTarget | undefined => {
     const hit = document.elementFromPoint(x, y),
       object = hit?.closest<HTMLElement>(
@@ -2813,6 +2740,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ? connectionChoices(page, linkMenu.source, linkMenu.target?.region)
       : [];
   const requestedLink = useMemo(() => {
+    if (!palette) return;
     const match =
       /^(?:use|connect)\s+([A-Za-z_][A-Za-z_0-9]*)\s+(?:for|to)\s+([A-Za-z_][A-Za-z_0-9]*)(?:\s+(?:in|of)\s+([A-Za-z_][A-Za-z_0-9]*))?\s*$/i.exec(
         query,
@@ -2831,16 +2759,16 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           accepted.statements.get(c.edit.target)?.name === match[2],
     );
     return choices.length === 1 ? choices[0] : undefined;
-  }, [query, page, accepted]);
+  }, [palette, query, page, accepted]);
   const workspaceFile = useRef<HTMLInputElement>(null);
-  const openGuard = useRef({ editing, draft });
+  const openGuard = useRef(editing);
   const [editBuffers] = useState(createEditBuffers);
   const [drawingToolbar, setDrawingToolbar] = useState<HTMLDivElement | null>(
     null,
   );
-  openGuard.current = { editing, draft };
+  openGuard.current = editing;
   const workspaceEdits: WorkspaceEdits = editBuffers.compose({
-    read: () => openGuard.current,
+    read: () => ({ editing: openGuard.current, draft: writing.text }),
     finish: () => {
       if (editing && !commit()) return false;
       setEditing(undefined);
@@ -2865,7 +2793,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       scope: hierarchy.scope,
       viewport: {
         scroll: viewportScroll(canvas.current),
-        zoom,
+        zoom: canvasZoom(canvas.current, zoom),
         width: canvas.current?.clientWidth,
         height: canvas.current?.clientHeight,
       },
@@ -3498,34 +3426,37 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     detail = selectionDetail,
     ids: string[] = [],
   ) => resolveCommands(commandContextFor(id, detail, ids), dispatchCommand);
-  const selectedContext = commandContextFor(
-    selectedPlot?.output || selected || selectedId,
-    selectedPlot
-      ? { owner: selectedPlot.output, kind: "plot", view: selectedPlot.id }
-      : selectionDetail,
-    canvasSelection,
-  );
-  const selectedCommands = resolveCommands(selectedContext, dispatchCommand);
-  const globalCommands = resolveWorkspaceCommands(
-    selectedContext,
-    dispatchCommand,
-  );
+  const selectedContext = palette
+    ? commandContextFor(
+        selectedPlot?.output || selected || selectedId,
+        selectedPlot
+          ? { owner: selectedPlot.output, kind: "plot", view: selectedPlot.id }
+          : selectionDetail,
+        canvasSelection,
+      )
+    : undefined;
+  const selectedCommands = selectedContext
+    ? resolveCommands(selectedContext, dispatchCommand)
+    : [];
+  const menuContext = actionMenu
+    ? commandContextFor(actionMenu.target, selectionDetail, canvasSelection)
+    : undefined;
+  const workspaceContext = selectedContext || menuContext;
+  const globalCommands = workspaceContext
+    ? resolveWorkspaceCommands(workspaceContext, dispatchCommand)
+    : [];
   const availableCommands = [
     ...selectedCommands,
     ...globalCommands.filter(
       (global) => !selectedCommands.some((command) => command.id === global.id),
     ),
   ];
-  const paletteCommands = searchCommands(
-    availableCommands,
-    query,
-    recentCommands,
-  );
-  const requestedPlot = requestedPlotCommand(
-    selectedContext,
-    query,
-    dispatchCommand,
-  );
+  const paletteCommands = palette
+    ? searchCommands(availableCommands, query, recentCommands)
+    : [];
+  const requestedPlot = selectedContext
+    ? requestedPlotCommand(selectedContext, query, dispatchCommand)
+    : undefined;
   const requestedConnectionBase =
     requestedLink &&
     resolveCommands(
@@ -3559,13 +3490,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             }),
         }
       : undefined;
-  const menuContext = commandContextFor(
-    actionMenu?.target,
-    selectionDetail,
-    canvasSelection,
-  );
-  const menuCommands = resolveCommands(menuContext, dispatchCommand);
-  const menuSubject = commandSubject(menuContext);
+  const menuCommands = menuContext
+    ? resolveCommands(menuContext, dispatchCommand)
+    : [];
+  const menuSubject = menuContext ? commandSubject(menuContext) : "Canvas";
   const overlapActions =
     actionMenu && overlaps.ids.length > 1
       ? [
@@ -4109,7 +4037,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     if (!value || workspaceEdits.finish())
                       navigation.setHand(value);
                   }}
-                  zoom={zoom}
+                  display={navigation.display}
                   zoomBy={navigation.zoomBy}
                   fit={fit}
                 />
@@ -4475,7 +4403,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 )
                   return;
                 if (!target.closest(".er-link-popover")) setLinkMenu(undefined);
-                if (target.closest("input,textarea,[contenteditable]")) return;
+                if (
+                  target.closest("input,textarea,[contenteditable],.er-actions")
+                )
+                  return;
                 if (
                   target.closest(
                     "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
@@ -5376,7 +5307,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                                     fresh(at);
                                     setDraft(`${result} = ${name}`);
                                     setDraftLinks({ [name]: source });
-                                    setCaret(result.length);
                                     setSelectionSpan({
                                       start: 0,
                                       end: result.length,
@@ -5405,29 +5335,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         )}
                       </CanvasConnectionPopover>
                     )}
-                    {spatial.guides.map((guide) => (
-                      <div
-                        key={guide.axis}
-                        className="er-alignment-guide"
-                        data-alignment-axis={guide.axis}
-                        aria-hidden="true"
-                        style={
-                          guide.axis === "x"
-                            ? {
-                                left: guide.at,
-                                top: guide.from,
-                                height: guide.to - guide.from,
-                                borderLeftWidth: 1 / zoom,
-                              }
-                            : {
-                                top: guide.at,
-                                left: guide.from,
-                                width: guide.to - guide.from,
-                                borderTopWidth: 1 / zoom,
-                              }
-                        }
-                      />
-                    ))}
+                    <div ref={spatial.guideLayer} aria-hidden="true" />
                     {selectedFrames
                       .filter((frame) => frame.kind !== "drawing")
                       .map((frame) => (
@@ -5787,58 +5695,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                           })
                         }
                         move={(e) => {
-                          e.currentTarget.setPointerCapture(e.pointerId);
-                          drag.current = {
-                            id: relation.id,
-                            x: e.clientX,
-                            y: e.clientY,
-                            start: places[relation.id],
-                          };
-                          const node = e.currentTarget as HTMLElement;
-                          const move = (event: globalThis.PointerEvent) => {
-                            if (drag.current?.id === relation.id)
-                              dragFrame.schedule({
-                                [relation.id]: {
-                                  x:
-                                    drag.current.start.x +
-                                    (event.clientX - drag.current.x) / zoom,
-                                  y:
-                                    drag.current.start.y +
-                                    (event.clientY - drag.current.y) / zoom,
-                                },
-                              });
-                          };
-                          const end = (event: globalThis.PointerEvent) => {
-                            node.removeEventListener("pointermove", move);
-                            node.removeEventListener("pointerup", end);
-                            node.removeEventListener("pointercancel", cancel);
-                            if (drag.current?.id === relation.id) {
-                              dragFrame.cancel();
-                              spatial.finishPositions({
-                                [relation.id]: {
-                                  x:
-                                    drag.current.start.x +
-                                    (event.clientX - drag.current.x) / zoom,
-                                  y:
-                                    drag.current.start.y +
-                                    (event.clientY - drag.current.y) / zoom,
-                                },
-                              });
-                              drag.current = undefined;
-                              setDragPreview({});
-                            }
-                          };
-                          const cancel = () => {
-                            dragFrame.cancel();
-                            node.removeEventListener("pointermove", move);
-                            node.removeEventListener("pointerup", end);
-                            node.removeEventListener("pointercancel", cancel);
-                            drag.current = undefined;
-                            setDragPreview({});
-                          };
-                          node.addEventListener("pointermove", move);
-                          node.addEventListener("pointerup", end);
-                          node.addEventListener("pointercancel", cancel);
+                          if (e.button === 0)
+                            e.currentTarget.setPointerCapture(e.pointerId);
                         }}
                         remove={() =>
                           session.removeDatasetRelation(relation.id)
@@ -5910,52 +5768,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             className="er-grip"
                             aria-label={`Move ${s?.name || "region"}`}
                             onPointerDown={(e) => {
+                              if (e.button !== 0) return;
                               e.stopPropagation();
                               e.currentTarget.setPointerCapture(e.pointerId);
-                              drag.current = {
-                                id,
-                                x: e.clientX,
-                                y: e.clientY,
-                                start: at,
-                              };
-                            }}
-                            onPointerMove={(e) => {
-                              if (drag.current?.id === id)
-                                dragFrame.schedule({
-                                  [id]: {
-                                    x:
-                                      drag.current.start.x +
-                                      (e.clientX - drag.current.x) / zoom,
-                                    y:
-                                      drag.current.start.y +
-                                      (e.clientY - drag.current.y) / zoom,
-                                  },
-                                });
-                            }}
-                            onPointerUp={(e) => {
-                              if (drag.current) {
-                                dragFrame.cancel();
-                                spatial.finishPositions({
-                                  [id]: {
-                                    x:
-                                      drag.current.start.x +
-                                      (e.clientX - drag.current.x) / zoom,
-                                    y:
-                                      drag.current.start.y +
-                                      (e.clientY - drag.current.y) / zoom,
-                                  },
-                                });
-                                drag.current = undefined;
-                                setDragPreview({});
-                                e.currentTarget.releasePointerCapture(
-                                  e.pointerId,
-                                );
-                              }
-                            }}
-                            onPointerCancel={() => {
-                              dragFrame.cancel();
-                              drag.current = undefined;
-                              setDragPreview({});
                             }}
                           >
                             <GripVertical size={16} />
@@ -5979,103 +5794,69 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             effectiveText &&
                             !variation &&
                             !palette && (
-                              <details
+                              <RegionCommandMenu
                                 key={JSON.stringify(
                                   commandContextFor(id).target,
                                 )}
-                                className="er-actions"
-                                onClick={(e) => e.stopPropagation()}
-                                onToggle={(e) => {
-                                  if (
-                                    e.currentTarget.open &&
-                                    e.currentTarget.isConnected
-                                  )
-                                    revealCanvasElement(
-                                      e.currentTarget.querySelector(
-                                        '[role="toolbar"]',
-                                      ),
-                                      { block: "nearest", inline: "nearest" },
-                                    );
-                                }}
-                                onBlur={(e) => {
-                                  if (
-                                    !e.currentTarget.contains(e.relatedTarget)
-                                  )
-                                    e.currentTarget.open = false;
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Escape") {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    e.currentTarget.open = false;
-                                    e.currentTarget
-                                      .querySelector("summary")
-                                      ?.focus();
-                                  }
-                                }}
                               >
-                                <summary
-                                  aria-label="Region commands"
-                                  title="Region actions"
-                                >
-                                  <MoreHorizontal size={17} />
-                                </summary>
-                                <div
-                                  className={
-                                    quiet
-                                      ? "er-object-actions"
-                                      : "er-region-actions"
-                                  }
-                                  style={{
-                                    maxWidth: (viewportWidth - 24) / zoom,
-                                  }}
-                                  role="toolbar"
-                                  aria-label={`${commandSubject(commandContextFor(id))} actions`}
-                                  data-selection-kind={
-                                    commandContextFor(id).target.kind
-                                  }
-                                >
-                                  <span className="er-command-selection">
-                                    {commandSubject(commandContextFor(id))}
-                                  </span>
-                                  {toolbarCommands(
-                                    contextCommandsFor(id),
-                                    commandContextFor(id).target.kind,
-                                  ).map((command) => (
+                                {() => (
+                                  <div
+                                    className={
+                                      quiet
+                                        ? "er-object-actions"
+                                        : "er-region-actions"
+                                    }
+                                    style={{
+                                      maxWidth: (viewportWidth - 24) / zoom,
+                                    }}
+                                    role="toolbar"
+                                    aria-label={`${commandSubject(commandContextFor(id))} actions`}
+                                    data-selection-kind={
+                                      commandContextFor(id).target.kind
+                                    }
+                                  >
+                                    <span className="er-command-selection">
+                                      {commandSubject(commandContextFor(id))}
+                                    </span>
+                                    {toolbarCommands(
+                                      contextCommandsFor(id),
+                                      commandContextFor(id).target.kind,
+                                    ).map((command) => (
+                                      <button
+                                        key={command.key}
+                                        data-command-id={command.id}
+                                        data-command-key={command.key}
+                                        disabled={!!command.unavailable}
+                                        title={
+                                          command.unavailable || command.preview
+                                        }
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          executeCommand(command);
+                                        }}
+                                      >
+                                        {command.toolbarLabel}
+                                      </button>
+                                    ))}
                                     <button
-                                      key={command.key}
-                                      data-command-id={command.id}
-                                      data-command-key={command.key}
-                                      disabled={!!command.unavailable}
-                                      title={
-                                        command.unavailable || command.preview
-                                      }
+                                      aria-label="More region actions"
+                                      title="All actions"
                                       onClick={(event) => {
                                         event.stopPropagation();
-                                        executeCommand(command);
+                                        const rect =
+                                          event.currentTarget.getBoundingClientRect();
+                                        openActionMenu(
+                                          rect.left,
+                                          rect.bottom,
+                                          id,
+                                        );
                                       }}
                                     >
-                                      {command.toolbarLabel}
+                                      <MoreHorizontal size={17} />
                                     </button>
-                                  ))}
-                                  <button
-                                    aria-label="More region actions"
-                                    title="All actions"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      const rect =
-                                        event.currentTarget.getBoundingClientRect();
-                                      openActionMenu(
-                                        rect.left,
-                                        rect.bottom,
-                                        id,
-                                      );
-                                    }}
-                                  >
-                                    <MoreHorizontal size={17} />
-                                  </button>
-                                </div>
-                              </details>
+                                  </div>
+                                )}
+                              </RegionCommandMenu>
                             )}
                           {expansionId === id && !focusedInput && (
                             <button
@@ -6090,202 +5871,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             </button>
                           )}
                           {editing === id ? (
-                            <>
-                              <textarea
-                                ref={editor}
-                                aria-label="Write an engineering region"
-                                value={draft}
-                                spellCheck={false}
-                                rows={Math.max(1, draft.split("\n").length)}
-                                onChange={(e) => {
-                                  setDraft(e.target.value);
-                                  setCaret(e.target.selectionStart);
-                                  setMentionDismissed(false);
-                                }}
-                                onSelect={(e) =>
-                                  setCaret(e.currentTarget.selectionStart)
-                                }
-                                aria-autocomplete="list"
-                                aria-describedby="er-writing-help"
-                                aria-controls={
-                                  mention ? "er-reference-options" : undefined
-                                }
-                                aria-activedescendant={
-                                  mentionCandidates[mentionIndex]
-                                    ? `er-reference-${mentionCandidates[mentionIndex].id}`
-                                    : undefined
-                                }
-                                onBlur={() => {
-                                  if (skipBlur.current) {
-                                    skipBlur.current = false;
-                                    return;
-                                  }
-                                  commit();
-                                }}
-                                onKeyDown={(e) => {
-                                  e.stopPropagation();
-                                  // Let the input method finish its text before treating
-                                  // Enter, Escape or arrows as canvas commands.
-                                  if (
-                                    e.nativeEvent.isComposing ||
-                                    e.keyCode === 229
-                                  )
-                                    return;
-                                  if (
-                                    mention &&
-                                    (e.key === "Escape" ||
-                                      (mentionCandidates.length > 0 &&
-                                        !e.shiftKey &&
-                                        [
-                                          "ArrowDown",
-                                          "ArrowUp",
-                                          "Enter",
-                                          "Tab",
-                                        ].includes(e.key)))
-                                  ) {
-                                    e.preventDefault();
-                                    if (e.key === "Escape")
-                                      setMentionDismissed(true);
-                                    else if (
-                                      e.key === "ArrowDown" ||
-                                      e.key === "ArrowUp"
-                                    )
-                                      setMentionIndex(
-                                        (i) =>
-                                          (i +
-                                            (e.key === "ArrowDown" ? 1 : -1) +
-                                            Math.max(
-                                              1,
-                                              mentionCandidates.length,
-                                            )) %
-                                          Math.max(1, mentionCandidates.length),
-                                      );
-                                    else if (mentionCandidates[mentionIndex])
-                                      insertReference(
-                                        mentionCandidates[mentionIndex].id,
-                                      );
-                                    return;
-                                  }
-                                  if (
-                                    (e.metaKey || e.ctrlKey) &&
-                                    e.key.toLowerCase() === "k"
-                                  ) {
-                                    e.preventDefault();
-                                    paletteOpen("search");
-                                    return;
-                                  }
-                                  if (e.key === "/" && !draft.trim()) {
-                                    e.preventDefault();
-                                    paletteOpen("slash");
-                                    return;
-                                  }
-                                  if (e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    skipBlur.current = true;
-                                    commit(true);
-                                    return;
-                                  }
-                                  if (e.key === "Escape") {
-                                    e.preventDefault();
-                                    skipBlur.current = true;
-                                    commit();
-                                    return;
-                                  }
-                                  if (e.key === "Tab") {
-                                    const spans = sourceSpans(draft),
-                                      cursor = e.currentTarget.selectionEnd;
-                                    const next = e.shiftKey
-                                      ? [...spans]
-                                          .reverse()
-                                          .find(
-                                            (span) =>
-                                              span.end <
-                                              e.currentTarget.selectionStart,
-                                          )
-                                      : spans.find(
-                                          (span) =>
-                                            span.start >= cursor &&
-                                            span.end !== cursor,
-                                        );
-                                    if (next) {
-                                      e.preventDefault();
-                                      e.currentTarget.setSelectionRange(
-                                        next.start,
-                                        next.end,
-                                      );
-                                    } else if (!e.shiftKey) {
-                                      e.preventDefault();
-                                      skipBlur.current = true;
-                                      commit(true);
-                                    }
-                                  }
-                                }}
-                              />
-                              <small
-                                id="er-writing-help"
-                                className="er-writing-help"
-                              >
-                                {mention && mentionCandidates.length
-                                  ? "↑↓ Choose · Enter Insert reference · Esc Dismiss · Shift+Enter New line"
-                                  : "Enter Continue below · Esc Finish · Shift+Enter New line · @ Reference"}
-                              </small>
-                              {mention && (
-                                <div
-                                  id="er-reference-options"
-                                  className="er-reference-menu"
-                                  role="listbox"
-                                  aria-label="Reference an object"
-                                  onPointerDown={(e) => e.preventDefault()}
-                                >
-                                  {mentionCandidates.map((candidate, index) => {
-                                    const definition = accepted.statements.get(
-                                        candidate.id,
-                                      ),
-                                      value =
-                                        definition &&
-                                        accepted.solved.values.get(
-                                          definition.name,
-                                        );
-                                    return (
-                                      <button
-                                        id={`er-reference-${candidate.id}`}
-                                        key={candidate.id}
-                                        role="option"
-                                        aria-selected={index === mentionIndex}
-                                        onClick={() =>
-                                          insertReference(candidate.id)
-                                        }
-                                      >
-                                        <strong>
-                                          {definition?.name ||
-                                            candidate.data?.name}
-                                        </strong>
-                                        <span>
-                                          {definition
-                                            ? quantityDescription(
-                                                definition.name,
-                                              )
-                                            : "Evidence reference"}
-                                        </span>
-                                        <small>
-                                          {value
-                                            ? display(value)
-                                            : candidate.data
-                                              ? "Not a calculation input"
-                                              : ""}
-                                        </small>
-                                      </button>
-                                    );
-                                  })}
-                                  {!mentionCandidates.length && (
-                                    <small role="status">
-                                      No matching resolved quantities. Keep
-                                      writing or press Esc to dismiss.
-                                    </small>
-                                  )}
-                                </div>
-                              )}
-                            </>
+                            <RegionEditor
+                              key={`${id}:${writing.revision}`}
+                              id={id}
+                              buffer={writing}
+                              page={page}
+                              accepted={accepted}
+                              editor={editor}
+                              skipBlur={skipBlur}
+                              commit={commit}
+                              paletteOpen={paletteOpen}
+                            />
                           ) : region.data ? (
                             <DataRegion
                               data={region.data}
@@ -7308,7 +6904,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             }}
             requestedConnection={requestedConnection}
             requestedPlot={requestedPlot}
-            selectedContext={selectedContext}
+            selectedContext={selectedContext!}
             scopeLabel={
               hierarchy.path.map((model) => model.name).join(" / ") || "Canvas"
             }

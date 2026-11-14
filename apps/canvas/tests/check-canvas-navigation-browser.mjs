@@ -9,6 +9,7 @@ try {
   });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.clock.install();
   await page.goto(base);
   const canvas = page.locator(".er-canvas");
   await expect(canvas).toBeVisible();
@@ -95,9 +96,13 @@ try {
   // correctly while several pointer events share one queued display frame.
   await page.keyboard.press("ControlOrMeta+0");
   await expect.poll(async () => (await camera()).zoom).toBe(1);
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   const touchBefore = await camera();
   const cdp = await page.context().newCDPSession(page);
-  const center = { x: bounds.x + anchor.x, y: bounds.y + anchor.y };
+  const center = {
+    x: Math.round(bounds.x + anchor.x),
+    y: Math.round(bounds.y + anchor.y),
+  };
   const contacts = (distance, dy) =>
     [-1, 1].map((side, i) => ({
       x: center.x + (side * distance) / 2,
@@ -110,23 +115,71 @@ try {
   });
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchMove",
-    touchPoints: contacts(240, 10),
+    touchPoints: contacts(220, 10),
   });
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(17);
+      return (await camera()).zoom;
+    })
+    .toBeCloseTo(1.1, 2);
+  const beforeRotation = await camera();
+  // Rotate one contact through a 3-4-5 triangle: distance stays exactly 220,
+  // but the center moves. A retained zoom preview must display that pan too.
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [
+      { x: center.x - 66, y: center.y + 142, id: 1 },
+      { x: center.x + 110, y: center.y + 10, id: 2 },
+    ],
+  });
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(17);
+      return (await camera()).x;
+    })
+    .toBeCloseTo(beforeRotation.x - 22, 0);
+  const rotated = await camera();
+  expect(rotated.zoom).toBe(beforeRotation.zoom);
+  expect(rotated.x).toBeCloseTo(beforeRotation.x - 22, 0);
+  expect(rotated.y).toBeCloseTo(beforeRotation.y - 66, 0);
   await cdp.send("Input.dispatchTouchEvent", {
     type: "touchEnd",
     touchPoints: [],
   });
-  await expect.poll(async () => (await camera()).zoom).toBeCloseTo(1.2, 2);
+  await page.clock.runFor(34);
+  await expect.poll(async () => (await camera()).zoom).toBeCloseTo(1.1, 2);
   const touchAfter = await camera();
-  expect((touchAfter.x + anchor.x) / touchAfter.zoom).toBeCloseTo(
+  expect((touchAfter.x + anchor.x + 22) / touchAfter.zoom).toBeCloseTo(
     touchBefore.x + anchor.x,
     0,
   );
-  expect((touchAfter.y + anchor.y + 10) / touchAfter.zoom).toBeCloseTo(
+  expect((touchAfter.y + anchor.y + 76) / touchAfter.zoom).toBeCloseTo(
     touchBefore.y + anchor.y,
     0,
   );
   await cdp.detach();
+  // Middle-button panning can overlap a wheel zoom without restoring the old
+  // camera or dropping a movement that follows the preview frame.
+  await page.mouse.move(center.x, center.y);
+  await page.mouse.down({ button: "middle" });
+  await pinch(-1);
+  await page.clock.runFor(17);
+  const chordBefore = await camera();
+  await page.mouse.move(center.x + 30, center.y + 20);
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(17);
+      return (await camera()).x;
+    })
+    .toBeCloseTo(chordBefore.x - 30, 0);
+  const chordAfter = await camera();
+  expect(chordAfter.zoom).toBe(chordBefore.zoom);
+  expect(chordAfter.x).toBeCloseTo(chordBefore.x - 30, 0);
+  expect(chordAfter.y).toBeCloseTo(chordBefore.y - 20, 0);
+  await page.mouse.up({ button: "middle" });
+  await page.clock.runFor(400);
+  await page.clock.resume();
   expect(errors).toEqual([]);
   console.log(
     "Two-finger pan, bidirectional pointer-anchored wheel/pinch, two-contact touch zoom and pan after zoom passed.",

@@ -4,6 +4,19 @@
 export const SCROLL_SURFACE = 65536;
 const CENTER = SCROLL_SURFACE / 2;
 const origins = new WeakMap<HTMLElement, { x: number; y: number }>();
+const zooms = new WeakMap<HTMLElement, number>();
+/** The displayed camera may lead the settled React state during a zoom burst. */
+export function canvasZoom(node: HTMLElement | null, settled: number) {
+  return (node && zooms.get(node)) ?? settled;
+}
+export function displayCanvasZoom(node: HTMLElement, zoom: number) {
+  const before = zooms.get(node);
+  zooms.set(node, zoom);
+  node.style.setProperty("--canvas-zoom", String(zoom));
+  const paper = node.querySelector<HTMLElement>(".er-paper");
+  if (paper) paper.style.transform = `scale(${zoom})`;
+  if (before !== zoom) node.dispatchEvent(new Event("canvaszoom"));
+}
 export function canvasOrigin(node: HTMLElement | null) {
   return (node && origins.get(node)) || { x: 0, y: 0 };
 }

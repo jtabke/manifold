@@ -270,10 +270,13 @@ try {
   await pinch(20);
   await expect(page.locator(".er-zoom")).toContainText("82%");
   const peerPosition = () =>
-    gainRegion.evaluate((node) => ({
-      x: parseFloat(node.style.left),
-      y: parseFloat(node.style.top),
-    }));
+    gainRegion.evaluate((node) => {
+      const [dx, dy] = node.style.translate.split(" ").map(Number.parseFloat);
+      return {
+        x: parseFloat(node.style.left) + (dx || 0),
+        y: parseFloat(node.style.top) + (dy || 0),
+      };
+    });
   const peerBefore = await peerPosition();
   // Free detachment previews the old group's gap closing too, including at fractional zoom.
   await start(region.getByRole("button", { name: "Move F", exact: true }));

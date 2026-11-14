@@ -177,11 +177,16 @@ export const DrawingDimensions = memo(function DrawingDimensions({
         if (action) shortcuts.current.onShortcut(action);
       }
     };
+    const camera = () => {
+      if (drag.current) cancel();
+    };
     window.addEventListener("keydown", key, true);
     window.addEventListener("blur", cancel);
+    window.addEventListener("canvaszoom", camera, true);
     return () => {
       window.removeEventListener("keydown", key, true);
       window.removeEventListener("blur", cancel);
+      window.removeEventListener("canvaszoom", camera, true);
     };
   }, []);
   useEffect(() => {
