@@ -49,8 +49,7 @@ unmount. Worksheet character/caret/reference-menu state stays in `RegionEditor`;
 buffer remains readable by that same completion/file facade without rendering `Regions` per
 keystroke. Preserve IME handling and fresh draft/link reads at completion. Editor width changes
 must not invalidate the entire scene; meaningful height changes may still update worksheet flow.
-Resolve palette/action commands only while those surfaces are open. `RegionCommandMenu` owns its
-own disclosure state and lazily mounts/resolves its controls. A deliberately submitted preview is a transient proposal, never an implicitly accepted
+Resolve commands for the active selection toolbar or open menu/search surface, not for every worksheet row. A deliberately submitted preview is a transient proposal, never an implicitly accepted
 input. The common workspace facade owns file transitions and saving; representations do not create
 their own persistence mechanism. Authored groups/tools/closed/pins and named layouts use ordinary records through
 [the scene adapter](decisions/0032-portable-authored-canvas-scene.md). Active camera, selection,

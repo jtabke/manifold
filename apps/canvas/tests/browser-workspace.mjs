@@ -135,10 +135,3 @@ export async function startWriting(page) {
     .fill("Write");
   await page.locator('[data-command-id="canvas.write"]').click();
 }
-/** Open the selected region’s actions through the same explicit disclosure as the user. */
-export async function revealRegionActions(page) {
-  const actions = page.locator(".er-region.is-selected > .er-actions");
-  await actions.waitFor({ state: "attached" });
-  if ((await actions.getAttribute("open")) === null)
-    await actions.locator("summary").click();
-}

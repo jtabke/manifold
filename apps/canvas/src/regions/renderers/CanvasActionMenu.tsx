@@ -5,8 +5,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Intent } from "../interaction/commands";
-import { ArrowLeft, ChevronRight } from "lucide-react";
 import "../styles/canvasActionMenu.css";
 
 export type CanvasAction = {
@@ -14,13 +12,11 @@ export type CanvasAction = {
   key: string;
   label: string;
   icon: ReactNode;
-  intent?: Intent;
+  dividerBefore?: boolean;
   unavailable?: string;
   hint?: string;
-} & (
-  | { run: () => void; items?: never }
-  | { items: CanvasAction[]; run?: never }
-);
+  run: () => void;
+};
 export type ActionMenuLocation = {
   x: number;
   y: number;
@@ -53,14 +49,12 @@ function sector(index: number, count: number) {
 export function CanvasActionMenu({
   location,
   subject,
-  label,
-  actions: rootActions,
+  actions,
   close,
   search,
 }: {
   location: ActionMenuLocation;
   subject: string;
-  label?: string;
   actions: CanvasAction[];
   close: () => void;
   search: () => void;
@@ -73,23 +67,8 @@ export function CanvasActionMenu({
   const [marking, setMarking] = useState(location.held);
   const [revealed, setRevealed] = useState(!location.held);
   const [active, setActive] = useState<number>();
-  const [group, setGroup] = useState<string>();
-  const returnTo = useRef<number | undefined>(undefined);
-  const branch = rootActions.find((a) => a.key === group);
-  const actions: CanvasAction[] = branch?.items
-    ? [
-        {
-          id: "menu.back",
-          key: "menu.back",
-          label: "Back",
-          icon: <ArrowLeft />,
-          run: () => setGroup(undefined),
-        },
-        ...branch.items,
-      ]
-    : rootActions;
-  const current = useRef({ actions, close, active });
-  current.current = { actions, close, active };
+  const current = useRef({ actions, active });
+  current.current = { actions, active };
   const pie = location.mode === "pie";
   // A marking gesture stays anchored to its invocation point, even at an edge.
   // A tapped menu may move into view once the shortcut has been released.
@@ -101,8 +80,15 @@ export function CanvasActionMenu({
     : Math.max(140, Math.min(window.innerHeight - 150, location.y));
   const dismiss = () => {
     close();
-    if (origin.current instanceof HTMLElement && origin.current.isConnected)
-      origin.current.focus({ preventScroll: true });
+    const trigger = origin.current;
+    if (!(trigger instanceof HTMLElement) || !trigger.isConnected) return;
+    trigger.focus({ preventScroll: true });
+    // Selection controls are hidden until React removes the menu. Don't steal focus from a command's editor.
+    if (document.activeElement !== trigger)
+      requestAnimationFrame(() => {
+        if (document.activeElement === document.body && trigger.isConnected)
+          trigger.focus({ preventScroll: true });
+      });
   };
   const choose = (index?: number) => {
     const action =
@@ -112,35 +98,30 @@ export function CanvasActionMenu({
       setActive(index);
       return;
     }
-    if (action.items) {
-      returnTo.current = index;
-      setGroup(action.key);
-      return;
-    }
-    if (action.id !== "menu.back") current.current.close();
+    dismiss();
     action.run();
   };
   useLayoutEffect(() => {
-    const index = group ? 1 : returnTo.current;
-    setActive(index);
-    if (index !== undefined)
-      buttons.current[index]?.focus({ preventScroll: true });
-    else menu.current?.focus({ preventScroll: true });
-    if (!group) returnTo.current = undefined;
-  }, [label, group]);
+    menu.current?.focus({ preventScroll: true });
+  }, []);
   useLayoutEffect(() => {
     const el = menu.current;
     if (pie || !el) return;
+    el.style.maxHeight = "";
     const { width, height } = el.getBoundingClientRect();
     const { anchor } = location;
-    const top = !anchor
-      ? location.y
-      : anchor.bottom + 5 + height <= window.innerHeight - 8
-        ? anchor.bottom + 5
-        : anchor.top - height - 5;
+    let top = location.y;
+    if (anchor) {
+      const below = window.innerHeight - anchor.bottom - 13;
+      const above = anchor.top - 13;
+      const useBelow = height <= below || below >= above;
+      // Keep the trigger exposed even when the flat list needs to scroll.
+      el.style.maxHeight = `${Math.max(0, useBelow ? below : above)}px`;
+      top = useBelow ? anchor.bottom + 5 : anchor.top - 5 - el.offsetHeight;
+    }
     el.style.left = `${Math.max(8, Math.min(anchor?.left ?? location.x, window.innerWidth - width - 8))}px`;
-    el.style.top = `${Math.max(8, Math.min(top, window.innerHeight - height - 8))}px`;
-  }, [pie, location, actions.length, group, label]);
+    el.style.top = `${Math.max(8, Math.min(top, window.innerHeight - el.offsetHeight - 8))}px`;
+  }, [pie, location, actions.length]);
   useEffect(() => {
     if (!pie || !location.held) return;
     const timer = window.setTimeout(() => setRevealed(true), 180);
@@ -217,7 +198,8 @@ export function CanvasActionMenu({
       <div
         ref={menu}
         role="menu"
-        aria-label={label || (pie ? "Canvas actions" : "Context actions")}
+        data-canvas-controls=""
+        aria-label={pie ? "Canvas actions" : "Context actions"}
         aria-description={subject}
         data-revealed={revealed}
         tabIndex={-1}
@@ -237,20 +219,6 @@ export function CanvasActionMenu({
           }
           if (holding.current && e.code === "Space") {
             e.preventDefault();
-            return;
-          }
-          if (group && (e.key === "Escape" || e.key === "ArrowLeft")) {
-            e.preventDefault();
-            setGroup(undefined);
-            return;
-          }
-          if (
-            e.key === "ArrowRight" &&
-            active !== undefined &&
-            actions[active]?.items
-          ) {
-            e.preventDefault();
-            choose(active);
             return;
           }
           if (e.key === "Escape" || e.key === "Tab") {
@@ -292,10 +260,7 @@ export function CanvasActionMenu({
           }
         }}
       >
-        <div className="cam-subject">
-          {subject}
-          {branch && ` · ${branch.label}`}
-        </div>
+        <div className="cam-subject">{subject}</div>
         {pie && (
           <svg viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
             {actions.map((action, index) => (
@@ -317,9 +282,9 @@ export function CanvasActionMenu({
               }}
               role="menuitem"
               data-command-id={action.id}
+              data-divider-before={action.dividerBefore || undefined}
               aria-label={action.label}
               aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
-              aria-haspopup={action.items ? "menu" : undefined}
               tabIndex={-1}
               aria-disabled={!!action.unavailable}
               title={action.unavailable || action.hint}
@@ -336,12 +301,6 @@ export function CanvasActionMenu({
             >
               {action.icon}
               <span>{action.label}</span>
-              {!pie &&
-                action.intent &&
-                action.label.toLowerCase() !== action.intent && (
-                  <small className="cam-intent">{action.intent}</small>
-                )}
-              {action.items && <ChevronRight size={14} aria-hidden="true" />}
               {!pie && index < 9 && <kbd aria-hidden="true">{index + 1}</kbd>}
             </button>
           );
@@ -359,9 +318,7 @@ export function CanvasActionMenu({
                 (marking
                   ? "Move & release · Esc cancels"
                   : "Click or use arrows · Enter runs · Esc closes")
-              : group
-                ? "↑↓ Choose · Enter Run · Esc Back"
-                : "↑↓ Choose · Enter Run · Esc Close"}
+              : "↑↓ Choose · Enter Run · Esc Close"}
         </div>
       </div>
     </div>

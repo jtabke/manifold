@@ -41,11 +41,8 @@ try {
   const open = async (node = power) => {
     await node.click({ button: "right", position: { x: 150, y: 20 } });
   };
-  const exportsMenu = () =>
-    page.getByRole("menuitem", { name: "More actions…", exact: true }).click();
   const copy = async () => {
     const before = await page.evaluate(() => window.pngCopies.length);
-    await exportsMenu();
     await page
       .getByRole("menuitem", { name: "Copy as PNG", exact: true })
       .click();
@@ -144,7 +141,6 @@ try {
     window.rejectPngCopy = true;
   });
   await open();
-  await exportsMenu();
   const fallback = page.waitForEvent("download");
   await page
     .getByRole("menuitem", { name: "Copy as PNG", exact: true })
@@ -157,7 +153,6 @@ try {
     window.rejectPngCopy = false;
   });
   await open();
-  await exportsMenu();
   const download = page.waitForEvent("download");
   await page
     .getByRole("menuitem", { name: "Save as PNG…", exact: true })
@@ -176,9 +171,7 @@ try {
 
   // Multiple objects retain spatial arrangement and exclude unrelated objects.
   const quantities = page.locator('.er-region[data-kind="quantity"]');
-  await quantities
-    .first()
-    .click({ modifiers: ["Shift"], position: { x: 400, y: 20 } });
+  await quantities.first().click({ position: { x: 400, y: 20 } });
   await quantities
     .last()
     .click({ modifiers: ["Shift"], position: { x: 400, y: 20 } });
@@ -206,7 +199,6 @@ try {
     delete navigator.clipboard;
   });
   await open();
-  await exportsMenu();
   await page
     .getByRole("menuitem", { name: "Copy as PNG", exact: true })
     .click();

@@ -72,7 +72,13 @@ try {
     const at = await editor.locator("..").boundingBox();
     expect(at.x).toBeCloseTo(250, 0);
     expect(at.y).toBeCloseTo(340, 0);
-    for (const text of ["P = F*v", "F = 20 N", "v = 3 m/s"]) {
+    for (const text of [
+      "P = F*v*gain*eff",
+      "F = 20 N",
+      "v = 3 m/s",
+      "gain = 1",
+      "eff = 1",
+    ]) {
       await editor.fill(text);
       await editor.press("Enter");
     }
@@ -93,7 +99,7 @@ try {
     await expect(pie).toHaveAttribute("data-revealed", "true");
     await expect(pie.getByRole("menuitem")).toHaveCount(4);
     await expect(item("Explore")).toHaveAttribute("title", "Plot response");
-    await expect(page.locator(".er-object-actions:visible")).toHaveCount(0);
+    await expect(page.locator(".er-selection-tools:visible")).toHaveCount(0);
     await item("Explore").click();
     const plot = page.getByLabel("Python response artifact", { exact: true });
     await expect(plot).toHaveAttribute("data-status", "current");
@@ -121,9 +127,38 @@ try {
           .pathname,
       });
     await page.keyboard.press("Escape");
+    await plot
+      .getByRole("button", { name: "Remove artifact", exact: true })
+      .click();
+    await expect(plot).toBeHidden();
     await power.click({ button: "right", position: { x: 400, y: 25 } });
-    await expect(item("Keyboard shortcuts")).toHaveCount(0);
-    await item("More actions…").click();
+    for (const name of [
+      "More actions…",
+      "Plot options…",
+      "All actions",
+      "Keyboard shortcuts",
+      "Undo",
+      "Fit canvas",
+      "Group",
+    ])
+      await expect(item(name)).toHaveCount(0);
+    for (const name of [
+      "Plot against v",
+      "Try alternative",
+      "Inspect computation",
+      "Duplicate",
+      "Delete",
+      "Make model",
+      "Copy as PNG",
+      "Save as PNG…",
+    ])
+      await expect(item(name)).toHaveCount(1);
+    await expect(menu.locator("[aria-haspopup]")).toHaveCount(0);
+    const labels = () =>
+      menu
+        .getByRole("menuitem")
+        .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
+    const rightClickLabels = await labels();
     const numbers = await menu
       .getByRole("menuitem")
       .evaluateAll((nodes) =>
@@ -137,14 +172,28 @@ try {
         i < 9 ? [String(i + 1), String(i + 1)] : [null, null],
       ),
     );
-    await expect(item("All actions")).toHaveAttribute("aria-keyshortcuts", "9");
+    const existing = menu.locator('[data-command-id="response.open"]');
+    await expect(existing).toHaveAttribute("aria-keyshortcuts", "9");
     await page.keyboard.press("9");
-    await expect(
-      page.getByRole("textbox", { name: "Search commands", exact: true }),
-    ).toBeFocused();
+    await expect(menu).toHaveCount(0);
+    await expect(plot).toBeVisible();
+    expect((await saved()).artifacts).toHaveLength(1);
+    const actions = page.getByRole("button", {
+      name: "Open canvas actions",
+      exact: true,
+    });
+    await actions.click();
+    expect(await labels()).toEqual(rightClickLabels);
+    await page.keyboard.press("End");
+    await expect(menu.getByRole("menuitem").last()).toBeFocused();
     await page.keyboard.press("Escape");
-    await power.click({ button: "right", position: { x: 400, y: 25 } });
-    await item("More actions…").click();
+    await expect(actions).toBeFocused();
+    await page.locator(".er-region[data-kind=quantity]").first().hover();
+    await page.locator(".er-canvas").focus();
+    await page.keyboard.press("Shift+F10");
+    expect(await labels()).toEqual(rightClickLabels);
+    await page.keyboard.press("Escape");
+    await actions.press("Enter");
     await item("Try alternative").click();
     expect((await saved()).page.contexts).toHaveLength(2);
     await expect(
@@ -182,20 +231,16 @@ try {
     const menuBox = await contextual.boundingBox();
     expect(menuBox.x).toBeCloseTo(triggerBox.x, 0);
     expect(menuBox.y).toBeCloseTo(triggerBox.y + triggerBox.height + 5, 0);
-    await item("Plot options…").focus();
-    await page.keyboard.press("ArrowRight");
     await expect(item("Plot against F")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(item("Plot options…")).toBeFocused();
     await page.keyboard.press("Home");
     await expect(item("Edit equation")).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(editor).toHaveValue("P = F*v");
+    await expect(editor).toHaveValue("P = F*v*gain*eff");
     await editor.press("End");
     await editor.press("Shift+Space");
-    await expect(editor).toHaveValue("P = F*v ");
+    await expect(editor).toHaveValue("P = F*v*gain*eff ");
     await expect(menu).toHaveCount(0);
-    await editor.fill("P = F*v");
+    await editor.fill("P = F*v*gain*eff");
     await editor.click({ button: "right" });
     await expect(menu).toHaveCount(0);
     await expect(editor).toBeVisible();
@@ -226,7 +271,22 @@ try {
     await expect(search).toBeFocused();
     await search.press("Escape");
 
+    // The header follows a newly duplicated selection, not the previous right-click target.
+    if (width === 1440) {
+      const ids = () => saved().then((w) => w.page.regions.map((r) => r.id));
+      const before = await ids();
+      await power.click({ button: "right", position: { x: 400, y: 25 } });
+      await item("Duplicate").click();
+      await expect.poll(ids).toHaveLength(before.length + 1);
+      await actions.click();
+      await item("Delete").click();
+      expect(await ids()).toEqual(before);
+    }
+
     // Multi-selection exposes spatial and model operations, preserving definitions.
+    // Begin the multi-selection without the previously inspected equation.
+    await page.locator(".er-canvas").focus();
+    await page.keyboard.press("Escape");
     const quantities = page.locator('.er-region[data-kind="quantity"]');
     for (const quantity of await quantities.all())
       await quantity.click({ modifiers: ["Shift"] });

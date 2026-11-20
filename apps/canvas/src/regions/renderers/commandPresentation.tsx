@@ -18,6 +18,8 @@ import {
   Search,
   Plus,
   MoreHorizontal,
+  Copy,
+  Trash2,
   Image,
 } from "lucide-react";
 import type { CanvasCommand } from "../interaction/commands";
@@ -25,6 +27,8 @@ import type { CanvasAction } from "./CanvasActionMenu";
 
 const commandIcons: Record<string, ReactNode> = {
   image: <Image />,
+  duplicate: <Copy />,
+  delete: <Trash2 />,
   edit: <Pencil />,
   vary: <Hand />,
   plot: <ChartNoAxesCombined />,
@@ -44,41 +48,6 @@ const commandIcons: Record<string, ReactNode> = {
   code: <Layers />,
   create: <Plus />,
 };
-/** Object menus lead with the same editing, exploration, connection and inspection commands as the wheel. */
-export function compactContextActions(actions: CanvasAction[]): CanvasAction[] {
-  const first = ["edit", "explore", "connect", "inspect"].flatMap((intent) =>
-    actions.filter((a) => a.intent === intent),
-  );
-  // Keep explicit multi-selection operations at the top level too.
-  first.push(
-    ...actions.filter(
-      (a) => a.id === "selection.group" || a.id === "selection.model",
-    ),
-  );
-  const plots = actions.filter(
-    (a) => !first.includes(a) && a.id.startsWith("response."),
-  );
-  const secondary = actions.filter(
-    (a) => !first.includes(a) && !plots.includes(a),
-  );
-  if (plots.length)
-    first.push({
-      id: "menu.plots",
-      key: "menu.plots",
-      label: "Plot options…",
-      icon: commandIcons.plot,
-      items: plots,
-    });
-  if (secondary.length)
-    first.push({
-      id: "menu.more",
-      key: "menu.more",
-      label: "More actions…",
-      icon: <MoreHorizontal />,
-      items: secondary,
-    });
-  return first;
-}
 export const presentCommand = (
   command: CanvasCommand,
   executeCommand: (command: CanvasCommand) => void,
@@ -89,11 +58,6 @@ export const presentCommand = (
   label,
   icon: commandIcons[command.icon] || <MoreHorizontal />,
   hint: command.label,
-  intent:
-    command.intent ??
-    (command.target.kind !== "canvas" && command.icon === "inspect"
-      ? "inspect"
-      : undefined),
   unavailable: command.unavailable,
   run: () => executeCommand(command),
 });

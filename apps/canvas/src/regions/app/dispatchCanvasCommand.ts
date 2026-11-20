@@ -11,7 +11,7 @@ import { sourceSpans } from "../editing";
 import { insertModel } from "../modelCommands";
 import type { ModelSource } from "../authoredModels";
 import type { DataSelection } from "../dataFeedback";
-import type { CommandRequest } from "../interaction/commands";
+import { commandObjectIds, type CommandRequest } from "../interaction/commands";
 import { canvasScroll } from "../interaction/canvasViewport";
 import { exportSelectionPng } from "../renderers/selectionPng";
 
@@ -83,6 +83,10 @@ type CommandPorts = {
     detail: (id: string) => void;
     group: (ids: string[]) => void;
   };
+  selection: {
+    duplicate: (ids: string[]) => void;
+    remove: (ids: string[]) => void;
+  };
   shell: Record<ShellAction, () => void>;
 };
 
@@ -128,6 +132,12 @@ export function dispatchCanvasCommand(
     { id } = target;
   const { session, accepted, worksheet, plots, datasets, models } = o;
   switch (command.operation) {
+    case "selection.duplicate":
+      o.selection.duplicate(commandObjectIds(target));
+      return;
+    case "selection.delete":
+      o.selection.remove(commandObjectIds(target));
+      return;
     case "selection.copy-png":
     case "selection.save-png":
       if (o.canvas.current) {
@@ -279,7 +289,7 @@ export function dispatchCanvasCommand(
       if (id) models.detail(id);
       return;
     case "selection.model":
-      models.group(target.ids || []);
+      models.group(commandObjectIds(target));
       return;
     case "canvas.write":
       worksheet.write(

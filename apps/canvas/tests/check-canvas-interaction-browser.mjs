@@ -579,22 +579,15 @@ try {
   assert.deepEqual(await connectorPoints(), connectorBefore);
   assert.equal(await readWorkspaceBytes(page), mixedBytes);
 
-  // The selected region's command resolver/panel stays closed until disclosure.
+  // Selection exposes direct commands without mounting another menu on the math.
   await first.locator(".er-math-line").click();
-  const disclosure = first.locator(".er-actions");
-  await expect(disclosure).toHaveCount(1);
-  await expect(disclosure.getByRole("toolbar")).toHaveCount(0);
-  await paint();
-  const closedCommands = await counts();
-  await disclosure.locator("summary").click();
-  await expect(disclosure.getByRole("toolbar")).toBeVisible();
-  assert.equal(
-    (await counts()).scene,
-    closedCommands.scene,
-    "opening a region disclosure only renders its own controls",
+  await expect(
+    page.getByRole("toolbar", { name: "Canvas selection" }),
+  ).toBeVisible();
+  await expect(first.getByRole("toolbar")).toHaveCount(0);
+  await expect(page.getByRole("menu", { name: "Context actions" })).toHaveCount(
+    0,
   );
-  await disclosure.locator("summary").click();
-  await expect(disclosure.getByRole("toolbar")).toHaveCount(0);
 
   // Character/caret/reference feedback is local; file/commit guards still read
   // the newest buffer synchronously, not an older parent-render snapshot.

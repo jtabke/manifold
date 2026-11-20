@@ -41,10 +41,7 @@ import { useCanvasExploration } from "./useCanvasExploration";
 import { CommandPalette } from "../renderers/CommandPalette";
 import { CanvasNavigationControls } from "../renderers/CanvasNavigationControls";
 import { concepts } from "../renderers/paletteConcepts";
-import {
-  presentCommand,
-  compactContextActions,
-} from "../renderers/commandPresentation";
+import { presentCommand } from "../renderers/commandPresentation";
 import { MathLine } from "../renderers/MathLine";
 import {
   RegionEditor,
@@ -82,7 +79,6 @@ import {
   ChevronDown,
   Sparkles,
   Layers,
-  LayoutGrid,
   Link2,
   MoreHorizontal,
   MessageSquare,
@@ -115,6 +111,7 @@ import {
 } from "../renderers/CanvasActionMenu";
 import {
   commandTarget,
+  commandObjectIds,
   commandSubject,
   resolveCommands,
   markingCommands,
@@ -425,7 +422,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     resume?.selection || [],
   );
   const [actionMenu, setActionMenu] = useState<ActionMenuLocation>();
-  const [choosingOverlap, setChoosingOverlap] = useState(false);
   const [selectionDetail, setSelectionDetail] = useState<CommandSelection>();
   const [recentCommands, setRecentCommands] = useState<string[]>([]);
   const actionPointer = useRef<Point | undefined>(undefined);
@@ -1226,21 +1222,19 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     canvasSelection,
     drawing.byId,
   );
-  const duplicateSelected = () => {
+  const duplicateSelected = (ids = canvasSelection) => {
     try {
       const placements = Object.fromEntries(
         readCanvasFrames().map((f) => [f.id, { x: f.x, y: f.y }]),
       );
-      setCanvasSelection(
-        duplicateSelection(session, canvasSelection, placements),
-      );
+      setCanvasSelection(duplicateSelection(session, ids, placements));
     } catch (error) {
       setMessage((error as Error).message);
     }
   };
-  const deleteSelected = () => {
+  const deleteSelected = (ids = canvasSelection) => {
     try {
-      deleteSelection(session, canvasSelection);
+      deleteSelection(session, ids);
       setCanvasSelection([]);
       setSelected(undefined);
     } catch (error) {
@@ -1387,6 +1381,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setModelTrace(source);
       return;
     }
+    setCanvasSelection([id]);
     setSelected(id);
     const a =
       artifactMode && artifacts.find((a) => a.output === id || a.input === id);
@@ -1734,7 +1729,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   });
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if (isCanvasControlEvent(event)) return;
+      const inSelection =
+        event.target instanceof Element &&
+        event.target.closest(".er-selection-tools");
+      if (!inSelection && isCanvasControlEvent(event)) return;
       const active = (event.target as HTMLElement).closest(
         "input,textarea,select,[role=separator],[contenteditable=true]",
       );
@@ -1757,16 +1755,26 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           (event.shiftKey && event.key === "F10"))
       ) {
         event.preventDefault();
+        const focusedObject = canvasObjectId(event.target as Element);
+        const pie = event.code === "Space";
+        if (
+          inSelection ||
+          (!pie && (focusedObject || canvasSelection.length || selected))
+        ) {
+          openSelectionMenu(
+            pie ? "pie" : "context",
+            pie,
+            undefined,
+            focusedObject,
+          );
+          return;
+        }
         const rect = canvas.current?.getBoundingClientRect();
         if (rect) {
-          const focusedObject = canvasObjectId(event.target as Element);
-          const point = (event.code !== "Space" &&
-            focusedObject &&
-            overlaps.keyboardPoint(focusedObject)) ||
-            actionPointer.current || {
-              x: rect.left + rect.width / 2,
-              y: rect.top + rect.height / 2,
-            };
+          const point = actionPointer.current || {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          };
           const hit = document.elementFromPoint(point.x, point.y);
           if (hit && actionTarget(hit))
             setSelectionDetail(actionDetail(hit, actionTarget(hit)));
@@ -1774,12 +1782,15 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             point.x,
             point.y,
             (hit && actionTarget(hit)) || selected,
-            event.code === "Space" ? "pie" : "context",
-            event.code === "Space",
+            pie ? "pie" : "context",
+            pie,
+            undefined,
+            (hit && actionObject(hit)) || selected,
           );
         }
         return;
       }
+      if (inSelection) return;
       if (!active && event.key === "Escape" && overlaps.picked) {
         overlaps.clear();
         return;
@@ -2796,6 +2807,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setMessage((error as Error).message);
     }
   };
+  const actionObject = (element: Element) =>
+    canvasObjectId(element) ||
+    element.closest<SVGElement>("[data-drawing-id]")?.dataset.drawingId;
   const actionTarget = (element: Element) => {
     const hit = element.closest<HTMLElement>(canvasObjectSelector);
     if (!hit) return;
@@ -2855,6 +2869,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     mode: "pie" | "context" = "context",
     held = false,
     anchor?: DOMRect,
+    object = target,
   ) => {
     if (editing) {
       skipBlur.current = true;
@@ -2864,14 +2879,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       }
     }
     overlaps.capture(x, y);
-    setChoosingOverlap(false);
     if (
       !(
         canvasSelection.length > 1 &&
-        (!target || canvasSelection.includes(target))
+        (!object || canvasSelection.includes(object))
       )
     )
-      setCanvasSelection([]);
+      setCanvasSelection(object ? [object] : []);
     setSelected(target);
     setAreaSelection(undefined);
     if (dataSelection?.dataset !== target) setDataSelection(undefined);
@@ -2889,12 +2903,42 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       anchor,
     });
   };
+  // The button and keyboard act on the selection. Hovering a different object must not retarget them.
+  const openSelectionMenu = (
+    mode: "pie" | "context",
+    held = false,
+    anchor?: DOMRect,
+    focused?: string,
+  ) => {
+    const view = canvas.current;
+    if (!view) return;
+    const press = lastCanvasPress.current;
+    const id =
+      focused ||
+      overlaps.picked ||
+      (press?.id && canvasSelection.includes(press.id)
+        ? press.id
+        : canvasSelection[0]) ||
+      selected ||
+      press?.id;
+    const node = id && view.querySelector(canvasSelectorFor(id));
+    const target = node ? actionTarget(node) : undefined;
+    if (node && !node.hasAttribute("data-region-id"))
+      setSelectionDetail(actionDetail(node, target));
+    const rect = view.getBoundingClientRect();
+    const at = (id && overlaps.keyboardPoint(id)) ||
+      press?.point || {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    openActionMenu(at.x, at.y, target, mode, held, anchor, id);
+  };
   const commandContextFor = (
     id?: string,
     detail = selectionDetail,
     ids: string[] = [],
   ): CommandContext => {
-    const target = commandTarget(
+    const semantic = commandTarget(
       accepted,
       id,
       detail,
@@ -2902,10 +2946,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       !!page.regions.find((r) => r.id === id)?.data,
       !!page.models?.some((m) => m.id === id),
     );
+    const target = ids.length ? { ...semantic, ids } : semantic;
+    const objects = commandObjectIds(target);
     return {
       page,
       projection: accepted,
       target,
+      selectionEditReason: selectionEditReason(session, objects, drawing.byId),
+      includesDrawings: objects.some((id) => drawing.byId.has(id)),
       artifacts,
       columns:
         dataSelection && dataSelection.dataset === id
@@ -3011,6 +3059,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         detail: (id) => hierarchy.setDetail((d) => ({ ...d, [id]: "detail" })),
         group: prepareModel,
       },
+      selection: { duplicate: duplicateSelected, remove: deleteSelected },
       shell: {
         "selection.organize": organizeSelection,
         "selection.group": groupSelection,
@@ -3082,7 +3131,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       <button
         title={selectionReason || "Duplicate selected objects · Ctrl/Cmd+D"}
         disabled={!!selectionReason}
-        onClick={duplicateSelected}
+        onClick={() => duplicateSelected()}
       >
         Duplicate
       </button>
@@ -3091,20 +3140,21 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           selectionReason || "Delete selected objects · Undo restores them"
         }
         disabled={!!selectionReason}
-        onClick={deleteSelected}
+        onClick={() => deleteSelected()}
       >
         Delete
       </button>
     </>
   );
   const selectedContext = palette
-    ? commandContextFor(
+    ? (quickContext ??
+      commandContextFor(
         selectedPlot?.output || selected || selectedId,
         selectedPlot
           ? { owner: selectedPlot.output, kind: "plot", view: selectedPlot.id }
           : selectionDetail,
         canvasSelection,
-      )
+      ))
     : undefined;
   const selectedCommands = selectedContext
     ? resolveCommands(selectedContext, dispatchCommand)
@@ -3112,7 +3162,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const menuContext = actionMenu
     ? commandContextFor(actionMenu.target, selectionDetail, canvasSelection)
     : undefined;
-  const workspaceContext = selectedContext || menuContext;
+  const workspaceContext =
+    selectedContext ||
+    (menuContext?.target.kind === "canvas" ? menuContext : undefined);
   const globalCommands = workspaceContext
     ? resolveWorkspaceCommands(workspaceContext, dispatchCommand)
     : [];
@@ -3175,40 +3227,37 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             icon: <Layers />,
             run: () => pickOverlap(overlaps.underneath()),
           },
-          {
-            id: "overlap.choose",
-            key: "overlap.choose",
-            label: "Choose overlapping item…",
+          ...overlaps.ids.map((id) => ({
+            id: `overlap.pick:${id}`,
+            key: `overlap.pick:${id}`,
+            label: `Select ${objectLabel(id)}`,
             icon: <Layers />,
-            run: () => {
-              setActionMenu(actionMenu);
-              setChoosingOverlap(true);
-            },
-          },
+            run: () => pickOverlap(id),
+          })),
         ]
       : [];
-  const overlapChoices = overlaps.ids.map((id) => ({
-    id: `overlap.pick:${id}`,
-    key: `overlap.pick:${id}`,
-    label: objectLabel(id),
-    icon: <Layers />,
-    run: () => pickOverlap(id),
-  }));
-  useEffect(() => {
-    if (choosingOverlap && overlaps.ids.length < 2) {
-      setActionMenu(undefined);
-      setChoosingOverlap(false);
-    }
-  }, [choosingOverlap, overlaps.ids]);
+  const primary = menuContext
+    ? toolbarCommands(menuCommands, menuContext.target.kind)
+    : [];
   const actionMenuItems = [
-    ...menuCommands,
+    ...primary,
+    ...menuCommands.filter(
+      (c) =>
+        !primary.includes(c) &&
+        (menuContext?.target.kind === "canvas" || c.id !== "canvas.fit"),
+    ),
     ...globalCommands.filter(
       (command) =>
         ["canvas.fit", "canvas.undo", "search.open", "help.shortcuts"].includes(
           command.id,
         ) && !menuCommands.some((item) => item.id === command.id),
     ),
-  ].map((command) => presentCommand(command, executeCommand));
+  ].map((command, index) => ({
+    ...presentCommand(command, executeCommand),
+    dividerBefore:
+      index > 0 &&
+      (index === primary.length || command.id === "selection.duplicate"),
+  }));
   const listActions = [
     ...actionMenuItems,
     {
@@ -3297,19 +3346,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         {actionMenu && (
           <CanvasActionMenu
             location={actionMenu}
-            subject={choosingOverlap ? "Objects at this point" : menuSubject}
-            label={choosingOverlap ? "Overlapping objects" : undefined}
+            subject={menuSubject}
             actions={
-              choosingOverlap
-                ? overlapChoices
-                : actionMenu.mode === "pie"
-                  ? primaryMenuItems
-                  : [
-                      ...overlapActions,
-                      ...(menuContext?.target.kind === "canvas"
-                        ? listActions
-                        : compactContextActions(listActions)),
-                    ]
+              actionMenu.mode === "pie"
+                ? primaryMenuItems
+                : [...overlapActions, ...listActions]
             }
             close={() => setActionMenu(undefined)}
             search={() => paletteOpen("search")}
@@ -3718,34 +3759,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   aria-haspopup="menu"
                   aria-expanded={!!actionMenu?.anchor}
                   title="Context actions · Right-click or Shift+F10"
-                  onClick={(e) => {
-                    const rect = canvas.current?.getBoundingClientRect();
-                    if (rect) {
-                      const id = overlaps.picked || areaSelection || selected;
-                      const objectPoint = id && overlaps.keyboardPoint(id);
-                      const press = lastCanvasPress.current;
-                      const pressedPoint =
-                        (press?.id && overlaps.keyboardPoint(press.id)) ||
-                        press?.point;
-                      const at = (overlaps.picked && objectPoint) ||
-                        (e.detail
-                          ? pressedPoint || objectPoint
-                          : objectPoint || pressedPoint) ||
-                        actionPointer.current || {
-                          x: rect.left + rect.width / 2,
-                          y: rect.top + rect.height / 2,
-                        };
-                      const hit = document.elementFromPoint(at.x, at.y);
-                      openActionMenu(
-                        at.x,
-                        at.y,
-                        (hit && actionTarget(hit)) || selected,
-                        "context",
-                        false,
-                        e.currentTarget.getBoundingClientRect(),
-                      );
-                    }
-                  }}
+                  onClick={(e) =>
+                    openSelectionMenu(
+                      "context",
+                      false,
+                      e.currentTarget.getBoundingClientRect(),
+                    )
+                  }
                 >
                   <span>Actions</span>
                   <ChevronDown size={13} />
@@ -3993,7 +4013,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   return;
                 }
                 actionPointer.current = { x: e.clientX, y: e.clientY };
-                const object = canvasObjectId(e.target as Element);
+                const object = actionObject(e.target as Element);
                 const press = {
                   id: object,
                   point: { x: e.clientX, y: e.clientY },
@@ -4020,6 +4040,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     e.clientY,
                     actionTarget(e.target as Element),
                     "context",
+                    false,
+                    undefined,
+                    object,
                   );
                   return;
                 }
@@ -4085,7 +4108,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   directObject &&
                   canvasSelection.includes(directObject) &&
                   !(e.target as Element).closest(
-                    "button,a,summary,input,textarea,select,[role=button]:not(.er-note),[role=slider],[contenteditable],[data-link-source],.er-actions,.er-editable-math,.er-term,.er-note-reference,.er-result",
+                    "button,a,summary,input,textarea,select,[role=button]:not(.er-note),[role=slider],[contenteditable],[data-link-source],.er-editable-math,.er-term,.er-note-reference,.er-result",
                   )
                 ) {
                   e.preventDefault();
@@ -4134,10 +4157,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 )
                   return;
                 if (!target.closest(".er-link-popover")) setLinkMenu(undefined);
-                if (
-                  target.closest("input,textarea,[contenteditable],.er-actions")
-                )
-                  return;
+                if (target.closest("input,textarea,[contenteditable]")) return;
                 if (
                   target.closest(
                     "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
@@ -5407,6 +5427,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         },
                         chooseTerm,
                         inspectResult: (id, name) => {
+                          setCanvasSelection([id]);
                           setSelectionDetail({ owner: id, kind: "result" });
                           const a = artifacts.find((a) => a.output === id);
                           if (a) {
@@ -5418,13 +5439,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         navigateLink,
                         revealSource: revealWorksheetObject,
                       }}
-                      commands={{
-                        enabled: !variation && !palette,
-                        contextFor: commandContextFor,
-                        dispatch: dispatchCommand,
-                        execute: executeCommand,
-                        more: openActionMenu,
-                      }}
                       data={{
                         states: datasetStates,
                         selection: activeData,
@@ -5434,7 +5448,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         selectedQuantity: areaSelection || selectedId,
                         collapsed: collapsedData,
                         toggle: toggleDataset,
-                        choose: chooseData,
+                        choose: (selection) => {
+                          // Cells and data-bound terms handle their own click instead of bubbling to the row.
+                          setCanvasSelection([
+                            selection.view || selection.dataset,
+                          ]);
+                          setSelectionDetail(undefined);
+                          chooseData(selection);
+                        },
                         review: openDataReview,
                         show: (id) => {
                           setSelected(id);
@@ -5840,6 +5861,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             </div>
             {selectionBounds && !editing && !marquee && !spatial.moving() && (
               <CanvasSelectionToolbar
+                subject={
+                  quickContext ? commandSubject(quickContext) : undefined
+                }
                 bounds={selectionBounds}
                 obstacles={spatial.frames.filter(
                   (f) => !hiddenObjects.has(f.id) && !spatial.closed.has(f.id),
@@ -5895,61 +5919,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 {selectedFrames.length > 1 && (
                   <button onClick={groupSelection}>Group</button>
                 )}
-                <details className="er-selection-more">
-                  <summary>More</summary>
-                  <div className="er-selection-more-actions">
-                    {quickContext && selectionEdits}
-                    {selectedFrames.length > 1 && (
-                      <button onClick={organizeSelection}>
-                        <LayoutGrid size={14} /> Organize
-                      </button>
-                    )}
-                    <button
-                      disabled={
-                        !canvasSelection.some((id) =>
-                          accepted.statements.has(id),
-                        )
-                      }
-                      onClick={() =>
-                        pickConnection(
-                          undefined,
-                          canvasSelection.length === 2
-                            ? canvasSelection.find(
-                                (id) =>
-                                  id !==
-                                  canvasSelection.find(
-                                    (id) =>
-                                      accepted.statements.get(id)?.relation ===
-                                        "=" && !accepted.errors.has(id),
-                                  ),
-                              )
-                            : undefined,
-                        )
-                      }
-                    >
-                      <Link2 size={13} />
-                      Connect
-                    </button>
-                    <button
-                      disabled={selectedFrames.some(
-                        (f) => f.kind === "drawing",
-                      )}
-                      title={
-                        selectedFrames.some((f) => f.kind === "drawing")
-                          ? "Engineering models use worksheet objects, not decorative drawings."
-                          : undefined
-                      }
-                      onClick={() =>
-                        prepareModel(selectedFrames.map((f) => f.id))
-                      }
-                    >
-                      Make model
-                    </button>
-                  </div>
-                </details>
                 <button
                   aria-label="Clear canvas selection"
-                  onClick={() => setCanvasSelection([])}
+                  onClick={() => {
+                    setCanvasSelection([]);
+                    setSelected(undefined);
+                  }}
                 >
                   <X size={14} />
                 </button>

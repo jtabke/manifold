@@ -4,6 +4,7 @@ import { canvasScroll, canvasZoom } from "../interaction/canvasViewport";
 
 /** Float in unused space near the selection; in a crowded viewport reserve a shelf outside the paper. */
 export function CanvasSelectionToolbar({
+  subject,
   bounds,
   obstacles,
   canvas,
@@ -11,6 +12,7 @@ export function CanvasSelectionToolbar({
   children,
   onEscape,
 }: {
+  subject?: string;
   bounds: CanvasRect;
   obstacles: readonly CanvasRect[];
   canvas: RefObject<HTMLDivElement | null>;
@@ -77,23 +79,15 @@ export function CanvasSelectionToolbar({
       ref={ref}
       role="toolbar"
       aria-label="Canvas selection"
+      aria-description={subject}
       className="er-selection-tools"
       data-canvas-controls=""
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.preventDefault();
         event.stopPropagation();
-        const more =
-          event.currentTarget.querySelector<HTMLDetailsElement>(
-            "details[open]",
-          );
-        if (more) {
-          more.open = false;
-          more.querySelector("summary")?.focus();
-        } else {
-          onEscape();
-          canvas.current?.focus({ preventScroll: true });
-        }
+        onEscape();
+        canvas.current?.focus({ preventScroll: true });
       }}
     >
       {children}

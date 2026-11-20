@@ -1,6 +1,6 @@
 import { renderCanvasImage } from "./canvasImageStyles";
 import { canvasZoom } from "../interaction/canvasViewport";
-import type { CommandTarget } from "../interaction/commands";
+import { commandObjectIds, type CommandTarget } from "../interaction/commands";
 
 const attributes = [
   "data-region-id",
@@ -13,8 +13,6 @@ const attributes = [
 const chrome = [
   "button:not(.er-result)",
   ".er-grip",
-  ".er-actions",
-  ".er-object-actions",
   ".er-region-actions",
   ".er-link-handle",
   ".er-resize-handle",
@@ -40,7 +38,8 @@ export async function selectionPng(
   zoom: number,
 ): Promise<Blob> {
   zoom = canvasZoom(root, zoom);
-  const ids = target.ids || [target.view || target.owner || target.id];
+  const ids = commandObjectIds(target);
+  if (!ids.length) throw new Error("Select a visible object to export.");
   const nodes = ids.map((id) => {
     const node =
       id &&

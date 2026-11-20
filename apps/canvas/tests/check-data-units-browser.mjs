@@ -4,11 +4,7 @@ import { browserOptions } from "../../../scripts/browser.mjs";
 import { RegionSession, project } from "../src/regions/document.ts";
 import { archive, decodeWorkspace } from "../src/regions/artifacts.ts";
 import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
-import {
-  readWorkspace,
-  revealRegionActions,
-  startWriting,
-} from "./browser-workspace.mjs";
+import { readWorkspace, startWriting } from "./browser-workspace.mjs";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
@@ -159,9 +155,8 @@ try {
   await readWorkspace(varying);
   const inputRegion = varying.locator(`[data-region-id="${input}"]`);
   await inputRegion.click({ position: { x: 400, y: 25 } });
-  await revealRegionActions(varying);
   await varying
-    .getByRole("toolbar", { name: "Quantity measured actions", exact: true })
+    .getByRole("toolbar", { name: "Canvas selection", exact: true })
     .locator('[data-command-id="quantity.vary"]')
     .click();
   const control = inputRegion.locator(".er-scrubbable").first();

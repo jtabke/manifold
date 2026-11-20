@@ -3,11 +3,7 @@ import { chromium, expect } from "@playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  readWorkspace,
-  revealRegionActions,
-  startWriting,
-} from "./browser-workspace.mjs";
+import { readWorkspace, startWriting } from "./browser-workspace.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({
   ...browserOptions(),
@@ -60,9 +56,8 @@ try {
     await page
       .locator(`[data-region-id="${theta}"]`)
       .click({ position: { x: 400, y: 25 } });
-    await revealRegionActions(page);
     await page
-      .getByRole("toolbar", { name: "Quantity theta actions", exact: true })
+      .getByRole("toolbar", { name: "Canvas selection", exact: true })
       .locator('[data-command-id="quantity.vary"]')
       .click();
     const controls = page.getByLabel("Explore theta", { exact: true });

@@ -5,7 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { cpus, release } from "node:os";
 import { RegionSession } from "../src/regions/document.ts";
 import { archive } from "../src/regions/artifacts.ts";
-import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
+import { readWorkspace } from "./browser-workspace.mjs";
 import { canvasSourceDigest } from "../tools/canvas-source-digest.mjs";
 import {
   timingDistribution,
@@ -118,9 +118,8 @@ try {
     ).toHaveCount(1);
     // Hot preview and Undo remain correct with the derived caches populated.
     await r0.click({ position: { x: 400, y: 25 } });
-    await revealRegionActions(page);
     await page
-      .getByRole("toolbar", { name: "Quantity v0 actions", exact: true })
+      .getByRole("toolbar", { name: "Canvas selection", exact: true })
       .locator('[data-command-id="quantity.vary"]')
       .click();
     const controls = page.getByLabel("Explore v0", { exact: true }),
@@ -161,9 +160,8 @@ try {
     // Durable storage is checked outside event-to-result timing windows.
     const timedBaseline = await readWorkspace(page);
     await r0.click({ position: { x: 400, y: 25 } });
-    await revealRegionActions(page);
     await page
-      .getByRole("toolbar", { name: "Quantity v0 actions", exact: true })
+      .getByRole("toolbar", { name: "Canvas selection", exact: true })
       .locator('[data-command-id="quantity.vary"]')
       .click();
     const timingControls = page.getByLabel("Explore v0", { exact: true }),

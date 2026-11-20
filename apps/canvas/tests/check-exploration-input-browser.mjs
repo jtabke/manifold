@@ -2,11 +2,7 @@ import { browserOptions } from "../../../scripts/browser.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium, expect } from "@playwright/test";
-import {
-  readWorkspace,
-  revealRegionActions,
-  startWriting,
-} from "./browser-workspace.mjs";
+import { readWorkspace, startWriting } from "./browser-workspace.mjs";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
@@ -41,9 +37,8 @@ try {
         await page
           .locator(`[data-region-id="${power.id}"]`)
           .click({ position: { x: 400, y: 25 } });
-        await revealRegionActions(page);
         await page
-          .getByRole("toolbar", { name: "Equation P actions", exact: true })
+          .getByRole("toolbar", { name: "Canvas selection", exact: true })
           .locator('[data-command-id="response.plot"]')
           .click();
         const artifact = page.getByLabel("Python response artifact", {
@@ -81,9 +76,8 @@ try {
           await page
             .locator(`[data-region-id="${speed.id}"]`)
             .click({ position: { x: 400, y: 25 } });
-          await revealRegionActions(page);
           await page
-            .getByRole("toolbar", { name: "Quantity v actions", exact: true })
+            .getByRole("toolbar", { name: "Canvas selection", exact: true })
             .locator('[data-command-id="quantity.vary"]')
             .click();
         };

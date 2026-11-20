@@ -183,9 +183,16 @@ try {
   });
   await rectangle.click();
   await expect(selection).toBeVisible();
-  await selection.locator(".er-selection-more > summary").click();
+  const actions = page.getByRole("button", { name: "Open canvas actions" });
+  await actions.click();
+  await expect(
+    page.getByRole("menuitem", { name: "Duplicate", exact: true }),
+  ).toHaveAttribute("aria-disabled", "false");
   await page.keyboard.press("Escape");
-  await expect(selection.locator("details")).not.toHaveAttribute("open", "");
+  await expect(actions).toBeFocused();
+  await selection
+    .getByRole("button", { name: "Duplicate", exact: true })
+    .focus();
   await expect(page.locator(".drawing-selection")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".drawing-selection")).toHaveCount(0);

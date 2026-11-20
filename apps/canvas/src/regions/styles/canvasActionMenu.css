@@ -54,16 +54,13 @@
 .cam-context-action > svg {
   width: 17px;
   height: 17px;
+  flex: none;
   color: var(--canvas-muted);
 }
-.cam-context-action .cam-intent {
-  margin-left: auto;
-  text-transform: capitalize;
-  font-size: 10px;
-  color: var(--canvas-muted);
-}
-.cam-context-action .cam-intent + kbd {
-  margin-left: 0;
+.er-app .cam-context-action[data-divider-before] {
+  border-top: 1px solid var(--canvas-border);
+  border-radius: 0;
+  margin-top: 3px;
 }
 .cam-context-action kbd {
   margin-left: auto;
@@ -95,8 +92,7 @@
 .cam-menu .cam-subject {
   display: none;
 }
-.er-app.is-command-open
-  :is(.er-object-actions, .er-region-actions, .er-selection-tools) {
+.er-app.is-command-open :is(.er-region-actions, .er-selection-tools) {
   visibility: hidden;
   pointer-events: none;
 }

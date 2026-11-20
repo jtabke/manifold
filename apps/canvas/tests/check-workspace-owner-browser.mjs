@@ -3,11 +3,7 @@ import { chromium, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { readFile as readAsync } from "node:fs/promises";
 import { decodeWorkspace, prepare } from "../src/regions/artifacts.ts";
-import {
-  readWorkspace,
-  readWorkspaceBytes,
-  revealRegionActions,
-} from "./browser-workspace.mjs";
+import { readWorkspace, readWorkspaceBytes } from "./browser-workspace.mjs";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const fixture = readFileSync(
   new URL("./canvas-v2.fixture.json", import.meta.url),
@@ -59,9 +55,8 @@ try {
   await page
     .locator(`[data-region-id="${input}"]`)
     .click({ position: { x: 400, y: 25 } });
-  await revealRegionActions(page);
   await page
-    .getByRole("toolbar", { name: "Quantity x actions", exact: true })
+    .getByRole("toolbar", { name: "Canvas selection", exact: true })
     .locator('[data-command-id="quantity.vary"]')
     .click();
   const controls = page.getByLabel("Explore x", { exact: true }),

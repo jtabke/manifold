@@ -1,6 +1,6 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence, evidenceEnabled } from "./browser-evidence.mjs";
-import { readWorkspace, revealRegionActions } from "./browser-workspace.mjs";
+import { readWorkspace } from "./browser-workspace.mjs";
 const baseURL = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 import { chromium, expect } from "@playwright/test";
 import { project } from "../src/regions/document.ts";
@@ -164,9 +164,8 @@ try {
   ).not.toHaveClass(/is-linked/);
   await page.locator('[data-kind="equation"] [data-symbol="force"]').click();
   await expect(page.getByLabel("Dataset selection")).toContainText("Series");
-  await revealRegionActions(page);
   await page
-    .locator('.er-object-actions [data-command-id="definition.edit"]')
+    .locator('.er-selection-tools [data-command-id="definition.edit"]')
     .click();
   await expect(editor).toHaveValue("P = force*speed");
   await editor.fill("P = 2*force*speed");

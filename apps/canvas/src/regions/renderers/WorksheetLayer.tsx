@@ -1,101 +1,17 @@
 import { useMemo, type ReactNode } from "react";
-import {
-  Check,
-  GripVertical,
-  Link2,
-  MoreHorizontal,
-  Plus,
-  X,
-} from "lucide-react";
+import { Check, GripVertical, Link2, Plus, X } from "lucide-react";
 import { display, quantityLiteral, references } from "../../notebook/math";
 import { ancestors, type Page, type Point, type Projection } from "../document";
 import type { DataSelection } from "../dataFeedback";
 import type { DatasetComputation, DatasetStates } from "../datasetModel";
 import { matchesMeasurementText } from "../dataSources";
 import type { Scrub } from "../interaction/useNumberScrub";
-import {
-  commandSubject,
-  resolveCommands,
-  toolbarCommands,
-  type CanvasCommand,
-  type CommandContext,
-  type CommandRequest,
-} from "../interaction/commands";
 import { revealCanvasElement } from "../interaction/canvasViewport";
-import { RegionCommandMenu } from "./RegionCommandMenu";
 import { ExternalReferenceView } from "./ExternalReferenceView";
 import { DataRegion } from "./DataRegion";
 import { MathLine } from "./MathLine";
 import { RecordFeedback } from "./DatasetViews";
 import { ReferencedNote } from "./ReferencedNote";
-
-type SheetCommands = {
-  enabled: boolean;
-  contextFor: (id: string) => CommandContext;
-  dispatch: (command: CommandRequest) => void;
-  execute: (command: CanvasCommand) => void;
-  more: (x: number, y: number, id: string) => void;
-};
-
-function WorksheetCommands({
-  context,
-  quiet,
-  maxWidth,
-  dispatch,
-  execute,
-  more,
-}: Pick<SheetCommands, "dispatch" | "execute"> & {
-  context: CommandContext;
-  quiet: boolean;
-  maxWidth: number;
-  more: (x: number, y: number) => void;
-}) {
-  const kind = context.target.kind,
-    subject = commandSubject(context);
-  return (
-    <RegionCommandMenu key={JSON.stringify(context.target)}>
-      {() => (
-        <div
-          className={quiet ? "er-object-actions" : "er-region-actions"}
-          style={{ maxWidth }}
-          role="toolbar"
-          aria-label={`${subject} actions`}
-          data-selection-kind={kind}
-        >
-          <span className="er-command-selection">{subject}</span>
-          {toolbarCommands(resolveCommands(context, dispatch), kind).map(
-            (command) => (
-              <button
-                key={command.key}
-                data-command-id={command.id}
-                data-command-key={command.key}
-                disabled={!!command.unavailable}
-                title={command.unavailable || command.preview}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  execute(command);
-                }}
-              >
-                {command.toolbarLabel}
-              </button>
-            ),
-          )}
-          <button
-            aria-label="More region actions"
-            title="All actions"
-            onClick={(event) => {
-              event.stopPropagation();
-              const rect = event.currentTarget.getBoundingClientRect();
-              more(rect.left, rect.bottom);
-            }}
-          >
-            <MoreHorizontal size={17} />
-          </button>
-        </div>
-      )}
-    </RegionCommandMenu>
-  );
-}
 
 type SheetData = {
   states: DatasetStates;
@@ -169,7 +85,6 @@ type SheetProps = {
     revealSource: (id: string) => void;
   };
   data: SheetData;
-  commands: SheetCommands;
 };
 
 const measurementCaption = (
@@ -201,7 +116,6 @@ export function WorksheetLayer({
   editor,
   actions,
   data,
-  commands,
 }: SheetProps) {
   const {
     selected,
@@ -311,19 +225,6 @@ export function WorksheetLayer({
             <Link2 size={15} />
           </button>
         )}
-        {selected === id &&
-          editing !== id &&
-          effectiveText &&
-          commands.enabled && (
-            <WorksheetCommands
-              context={commands.contextFor(id)}
-              quiet={quiet}
-              maxWidth={maxWidth}
-              dispatch={commands.dispatch}
-              execute={commands.execute}
-              more={(x, y) => commands.more(x, y, id)}
-            />
-          )}
         {expansionId === id && !focusedInput && (
           <button
             className="er-investigation-close"

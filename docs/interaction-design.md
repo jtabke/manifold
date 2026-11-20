@@ -105,13 +105,16 @@ Changing invocation method does not change the selected definition, plot binding
 review semantics or recovery behavior. New integrations must register supported
 capabilities explicitly rather than advertising operations that cannot execute.
 
-Contextual toolbars show up to three likely actions and More. Equations offer
-Edit/Plot/Trace; quantities offer Edit value/Vary/Find uses; results and plot
+Common actions are visible on the selection; other object actions are one menu away.
+There is no nested action menu or separate disclosure on the equation. Specific plot inputs,
+existing plots, selection edits and exports appear directly in the list. Undo, Fit, search
+and help remain workspace controls rather than repeated items on every object. Equations offer
+Edit/Plot/Trace/Connect; quantities offer Edit value/Vary/Find uses; results and plot
 selections offer Inspect source/Explore/Compare; datasets offer Inspect/Connect/
 Visualize, with unavailable calculated-data views explained. A selected term is
 identified separately from its containing equation and resolves its identity-bound
 definition. Alt-click selects a mathematical term for actions; ordinary clicking
-continues to edit mathematics directly. Right-click also distinguishes terms,
+selects the equation; double-click or Enter edits the notation. Right-click also distinguishes terms,
 results and plot views. No selection gesture silently creates another definition.
 
 Search shows the selected object, current model and scenario. It offers supported

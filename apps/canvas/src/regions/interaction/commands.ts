@@ -35,6 +35,8 @@ export type CommandTarget = {
   ids?: string[];
 };
 type SimpleOperation =
+  | "selection.duplicate"
+  | "selection.delete"
   | "selection.copy-png"
   | "selection.save-png"
   | "definition.edit"
@@ -152,6 +154,8 @@ export type CommandContext = {
   canVary: boolean;
   collapsed: boolean;
   canUndo: boolean;
+  selectionEditReason?: string;
+  includesDrawings?: boolean;
   supportsArtifacts: boolean;
 };
 
@@ -163,7 +167,8 @@ export function commandTarget(
   isDataset = false,
   isModel = false,
 ): CommandTarget {
-  if (ids.length > 1) return { kind: "selection", ids: [...ids] };
+  if (ids.length > 1 || (!selected && ids.length))
+    return { kind: "selection", ids: [...ids] };
   if (!selected) return { kind: "canvas" };
   if (detail?.owner === selected) {
     if (detail.kind === "term") {
@@ -200,6 +205,12 @@ export function commandTarget(
     id: selected,
     owner: selected,
   };
+}
+
+/** Spatial edits act on the selected representation, never a term's source definition. */
+export function commandObjectIds(target: CommandTarget) {
+  const object = target.view || target.owner || target.id;
+  return target.ids ?? (object ? [object] : []);
 }
 
 export function commandSubject({
@@ -457,6 +468,7 @@ export function resolveCommands(
           { view: artifact.id, keywords: ["plot", "response", "open"] },
         );
       add("quantity.connect", "Connect", "connect", "connect", {
+        toolbar: t.kind === "equation" ? "Connect" : undefined,
         unavailable: missing,
         preview:
           "Open connection choices and review their meaning, units and scope before acceptance.",
@@ -553,20 +565,17 @@ export function resolveCommands(
     add("model.detail", "Show detail", "layers", "inspect");
     add("canvas.fit", "Fit canvas", "focus", "explore");
   } else if (t.kind === "selection") {
-    add("selection.organize", "Organize", "organize", "edit", {
-      undo: undoEffect("document", "Undo restores the previous arrangement."),
-    });
-    add("selection.group", "Group", "group", undefined, {
-      undo: undoEffect(
-        "view",
-        "Detach the visual group to restore independent arrangement.",
-      ),
-    });
-    add("selection.model", "Make model", "model", undefined, {
-      preview:
-        "Review the proposed model boundary and interface before creating it.",
-      undo: undoEffect("document", "Undo reverses model creation."),
-    });
+    if ((t.ids?.length ?? 0) > 1) {
+      add("selection.organize", "Organize", "organize", "edit", {
+        undo: undoEffect("document", "Undo restores the previous arrangement."),
+      });
+      add("selection.group", "Group", "group", undefined, {
+        undo: undoEffect(
+          "view",
+          "Detach the visual group to restore independent arrangement.",
+        ),
+      });
+    }
     add("quantity.connect", "Connect", "connect", "connect", {
       unavailable: !t.ids?.some((id) => p.statements.has(id))
         ? "Select mathematical quantities to connect."
@@ -583,11 +592,27 @@ export function resolveCommands(
     add("canvas.fit", "Fit canvas", "focus", "inspect");
   }
   if (t.kind !== "canvas") {
+    add("selection.model", "Make model", "model", undefined, {
+      unavailable: c.includesDrawings
+        ? "Engineering models use worksheet objects, not decorative drawings."
+        : undefined,
+      preview:
+        "Review the proposed model boundary and interface before creating it.",
+      undo: undoEffect("document", "Undo reverses model creation."),
+    });
+    add("canvas.write", "Write below", "edit", undefined, { undo: editUndo });
+    add("selection.duplicate", "Duplicate", "duplicate", undefined, {
+      unavailable: c.selectionEditReason,
+      undo: undoEffect("document", "Undo removes the duplicates."),
+    });
     for (const [operation, label] of [
       ["selection.copy-png", "Copy as PNG"],
       ["selection.save-png", "Save as PNG…"],
     ] as const)
       add(operation, label, "image", undefined, {
+        unavailable: c.includesDrawings
+          ? "PNG export supports worksheet and view objects, not drawing marks."
+          : undefined,
         preview:
           "Export the visible selection as a tightly cropped, transparent PNG. This is a visual snapshot, not an editable workspace.",
         undo: undoEffect("none", "Export changes no saved work or history."),
@@ -599,9 +624,11 @@ export function resolveCommands(
           "export",
         ],
       });
+    add("selection.delete", "Delete", "delete", undefined, {
+      unavailable: c.selectionEditReason,
+      undo: undoEffect("document", "Undo restores the deleted objects."),
+    });
   }
-  if (t.kind !== "canvas")
-    add("canvas.write", "Write below", "edit", undefined, { undo: editUndo });
   return commands;
 }
 
@@ -721,12 +748,15 @@ export function toolbarCommands(commands: CanvasCommand[], kind: CommandKind) {
         ? ["definition.edit", "quantity.vary", "quantity.trace"]
         : kind === "dataset"
           ? ["dataset.inspect", "dataset.connect", "dataset.visualize"]
-          : ["definition.edit", "response.plot", "quantity.trace"];
-  return order
-    .flatMap((id) =>
-      commands.filter((command) => command.id === id && command.toolbarLabel),
-    )
-    .slice(0, 3);
+          : [
+              "definition.edit",
+              "response.plot",
+              "quantity.trace",
+              "quantity.connect",
+            ];
+  return order.flatMap((id) =>
+    commands.filter((command) => command.id === id && command.toolbarLabel),
+  );
 }
 export function requestedPlotCommand(
   c: CommandContext,

@@ -334,17 +334,6 @@
 .er-canvas:has(.drawing-surface.is-drawing) + .er-selection-tools {
   display: none;
 }
-.er-selection-more > summary {
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 4px;
-}
-.er-selection-more-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 0;
-}
 @media (hover: hover) and (pointer: fine) {
   .er-region:not(.is-editing):hover,
   .cs-tool:hover,
@@ -1290,75 +1279,10 @@
   transition: none;
 }
 
-/* Actions require an explicit disclosure; selection alone stays quiet. */
-.er-actions {
-  position: absolute;
-  top: -26px;
-  left: 0;
-  z-index: 9;
-}
-.er-actions > summary {
-  display: flex;
-  list-style: none;
-  cursor: pointer;
-  padding: 4px;
-  color: var(--canvas-muted);
-  opacity: 0;
-}
-.er-actions > summary::-webkit-details-marker {
-  display: none;
-}
-.er-region:hover > .er-actions > summary,
-.er-actions:focus-within > summary,
-.er-actions[open] > summary {
-  opacity: 1;
-  pointer-events: auto;
-}
-.er-actions > :is(.er-object-actions, .er-region-actions) {
-  top: auto;
-  bottom: calc(100% + 4px);
-  right: auto;
-  left: 0;
-  width: max-content;
-  box-sizing: border-box;
-  flex-wrap: wrap;
-  gap: 4px;
-  border: 1px solid var(--canvas-border);
-  border-radius: 5px;
-  padding: 3px;
-}
 @media (hover: none) {
-  .er-actions > summary {
-    opacity: 1;
-    pointer-events: auto;
-  }
   .er-region.is-selected > :is(.er-grip, .er-link-handle) {
     opacity: 1;
   }
-}
-.er-object-actions {
-  position: absolute;
-  top: -30px;
-  right: 0;
-  z-index: 9;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--canvas-surface, #fff);
-}
-.er-object-actions > button {
-  padding: 4px 7px;
-  font-size: 13px;
-}
-.er-command-selection {
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 10px;
-  color: var(--canvas-muted);
-  white-space: nowrap;
-  padding: 0 6px;
-  border-right: 1px solid var(--canvas-border);
 }
 .er-command-context {
   font-size: 11px;
@@ -1368,11 +1292,6 @@
 }
 .er-app .er-command-item:disabled {
   opacity: 0.65;
-}
-.er-object-actions > button:first-child:not(:only-child) {
-  color: var(--canvas-accent, #65507f);
-  background: var(--canvas-accent-tint, #f4f0f8);
-  border-radius: 5px;
 }
 .er-object-menu {
   position: absolute;

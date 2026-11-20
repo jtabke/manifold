@@ -221,8 +221,9 @@ replace its default allowed origins and `--port` selects the port; stop it with 
 
 ## Commands and keyboard shortcuts
 
-Select an equation for **Edit**, **Plot** and **Trace**; **More** holds Duplicate and Delete. The toolbar avoids neighboring worksheet objects and docks below the canvas when no free space fits.
-Open **Actions** beside Undo/Redo, right-click, or press Shift+F10 for context commands. Editing, exploration, connections and inspection come first. **Plot options…** lists specific inputs and existing plots; **More actions…** holds exports and secondary commands. Number keys run the numbered items; Escape returns from a submenu. Ctrl/Cmd+K searches the full command set.
+Select an equation for **Edit**, **Plot**, **Trace** and **Connect**. The toolbar avoids neighboring objects and docks below the canvas if it cannot fit beside the selection.
+
+For other equation actions, click **Actions** beside Undo/Redo, right-click the equation, or press Shift+F10. The same flat list lets you plot against a specific input, reopen an existing plot, inspect the computation, make a model, duplicate, export or delete. Shift-click multiple objects for **Group** and **Organize**. Use the arrow keys and Enter, or press the number printed beside an item. Escape closes the list. Ctrl/Cmd+K searches both object and workspace commands.
 Click **?** beside the zoom controls in the tools row for searchable **Keyboard shortcuts**
 reference, or search **help** / **Keyboard shortcuts** with the default Ctrl/⌘+K. Scope notes
 explain where keys apply. Escape closes the reference and restores focus; opening from the
@@ -253,7 +254,7 @@ button always remains available if keys are cleared.
 
 ## Copying images
 
-Select an equation, note, plot or other canvas object, then right-click → **More actions…** → **Copy as PNG**.
+Select an equation, note, plot or other canvas object, then choose **Copy as PNG** from **Actions** or the right-click menu.
 Shift-click multiple objects to copy their arrangement together. The same command is
 available in Ctrl/Cmd+K command search. Ordinary text Copy is unchanged.
 
@@ -312,11 +313,10 @@ New native files require a V9-capable reader; older files remain readable.
 
 ## Selection and overlapping work
 
-Selection stays quiet. Hover or keyboard-focus the selected region and open **Region commands**
-for three likely actions and More. Alt-click a mathematical term to select it without opening
+Selection shows one toolbar for the selected object. Alt-click a mathematical term to select it without opening
 its editor; dragging notation selects its source. Use the link handle for connections.
 For covered work, open context actions and choose **Select underneath** to cycle, or
-**Choose overlapping item…** for a named list. Shift+F10 and the header **Actions** button
+select a named object directly from the same list. Shift+F10 and the header **Actions** button
 provide keyboard/touch access. The chosen item is exposed temporarily so its normal controls
 are usable; Escape restores normal paint order. Panning keeps that attention intact. Search offers supported plot inputs, existing response
 views and recent commands for the current session, along with engineering objects.

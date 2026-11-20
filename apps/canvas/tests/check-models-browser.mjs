@@ -85,8 +85,10 @@ const select = async (ids) => {
 };
 const create = async (name, ids) => {
   await select(ids);
-  await page.locator(".er-selection-more > summary").click();
-  await page.getByRole("button", { name: "Make model", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Open canvas actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Make model", exact: true }).click();
   await page.getByLabel("Model name", { exact: true }).fill(name);
   await page.getByRole("button", { name: "Create model", exact: true }).click();
   const card = page.getByLabel(`Model ${name}`, { exact: true });
@@ -241,8 +243,10 @@ try {
     (await read()).models.find((m) => m.name === "Heat source").id,
     thermalId,
   ]);
-  await page.locator(".er-selection-more > summary").click();
-  await page.getByRole("button", { name: "Make model", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Open canvas actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Make model", exact: true }).click();
   await page.getByLabel("Model name", { exact: true }).fill("Cooling system");
   await page.getByRole("button", { name: "Create model", exact: true }).click();
   const system = page.getByLabel("Model Cooling system", { exact: true });

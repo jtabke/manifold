@@ -57,7 +57,7 @@ export async function captureAssistantCanvas(
         !(
           node instanceof Element &&
           node.matches(
-            "button,input[type=password],textarea,[contenteditable=true],[role=dialog],[role=tooltip],.er-actions,.er-object-actions,.er-selection-tools",
+            "button,input[type=password],textarea,[contenteditable=true],[role=dialog],[role=tooltip],.er-selection-tools",
           )
         ),
       style: {

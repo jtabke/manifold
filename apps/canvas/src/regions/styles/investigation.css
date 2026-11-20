@@ -199,12 +199,6 @@
 .er-link-unresolved {
   color: var(--canvas-warning, #8f6b3c) !important;
 }
-.er-object-actions {
-  gap: 3px;
-}
-.er-object-actions button {
-  font-size: 11px;
-}
 
 .er-artifact-head b {
   white-space: nowrap;

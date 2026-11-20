@@ -7,6 +7,7 @@ import { RegionSession, project } from "../src/regions/document.ts";
 import { makeArtifact } from "../src/regions/artifacts.ts";
 import {
   commandTarget,
+  commandObjectIds,
   commandSubject,
   resolveCommands,
   markingCommands,
@@ -94,7 +95,7 @@ const toolbar = toolbarCommands(commands, "equation"),
   search = searchCommands(commands, "plot response", []);
 assert.deepEqual(
   toolbar.map((c) => c.id),
-  ["definition.edit", "response.plot", "quantity.trace"],
+  ["definition.edit", "response.plot", "quantity.trace", "quantity.connect"],
 );
 assert.deepEqual(
   marking.map((c) => c?.id),
@@ -141,6 +142,33 @@ assert.deepEqual(
 );
 const term = context(power, { kind: "term", owner: power, symbol: "F" });
 assert.equal(term.target.id, force);
+assert.deepEqual(
+  commandObjectIds(term.target),
+  [power],
+  "spatial actions on a term address its containing equation, not the source",
+);
+for (const operation of [
+  "selection.duplicate",
+  "selection.delete",
+  "selection.model",
+]) {
+  const command = resolveCommands(term, execute).find(
+    (c) => c.id === operation,
+  );
+  command.run();
+  assert.equal(requests.at(-1).operation, operation);
+  assert.deepEqual(commandObjectIds(requests.at(-1).target), [power]);
+}
+assert.deepEqual(
+  commandObjectIds({ kind: "plot", id: power, view: "response-view" }),
+  ["response-view"],
+);
+assert.deepEqual(
+  commandObjectIds(
+    commandTarget(c.projection, power, undefined, [force, power]),
+  ),
+  [force, power],
+);
 assert.equal(commandSubject(term), "Term F in P");
 assert.equal(
   markingCommands(resolveCommands(term, execute))[1].id,

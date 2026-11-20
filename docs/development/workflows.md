@@ -272,7 +272,7 @@ on a mixed 256-row worksheet and 100-drawing document: steady marquee movement a
 panning must neither render the scene nor measure its objects; steady object dragging and zoom
 must not render the application scene; typing/caret/reference-menu feedback stays local. Mixed
 SVG/worksheet movement preserves live connector endpoints without rebuilding unrelated marks.
-Closed region disclosures mount no command controls. Native viewport culling retains offscreen
+Selected worksheet actions render in one toolbar outside the worksheet rows. Native viewport culling retains offscreen
 DOM/geometry and reveals the same mathematical subtree. Same-task move/release with distinct final
 coordinates, cancellation, anchored zoom, single-step Undo and unchanged authored bytes are checked
 too. A controlled-clock reload separately checks navigation-memory debouncing across camera

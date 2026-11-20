@@ -56,8 +56,6 @@ try {
   const point = { x: box.x + 70, y: box.y + 45 };
   const menu = () =>
     page.getByRole("menu", { name: "Context actions", exact: true });
-  const chooser = () =>
-    page.getByRole("menu", { name: "Overlapping objects", exact: true });
   const picked = () =>
     page
       .locator("[data-overlap-picked]")
@@ -71,13 +69,12 @@ try {
             node.dataset.modelId,
         ),
       );
-  await expect(chooser()).toHaveCount(0);
+  await expect(menu()).toHaveCount(0);
   await page.mouse.click(point.x, point.y, { button: "right" });
-  await menu()
-    .getByRole("menuitem", { name: "Choose overlapping item…", exact: true })
-    .click();
-  await expect(chooser().getByRole("menuitem")).toHaveCount(4);
-  await chooser().locator(`[data-command-id="overlap.pick:${output}"]`).click();
+  await expect(
+    menu().locator('[data-command-id^="overlap.pick:"]'),
+  ).toHaveCount(4);
+  await menu().locator(`[data-command-id="overlap.pick:${output}"]`).click();
   await expect.poll(picked).toEqual([output]);
   const grip = region.getByRole("button", { name: "Move F", exact: true });
   await expect(grip).toBeFocused();
@@ -142,23 +139,19 @@ try {
   );
   await grip.focus();
   await page.keyboard.press("Shift+F10");
-  await menu()
-    .getByRole("menuitem", { name: "Choose overlapping item…", exact: true })
-    .click();
-  await expect(chooser()).toBeVisible();
+  await expect(menu()).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(chooser()).toHaveCount(0);
+  await expect(menu()).toHaveCount(0);
   await expect(grip).toBeFocused();
-  // Header actions provide the same chooser after a touch, without right-click.
+  // Header actions provide the same named choices after a touch, without right-click.
   await page.touchscreen.tap(point.x, box.y + 45);
   await page
     .getByRole("button", { name: "Open canvas actions", exact: true })
     .click();
+  await expect(
+    menu().locator('[data-command-id^="overlap.pick:"]'),
+  ).toHaveCount(4);
   await menu()
-    .getByRole("menuitem", { name: "Choose overlapping item…", exact: true })
-    .click();
-  await expect(chooser().getByRole("menuitem")).toHaveCount(4);
-  await chooser()
     .locator('[data-command-id="overlap.pick:overlap-table"]')
     .click();
   await expect.poll(picked).toEqual(["overlap-table"]);
@@ -181,10 +174,7 @@ try {
   await page.keyboard.press("Escape");
   // Choosing hidden work must make its existing move handle usable, not create a new edit path.
   await page.mouse.click(point.x, point.y, { button: "right" });
-  await menu()
-    .getByRole("menuitem", { name: "Choose overlapping item…", exact: true })
-    .click();
-  await chooser().locator(`[data-command-id="overlap.pick:${output}"]`).click();
+  await menu().locator(`[data-command-id="overlap.pick:${output}"]`).click();
   await captureEvidence(page, { path: "screenshots/overlap-selection.png" });
   const handle = await grip.boundingBox();
   await page.mouse.move(

@@ -1,10 +1,6 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
-import {
-  readWorkspace,
-  revealRegionActions,
-  startWriting,
-} from "./browser-workspace.mjs";
+import { readWorkspace, startWriting } from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
@@ -32,9 +28,8 @@ try {
   const powerId = initial.regions.find((r) => r.text === "P = F*v").id;
   const power = page.locator(`[data-region-id="${powerId}"]`);
   await power.click({ position: { x: 400, y: 25 } });
-  await revealRegionActions(page);
   await page
-    .getByRole("toolbar", { name: "Equation P actions", exact: true })
+    .getByRole("toolbar", { name: "Canvas selection", exact: true })
     .locator('[data-command-id="response.plot"]')
     .click();
   const artifact = page.getByLabel("Python response artifact", { exact: true });
@@ -45,9 +40,8 @@ try {
     await page
       .locator(`[data-region-id="${forceId}"]`)
       .click({ position: { x: 400, y: 25 } });
-    await revealRegionActions(page);
     await page
-      .getByRole("toolbar", { name: "Quantity F actions", exact: true })
+      .getByRole("toolbar", { name: "Canvas selection", exact: true })
       .locator('[data-command-id="quantity.vary"]')
       .click();
     await expect(page.getByLabel("Explore F", { exact: true })).toBeVisible();

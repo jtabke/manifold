@@ -1,10 +1,6 @@
 import { browserOptions } from "../../../scripts/browser.mjs";
 import { captureEvidence } from "./browser-evidence.mjs";
-import {
-  readWorkspace,
-  revealRegionActions,
-  startWriting,
-} from "./browser-workspace.mjs";
+import { readWorkspace, startWriting } from "./browser-workspace.mjs";
 import { chromium, expect } from "@playwright/test";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
@@ -35,31 +31,28 @@ try {
     const power = page.locator('.er-region[data-kind="equation"]').first();
     const selectEquation = async () => {
       await power.click({ position: { x: 400, y: 25 } });
-      await revealRegionActions(page);
     };
     await power.click({ position: { x: 400, y: 25 } });
-    await expect(
-      page.getByRole("toolbar", { name: "Equation P actions", exact: true }),
-    ).toBeHidden();
+    const toolbar = page.getByRole("toolbar", {
+      name: "Canvas selection",
+      exact: true,
+    });
+    await expect(toolbar).toHaveAttribute("aria-description", "Equation P");
     if (surface === "toolbar") {
-      const quick = page.getByRole("toolbar", {
-        name: "Canvas selection",
-        exact: true,
-      });
       await expect(
-        quick.locator(":scope > button[data-command-id]"),
-      ).toHaveText(["Edit", "Plot", "Trace"]);
+        toolbar.locator(":scope > button[data-command-id]"),
+      ).toHaveText(["Edit", "Plot", "Trace", "Connect"]);
       await expect(
-        quick.getByRole("button", { name: "Group", exact: true }),
+        toolbar.getByRole("button", { name: "Group", exact: true }),
       ).toHaveCount(0);
       await expect(
-        quick.getByRole("button", { name: "Delete", exact: true }),
+        toolbar.getByRole("button", { name: "Delete", exact: true }),
       ).toHaveCount(0);
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 900 });
         await expect
           .poll(() =>
-            quick.evaluate((bar) => {
+            toolbar.evaluate((bar) => {
               const b = bar.getBoundingClientRect();
               const close = bar
                 .querySelector('[aria-label="Clear canvas selection"]')
@@ -85,23 +78,7 @@ try {
       }
       await page.setViewportSize({ width: 1440, height: 1000 });
     }
-    const beforeActions = (await saved()).document.id;
-    const disclosure = page.locator(
-      ".er-region.is-selected > .er-actions > summary",
-    );
-    await disclosure.focus();
-    await disclosure.press("Enter");
-    expect((await saved()).document.id).toBe(beforeActions);
-    const toolbar = page.getByRole("toolbar", {
-      name: "Equation P actions",
-      exact: true,
-    });
-    await expect(toolbar.getByRole("button")).toHaveText([
-      "Edit",
-      "Plot",
-      "Trace",
-      "",
-    ]);
+    const edit = toolbar.getByRole("button", { name: "Edit", exact: true });
     const initial = (await saved()).page;
     const named = (name) =>
       initial.regions.find((r) => r.text.startsWith(`${name} =`)).id;
@@ -119,7 +96,7 @@ try {
         return command;
       }
       if (surface === "marking") {
-        await disclosure.focus();
+        await edit.focus();
         await page.keyboard.press("Shift+Space");
         await expect(marking).toBeFocused();
         return marking.getByRole("menuitem", { name: "Explore", exact: true });
@@ -160,12 +137,8 @@ try {
       await page
         .getByRole("button", { name: "Inspect result P", exact: true })
         .click();
-      await revealRegionActions(page);
-      const resultToolbar = page.getByRole("toolbar", {
-        name: "Result P actions",
-        exact: true,
-      });
-      await expect(resultToolbar.getByRole("button")).toHaveText([
+      await expect(toolbar).toHaveAttribute("aria-description", "Result P");
+      await expect(toolbar.getByRole("button")).toHaveText([
         "Inspect source",
         "Explore",
         "Compare",
@@ -174,16 +147,11 @@ try {
       await power
         .getByRole("button", { name: "Edit v", exact: true })
         .click({ modifiers: ["Alt"] });
-      await revealRegionActions(page);
-      const termToolbar = page.getByRole("toolbar", {
-        name: "Term v in P actions",
-        exact: true,
-      });
-      await expect(termToolbar).toBeVisible();
+      await expect(toolbar).toHaveAttribute("aria-description", "Term v in P");
       await expect(
-        termToolbar.locator('[data-command-id="definition.edit"]'),
+        toolbar.locator('[data-command-id="definition.edit"]'),
       ).toContainText("Edit definition");
-      await termToolbar.locator('[data-command-id="quantity.vary"]').click();
+      await toolbar.locator('[data-command-id="quantity.vary"]').click();
       const value = page
         .locator(`[data-region-id="${named("v")}"] .er-scrubbable`)
         .first();
@@ -244,12 +212,8 @@ try {
       await page.keyboard.press("Escape");
       const force = page.locator(`[data-region-id="${named("F")}"]`);
       await force.click({ position: { x: 400, y: 25 } });
-      await revealRegionActions(page);
-      const quantityToolbar = page.getByRole("toolbar", {
-        name: "Quantity F actions",
-        exact: true,
-      });
-      await expect(quantityToolbar.getByRole("button")).toHaveText([
+      await expect(toolbar).toHaveAttribute("aria-description", "Quantity F");
+      await expect(toolbar.getByRole("button")).toHaveText([
         "Edit value",
         "Vary",
         "Find uses",
@@ -288,7 +252,7 @@ try {
       );
       await expect(marking).toBeVisible();
       await page.keyboard.press("Escape");
-      await expect(disclosure).toBeFocused();
+      await expect(edit).toBeFocused();
     } else {
       await expect(blocked).toBeDisabled();
       if (surface === "search") {
