@@ -5,8 +5,7 @@ import {
   prepareCalculation,
   references,
   same,
-  solvePrepared,
-  type CalculationState,
+  compileRowCalculation,
   type Quantity,
   type Statement,
 } from "../notebook/math.ts";
@@ -238,7 +237,7 @@ function evaluateRows(
   const prepared = definitions.map(({ id, text, mathVersion }) =>
     prepareCalculation(id, text, mathVersion ?? 1),
   );
-  let previousRow: CalculationState | undefined;
+  const solveRow = compileRowCalculation(prepared);
   const records: DataRecord[] = rows.map((row) => {
     const overrides: Record<string, Quantity> = {};
     relation.bindings.forEach((b, i) => {
@@ -260,8 +259,7 @@ function evaluateRows(
         value,
       };
     });
-    previousRow = solvePrepared(prepared, overrides, previousRow);
-    const { solved } = previousRow,
+    const solved = solveRow(overrides),
       value = solved.values.get(output);
     const error =
       solved.errors.get(relation.output) ||
