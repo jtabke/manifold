@@ -82,7 +82,7 @@ export function useCanvasNavigation(
   const touches = useRef(new Map<number, { x: number; y: number }>());
   const ignoreClick = useRef(false);
   const pending = useRef<
-    { zoom: number; left: number; top: number } | undefined
+    { zoom: number; at?: { x: number; y: number } } | undefined
   >(undefined);
   const zoomFrame = useFrameTask(() => {
     const next = pending.current;
@@ -90,7 +90,10 @@ export function useCanvasNavigation(
     const node = canvas.current;
     if (!node) return;
     displayCanvasZoom(node, next.zoom);
-    scrollCanvasTo(node, { left: next.left, top: next.top });
+    if (next.at) {
+      scrollCanvasTo(node, { left: next.at.x, top: next.at.y });
+      next.at = undefined; // From here, the DOM owns the displayed scroll.
+    }
     display.publish(next.zoom);
     if (gesture.current) {
       gesture.current.left = canvasScroll(node).x;
@@ -111,7 +114,9 @@ export function useCanvasNavigation(
     // This is a boundary commit, never the continuous zoom rendering path.
     flushSync(() => current.current.setZoom(next.zoom));
     displayCanvasZoom(node, next.zoom);
-    scrollCanvasTo(node, { left: next.left, top: next.top });
+    // An unpainted frame still needs its anchor. Never replay a painted one
+    // over a newer native scroll or reference reveal at the start of a drag.
+    if (next.at) scrollCanvasTo(node, { left: next.at.x, top: next.at.y });
     display.publish(next.zoom);
     if (gesture.current) {
       gesture.current.left = canvasScroll(node).x;
@@ -143,20 +148,16 @@ export function useCanvasNavigation(
     (value: number, x?: number, y?: number) => {
       const node = canvas.current;
       if (!node) return;
-      const before = pending.current || {
-        zoom: current.current.zoom,
-        left: canvasScroll(node).x,
-        top: canvasScroll(node).y,
-      };
+      const before = pending.current?.zoom ?? current.current.zoom,
+        at = pending.current?.at ?? canvasScroll(node);
       const next = clampZoom(value);
-      if (next === before.zoom) return;
+      if (next === before) return;
       const px = x ?? node.clientWidth / 2,
         py = y ?? node.clientHeight / 2,
-        ratio = next / before.zoom;
+        ratio = next / before;
       pending.current = {
         zoom: next,
-        left: (before.left + px) * ratio - px,
-        top: (before.top + py) * ratio - py,
+        at: { x: (at.x + px) * ratio - px, y: (at.y + py) * ratio - py },
       };
       zoomFrame.schedule(undefined);
       clearTimeout(idle.current);
@@ -364,6 +365,16 @@ export function useCanvasNavigation(
     e.currentTarget.setPointerCapture(e.pointerId);
     return true;
   };
+  const panPendingZoom = (node: HTMLElement, dx: number, dy: number) => {
+    const next = pending.current;
+    if (!next) return false;
+    const at = next.at ?? canvasScroll(node);
+    next.at = { x: at.x + dx, y: at.y + dy };
+    zoomFrame.schedule(undefined);
+    clearTimeout(idle.current);
+    idle.current = setTimeout(settleZoom, 120);
+    return true;
+  };
   const move = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (touches.current.has(e.pointerId)) {
       e.preventDefault();
@@ -377,13 +388,8 @@ export function useCanvasNavigation(
       });
       const a = center(before),
         b = center(after);
-      if (pending.current) {
-        pending.current.left += a.x - b.x;
-        pending.current.top += a.y - b.y;
-        zoomFrame.schedule(undefined);
-        clearTimeout(idle.current);
-        idle.current = setTimeout(settleZoom, 120);
-      } else scrollCanvasBy(e.currentTarget, a.x - b.x, a.y - b.y);
+      if (!panPendingZoom(e.currentTarget, a.x - b.x, a.y - b.y))
+        scrollCanvasBy(e.currentTarget, a.x - b.x, a.y - b.y);
       if (before.length === 2 && after.length === 2) {
         const oldDistance = Math.hypot(
           before[0].x - before[1].x,
@@ -411,13 +417,7 @@ export function useCanvasNavigation(
     if (Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > 4)
       g.moved = true;
     const node = e.currentTarget;
-    if (pending.current) {
-      pending.current.left -= e.clientX - g.x;
-      pending.current.top -= e.clientY - g.y;
-      zoomFrame.schedule(undefined);
-      clearTimeout(idle.current);
-      idle.current = setTimeout(settleZoom, 120);
-    } else {
+    if (!panPendingZoom(node, g.x - e.clientX, g.y - e.clientY)) {
       g.left -= e.clientX - g.x;
       g.top -= e.clientY - g.y;
       scrollCanvasTo(node, { left: g.left, top: g.top });

@@ -179,6 +179,18 @@ try {
   expect(chordAfter.y).toBeCloseTo(chordBefore.y - 20, 0);
   await page.mouse.up({ button: "middle" });
   await page.clock.runFor(400);
+
+  // Native scroll (including scrollIntoView on a link handle) can move the
+  // displayed camera between a zoom frame and the next object's pointer-down.
+  await pinch(-1);
+  await page.clock.runFor(17);
+  await canvas.evaluate((node) =>
+    node.scrollBy({ left: 83, top: 57, behavior: "instant" }),
+  );
+  const scrolled = await camera();
+  await page.mouse.down({ button: "middle" });
+  expect(await camera()).toEqual(scrolled);
+  await page.mouse.up({ button: "middle" });
   await page.clock.resume();
   expect(errors).toEqual([]);
   console.log(
