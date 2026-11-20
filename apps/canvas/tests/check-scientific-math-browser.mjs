@@ -68,11 +68,15 @@ try {
     const controls = page.getByLabel("Explore theta", { exact: true });
     await controls
       .getByLabel("Exploration maximum", { exact: true })
-      .fill("1.6");
+      .fill("90");
     const value = controls.getByLabel("Exploration value theta", {
       exact: true,
     });
-    await value.fill(String(Math.PI / 3));
+    await expect(value).toHaveValue("30");
+    await expect(
+      controls.getByRole("slider", { name: "Vary theta", exact: true }),
+    ).toHaveAttribute("aria-valuetext", "30 deg");
+    await value.fill("60");
     await value.press("Enter");
     await expect(result).toContainText("250 N");
     expect((await readWorkspace(page)).page).toEqual(saved.page);

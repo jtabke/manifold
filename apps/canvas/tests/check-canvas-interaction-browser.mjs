@@ -436,7 +436,10 @@ try {
   };
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await moveSelection.evaluate((node, start) => {
+  // Synthetic dispatch bypasses browser capture routing. The stable canvas owns the drag even when its selection toolbar docks or disappears.
+  await canvas.evaluate((node, start) => {
+    if (!node.hasPointerCapture(1))
+      throw Error("The canvas must capture the multi-selection drag.");
     for (let dx = 10; dx <= 35; dx++)
       node.dispatchEvent(
         new PointerEvent("pointermove", {

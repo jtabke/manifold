@@ -112,12 +112,12 @@ const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
     [
       "↑ / ↓ / ← / → · Home / End",
       "Choose a menu action",
-      "In context/marking menus. Enter or Space activates; 1–8 selects a numbered item.",
+      "In context/marking menus. Enter or Space activates; 1–9 selects a numbered item.",
     ],
     [
       "Escape / Tab",
       "Dismiss an action menu",
-      "Returns focus to its invoker. Escape also closes the shortcut reference.",
+      "Escape goes back one level in a submenu. Closing the menu returns focus to its invoker.",
     ],
     [
       "↑ / ↓ · Enter",

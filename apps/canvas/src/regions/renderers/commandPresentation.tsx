@@ -90,7 +90,10 @@ export const presentCommand = (
   icon: commandIcons[command.icon] || <MoreHorizontal />,
   hint: command.label,
   intent:
-    command.intent ?? (command.icon === "inspect" ? "inspect" : undefined),
+    command.intent ??
+    (command.target.kind !== "canvas" && command.icon === "inspect"
+      ? "inspect"
+      : undefined),
   unavailable: command.unavailable,
   run: () => executeCommand(command),
 });

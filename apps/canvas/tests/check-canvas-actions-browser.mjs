@@ -122,6 +122,28 @@ try {
       });
     await page.keyboard.press("Escape");
     await power.click({ button: "right", position: { x: 400, y: 25 } });
+    await expect(item("Keyboard shortcuts")).toHaveCount(0);
+    await item("More actions…").click();
+    const numbers = await menu
+      .getByRole("menuitem")
+      .evaluateAll((nodes) =>
+        nodes.map((n) => [
+          n.getAttribute("aria-keyshortcuts"),
+          n.querySelector("kbd")?.textContent || null,
+        ]),
+      );
+    expect(numbers).toEqual(
+      numbers.map((_, i) =>
+        i < 9 ? [String(i + 1), String(i + 1)] : [null, null],
+      ),
+    );
+    await expect(item("All actions")).toHaveAttribute("aria-keyshortcuts", "9");
+    await page.keyboard.press("9");
+    await expect(
+      page.getByRole("textbox", { name: "Search commands", exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Escape");
+    await power.click({ button: "right", position: { x: 400, y: 25 } });
     await item("More actions…").click();
     await item("Try alternative").click();
     expect((await saved()).page.contexts).toHaveLength(2);

@@ -27,7 +27,7 @@ try {
     const saved = () => readWorkspace(page);
     await page.goto(base);
     await startWriting(page);
-    for (const text of ["P = F*v", "F = 20 N", "v = 3 m/s"]) {
+    for (const text of ["F = 20 N", "v = 3 m/s", "P = F*v"]) {
       await editor.fill(text);
       await editor.press("Enter");
     }
@@ -41,6 +41,50 @@ try {
     await expect(
       page.getByRole("toolbar", { name: "Equation P actions", exact: true }),
     ).toBeHidden();
+    if (surface === "toolbar") {
+      const quick = page.getByRole("toolbar", {
+        name: "Canvas selection",
+        exact: true,
+      });
+      await expect(
+        quick.locator(":scope > button[data-command-id]"),
+      ).toHaveText(["Edit", "Plot", "Trace"]);
+      await expect(
+        quick.getByRole("button", { name: "Group", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        quick.getByRole("button", { name: "Delete", exact: true }),
+      ).toHaveCount(0);
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect
+          .poll(() =>
+            quick.evaluate((bar) => {
+              const b = bar.getBoundingClientRect();
+              const close = bar
+                .querySelector('[aria-label="Clear canvas selection"]')
+                .getBoundingClientRect();
+              return (
+                b.left >= 0 &&
+                b.right <= innerWidth &&
+                close.top <=
+                  bar.querySelector("button").getBoundingClientRect().bottom &&
+                [...document.querySelectorAll(".er-region")].every((n) => {
+                  const r = n.getBoundingClientRect();
+                  return (
+                    b.bottom <= r.top ||
+                    b.top >= r.bottom ||
+                    b.right <= r.left ||
+                    b.left >= r.right
+                  );
+                })
+              );
+            }),
+          )
+          .toBe(true);
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 });
+    }
     const beforeActions = (await saved()).document.id;
     const disclosure = page.locator(
       ".er-region.is-selected > .er-actions > summary",

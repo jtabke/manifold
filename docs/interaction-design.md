@@ -106,7 +106,7 @@ review semantics or recovery behavior. New integrations must register supported
 capabilities explicitly rather than advertising operations that cannot execute.
 
 Contextual toolbars show up to three likely actions and More. Equations offer
-Edit/Plot/Connect; quantities offer Edit value/Vary/Find uses; results and plot
+Edit/Plot/Trace; quantities offer Edit value/Vary/Find uses; results and plot
 selections offer Inspect source/Explore/Compare; datasets offer Inspect/Connect/
 Visualize, with unavailable calculated-data views explained. A selected term is
 identified separately from its containing equation and resolves its identity-bound
