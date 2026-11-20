@@ -1,5 +1,6 @@
 /** Installed model/source adapters. Portable documents supply data, never executable methods. */
 import * as f from "@manifold/foundation";
+import { rendererViews } from "./rendererViews.ts";
 import { createModelAnalyses } from "./modelAnalysis.ts";
 import { createModelOptimizations } from "./modelOptimization.ts";
 import {
@@ -158,8 +159,7 @@ export const MODEL_RENDERER = "canvas-independent-model@1";
 /** Installed renderers reject malformed targets before any candidate becomes visible. */
 export function validateModelViews(document: f.Document) {
   let count = 0;
-  for (const [, view] of document.views.entries()) {
-    if (view.renderer !== MODEL_RENDERER) continue;
+  for (const view of rendererViews(document, MODEL_RENDERER)) {
     f.assert(
       ++count <= 64,
       "The canvas supports up to 64 independent-model views",

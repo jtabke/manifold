@@ -87,6 +87,10 @@ try {
       math: [...document.querySelectorAll("[data-math-renders]")].map((n) =>
         Number(n.dataset.mathRenders),
       ),
+      drawingLayer: Number(
+        document.querySelector("[data-drawing-surface]").dataset
+          .drawingLayerRenders,
+      ),
       drawing: [...document.querySelectorAll("[data-drawing-renders]")].map(
         (n) => Number(n.dataset.drawingRenders),
       ),
@@ -721,6 +725,17 @@ try {
     }),
   );
   const written = await readWorkspace(page);
+  const acceptedCounts = await counts();
+  assert.equal(
+    acceptedCounts.drawingLayer,
+    typingAfter.drawingLayer,
+    "publishing a worksheet edit and acknowledging its save leave the drawing layer alone",
+  );
+  assert.deepEqual(acceptedCounts.drawing, typingAfter.drawing);
+  assert.ok(
+    acceptedCounts.measurements - typingAfter.measurements < count,
+    "a local edit does not remeasure the entire worksheet",
+  );
   assert.equal(project(written.page).texts["fast-0"], "v0 = v1");
   assert.equal(written.page.links["fast-0"].v1, "fast-1");
   await canvas.focus();

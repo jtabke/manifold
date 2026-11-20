@@ -1,5 +1,6 @@
 /** Analysis commands share the accepted document, preview, Keep and Undo protocols. */
 import * as f from "@manifold/foundation";
+import { rendererViews } from "./rendererViews.ts";
 import {
   ANALYSIS_RENDERER,
   MODEL_ANALYSIS,
@@ -120,9 +121,7 @@ export function keepModelAnalysis(
   });
 }
 export function analysisViews(document: f.Document) {
-  return [...document.views.entries()]
-    .map(([, v]) => v)
-    .filter((v) => v.renderer === ANALYSIS_RENDERER);
+  return rendererViews(document, ANALYSIS_RENDERER);
 }
 export function validateAnalysisViews(document: f.Document) {
   const views = analysisViews(document);

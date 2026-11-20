@@ -13,6 +13,8 @@ const attributes = [
   "data-data-relation-id",
 ];
 export const canvasObjectSelector = attributes.map((a) => `[${a}]`).join(",");
+export const canvasSelectorFor = (id: string) =>
+  attributes.map((a) => `[${a}="${CSS.escape(id)}"]`).join(",");
 export function canvasObjectId(element: Element) {
   const node = element.closest(canvasObjectSelector);
   return (
@@ -35,9 +37,7 @@ export function useCanvasOverlaps(options: {
   const origin = useRef<{ point: Point; ids: string[] } | undefined>(undefined),
     focused = useRef<string | undefined>(undefined);
   const element = (id: string) =>
-    options.canvas.current?.querySelector<HTMLElement>(
-      attributes.map((a) => `[${a}="${CSS.escape(id)}"]`).join(","),
-    );
+    options.canvas.current?.querySelector<HTMLElement>(canvasSelectorFor(id));
   const clear = () => {
     origin.current = undefined;
     setIds((previous) => (previous.length ? [] : previous));

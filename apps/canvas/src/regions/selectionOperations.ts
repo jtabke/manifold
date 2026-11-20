@@ -11,12 +11,15 @@ import { detachMember } from "./canvasScene.ts";
 export function selectionEditReason(
   session: RegionSession,
   ids: readonly string[],
+  drawingIds?: ReadonlyMap<string, unknown>,
 ) {
-  const supported = new Set([
-    ...session.state.regions.map((r) => r.id),
-    ...drawings(session.document).map((e) => e.id),
-  ]);
-  return ids.some((id) => !supported.has(id))
+  return ids.some(
+    (id) =>
+      !session.state.regions.some((region) => region.id === id) &&
+      !(drawingIds ??= drawingGeometry(drawings(session.document)).byId).has(
+        id,
+      ),
+  )
     ? "Duplicate/Delete supports worksheet regions and drawings. Use the object's own actions for other views."
     : undefined;
 }

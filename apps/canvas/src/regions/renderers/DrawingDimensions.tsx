@@ -20,7 +20,7 @@ import {
 } from "../drawingDimensions";
 import { setDimensionPlacement } from "../drawingScaleOperations";
 import type { DrawingEntry } from "../drawing";
-import { drawingGeometry, type Bounds } from "../drawingGeometry";
+import type { drawingGeometry, Bounds } from "../drawingGeometry";
 import { drawingGridStep, formatDrawingLength } from "../drawingScale";
 export function DrawingAreaGrid({
   entry,
@@ -82,6 +82,7 @@ type Drag = {
 };
 export const DrawingDimensions = memo(function DrawingDimensions({
   entries,
+  geometry,
   zoom,
   session,
   buffers,
@@ -94,6 +95,7 @@ export const DrawingDimensions = memo(function DrawingDimensions({
   onShortcut,
 }: {
   entries: readonly DrawingEntry[];
+  geometry: ReturnType<typeof drawingGeometry>;
   zoom: number;
   session: RegionSession;
   buffers: EditBuffers;
@@ -190,12 +192,16 @@ export const DrawingDimensions = memo(function DrawingDimensions({
     };
   }, []);
   useEffect(() => {
-    if (
-      drag.current &&
-      (!enabled || drag.current.expected !== session.document)
-    )
-      cancel();
-  }, [session.document, enabled]);
+    const changed = () => {
+      if (
+        drag.current &&
+        (!enabled || drag.current.expected !== session.document)
+      )
+        cancel();
+    };
+    changed();
+    return session.subscribe(changed);
+  }, [session, enabled]);
   useEffect(() => {
     cancel();
   }, [zoom]);
@@ -385,10 +391,6 @@ export const DrawingDimensions = memo(function DrawingDimensions({
     onClick: (e: { stopPropagation: () => void }) => e.stopPropagation(),
     onDoubleClick: (e: { stopPropagation: () => void }) => e.stopPropagation(),
   });
-  const geometry = drawingGeometry(entries),
-    areas = new Map(
-      entries.filter((e) => e.mark.kind === "area").map((e) => [e.id, e]),
-    );
   return (
     <g className="drawing-dimensions" pointerEvents="none">
       <desc id="dimension-placement-help">
@@ -399,7 +401,8 @@ export const DrawingDimensions = memo(function DrawingDimensions({
       </desc>
       {entries.flatMap((entry) => {
         const scale =
-          entry.mark.area && areas.get(entry.mark.area.item)?.mark.scale;
+          entry.mark.area &&
+          geometry.byId.get(entry.mark.area.item)?.mark.scale;
         if (!scale?.dimensions) return [];
         const axes = dimensionAxes(entry.mark.kind).filter(
           (axis) =>

@@ -13,6 +13,7 @@ import {
 import { planConnection } from "../src/regions/linking.ts";
 import { observeAuthoring } from "./authoring-probe.mjs";
 import { drawingFixture } from "./drawing-fixture.mjs";
+import { canvasViewSelection } from "../src/regions/app/canvasViewSelection.ts";
 import {
   canvasSchemas,
   canvasPage,
@@ -292,13 +293,23 @@ function writeWork(drawings, retainedRevisions, mode) {
         revise(session, "row-0", (b) => (b.value.text = `q0 := ${i}`)),
       ),
     );
+  const views = canvasViewSelection(session),
+    rendered = views.read(),
+    frames = rendered.drawing.frames;
+  let renders = 0;
+  const stop = views.subscribe(() => {
+    assert.equal(views.read(), rendered);
+    assert.equal(views.read().drawing.frames, frames);
+    renders++;
+  });
   const before = session.document,
-    work = { entries: 0, gets: 0, folds: 0, drawingGets: 0 };
+    work = { entries: 0, gets: 0, folds: 0, drawingGets: 0, drawingEntries: 0 };
   const proto = f.SharedMap.prototype,
     { entries, get, fold } = proto;
   proto.entries = function* () {
     for (const pair of entries.call(this)) {
       work.entries++;
+      if (pair[0].startsWith("drawing-load-")) work.drawingEntries++;
       yield pair;
     }
   };
@@ -331,6 +342,12 @@ function writeWork(drawings, retainedRevisions, mode) {
   } finally {
     Object.assign(proto, { entries, get, fold });
   }
+  stop();
+  assert.equal(
+    renders,
+    1,
+    "one coherent publication through the renderer selectors",
+  );
   assert(write.ok, write.error);
   assert.equal(session.document.revisions.size, before.revisions.size + 1);
   assert.equal(project(session.state).solved.values.get("q32").value, 100);
@@ -365,6 +382,7 @@ for (const mode of ["direct", "atomic", "prepare+apply"]) {
     assert(work.entries <= small.entries + 2, JSON.stringify(work));
     assert(work.gets <= small.gets + 2, JSON.stringify(work));
     assert.equal(work.drawingGets, 0);
+    assert.equal(work.drawingEntries, 0);
     // AVL storage-budget folds visit changed paths, not all drawings or old revisions.
     assert(work.folds <= small.folds + 64, JSON.stringify(work));
   }

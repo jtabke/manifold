@@ -25,6 +25,7 @@ const format = (n: number) => Number(n.toPrecision(10)).toString();
 import { ModelOptimizationEditor } from "./OptimizationEditor";
 export function ModelOptimizations({
   views,
+  responses,
   session,
   positions,
   beforeAction,
@@ -32,6 +33,7 @@ export function ModelOptimizations({
   buffers,
 }: {
   views: readonly f.View[];
+  responses: readonly f.Revision[];
   session: RegionSession;
   positions: Record<string, Point>;
   beforeAction: () => boolean;
@@ -41,12 +43,13 @@ export function ModelOptimizations({
   return views.map((view) => (
     <OptimizationCard
       key={view.id}
-      {...{ session, view, beforeAction, move, buffers }}
+      {...{ session, view, beforeAction, move, buffers, responses }}
       at={positions[view.id] || view}
     />
   ));
 }
 function OptimizationCard({
+  responses,
   session,
   view,
   at,
@@ -56,6 +59,7 @@ function OptimizationCard({
 }: {
   session: RegionSession;
   view: f.View;
+  responses: readonly f.Revision[];
   at: Point;
   beforeAction: () => boolean;
   move: (id: string, event: PointerEvent) => void;
@@ -182,18 +186,14 @@ function OptimizationCard({
     }
   })();
   const [selectedResponse, setSelectedResponse] = useState<string | null>(null);
-  const responses = [...document.items.entries()]
-    .map(([id]) => ({ id, revision: f.current(document, id) }))
-    .filter(
-      (r) =>
-        r.revision?.schema === "canvas-model-response@1" &&
-        (r.revision.body as unknown as ResponseRequest).receipt === receipt?.id,
-    );
+  const matching = responses.filter(
+    (r) => (r.body as unknown as ResponseRequest).receipt === receipt?.id,
+  );
   // Prefer the explicit action result, including a deduplicated earlier request.
   // Reload falls back deterministically to the most recently retained response.
   const response =
-    responses.find((r) => r.id === selectedResponse) ||
-    responses
+    matching.find((r) => r.item === selectedResponse) ||
+    matching
       .sort((a, b) => {
         const order = (id: string) => {
           const result = session.foundation.result(
@@ -202,15 +202,13 @@ function OptimizationCard({
           );
           return "receipt" in result ? (result.receipt?.order ?? -1) : -1;
         };
-        return order(a.id) - order(b.id) || a.id.localeCompare(b.id);
+        return order(a.item) - order(b.item) || a.item.localeCompare(b.item);
       })
       .at(-1);
-  const responseBody = response?.revision?.body as unknown as
-    | ResponseRequest
-    | undefined;
+  const responseBody = response?.body as unknown as ResponseRequest | undefined;
   const responseResult = response
     ? session.foundation.result(
-        modelReference(document, response.id),
+        modelReference(document, response.item),
         "baseline",
       )
     : undefined;

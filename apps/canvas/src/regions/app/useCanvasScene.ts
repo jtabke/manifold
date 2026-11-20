@@ -16,6 +16,11 @@ import {
   type PointerEvent,
 } from "react";
 import type { Artifact } from "../artifacts";
+import { drawingGeometry, placeDrawings } from "../drawingGeometry";
+import {
+  measureCanvasObjects,
+  observeCanvasObjects,
+} from "./canvasMeasurements";
 import { type Page, type Point, type RegionSession } from "../document";
 import { alignSelection } from "../alignment";
 import { createScenePreview } from "../interaction/scenePreview";
@@ -50,7 +55,9 @@ type Options = {
   setZoom: Dispatch<SetStateAction<number>>;
   places: Record<string, Point>;
   readFrames: (ids?: ReadonlySet<string>) => CanvasFrame[];
-  extraFrames?: CanvasFrame[];
+  extraFrames: CanvasFrame[];
+  drawing: ReturnType<typeof drawingGeometry>;
+  setRegionHeights: Dispatch<SetStateAction<Record<string, number>>>;
   sceneError?: string;
 };
 type SceneGesture = SpatialDrag & {
@@ -122,105 +129,66 @@ export function useCanvasScene(o: Options) {
     if (dock?.plan && pending?.plan === dock.plan && !pending.gesture.released)
       pending.displayed = true;
   }, [dock]);
+  const observed = useRef<
+    | { canvas: HTMLElement; objects: ReturnType<typeof observeCanvasObjects> }
+    | undefined
+  >(undefined);
   useLayoutEffect(() => {
-    const node = o.canvas.current;
-    if (!node) return;
-    const current = new Set(raw.map((frame) => frame.id));
-    for (const id of cache.current.keys())
-      if (!current.has(id)) cache.current.delete(id);
-    const measure = (ids?: ReadonlySet<string>) => {
+    const canvas = o.canvas.current;
+    if (observed.current?.canvas === canvas) return;
+    observed.current?.objects.disconnect();
+    observed.current = undefined;
+    if (!canvas) return;
+    const objects = observeCanvasObjects(canvas, (targets) => {
       if (gesture.current?.moved) return;
+      const heights = new Map<string, number>();
+      const frames = measureCanvasObjects(
+        canvas,
+        latest.current.zoom,
+        targets,
+        (id, h) => heights.set(id, h),
+      );
       let changed = false;
-      for (const f of latest.current.readFrames(ids)) {
-        if (f.width <= 0 || f.height <= 0) continue;
+      for (const f of frames) {
         const before = cache.current.get(f.id);
         if (
           !before ||
           Math.abs(before.width - f.width) > 0.5 ||
           Math.abs(before.height - f.height) > 0.5
-        )
+        ) {
+          cache.current.set(f.id, f);
           changed = true;
-        cache.current.set(f.id, f);
+        }
       }
       if (changed) measured((v) => v + 1);
-    };
-    const targets = [
-      ...node.querySelectorAll<HTMLElement>(
-        "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
-      ),
-    ];
-    // Measure accepted changes without skipped content before caching intrinsic
-    // sizes. Native viewport culling keeps offscreen DOM/accessible objects and
-    // their measured frames, rather than unmounting editors or inventing bounds.
-    if (!gesture.current?.moved)
-      for (const target of targets) delete target.dataset.canvasCull;
-    measure();
-    const observer = new ResizeObserver((entries) => {
-      const ids = new Set(
-        entries
-          .filter(({ target }) => !target.matches(".is-editing"))
-          .map(({ target }) => {
-            const data = (target as HTMLElement).dataset;
-            return (
-              data.regionId ||
-              data.plotId ||
-              data.viewId ||
-              data.toolId ||
-              data.dataRelationId ||
-              data.modelId!
-            );
-          }),
-      );
-      if (ids.size) measure(ids);
-      if (targets.length >= 64)
-        for (const { target, contentRect } of entries) {
-          const element = target as HTMLElement;
-          if (contentRect.width <= 0 || contentRect.height <= 0) continue;
-          element.style.setProperty(
-            "--canvas-object-width",
-            `${contentRect.width}px`,
-          );
-          element.style.setProperty(
-            "--canvas-object-height",
-            `${contentRect.height}px`,
-          );
-          element.dataset.canvasCull = "";
-        }
+      if (heights.size)
+        latest.current.setRegionHeights((previous) => {
+          let next = previous;
+          for (const [id, h] of heights)
+            if (Math.abs((previous[id] ?? 0) - h) > 0.5) {
+              if (next === previous)
+                next = Object.assign(Object.create(null), previous);
+              next[id] = h;
+            }
+          return next;
+        });
     });
-    const visibility =
-      targets.length >= 64
-        ? new IntersectionObserver(
-            (entries) => {
-              for (const { target, isIntersecting } of entries) {
-                const element = target as HTMLElement;
-                if (isIntersecting) delete element.dataset.canvasOffscreen;
-                else element.dataset.canvasOffscreen = "";
-              }
-            },
-            { root: node, rootMargin: "800px" },
-          )
-        : undefined;
-    for (const target of targets) {
-      observer.observe(target);
-      visibility?.observe(target);
-    }
-    return () => {
-      observer.disconnect();
-      visibility?.disconnect();
-    };
-  }, [
-    o.page,
-    o.artifacts,
-    scene,
-    o.zoom,
-    o.extraFrames,
-    o.canvas,
-    cancelVersion,
-    !!gesture.current?.moved,
-  ]);
+    observed.current = { canvas, objects };
+    objects.refresh();
+  });
+  useLayoutEffect(
+    () => () => {
+      observed.current?.objects.disconnect();
+      observed.current = undefined;
+    },
+    [],
+  );
+  useLayoutEffect(() => {
+    if (!gesture.current?.moved) observed.current?.objects.refresh();
+  }, [o.zoom, cancelVersion, !!gesture.current?.moved]);
   const raw = useMemo<CanvasFrame[]>(
     () => [
-      ...(o.extraFrames || []).map((f) => ({
+      ...o.extraFrames.map((f) => ({
         ...f,
         height: cache.current.get(f.id)?.height || f.height,
       })),
@@ -274,24 +242,64 @@ export function useCanvasScene(o: Options) {
     ],
     [o.extraFrames, o.page, o.places, o.artifacts, scene.tools, measureVersion],
   );
+  const objectIndex = useMemo(() => new Map(raw.map((f) => [f.id, f])), [raw]);
+  const drawingFrame = (scene: typeof o.drawing, id: string) => {
+    const entry = scene.byId.get(id);
+    return entry && scene.frame(entry);
+  };
+  useLayoutEffect(() => {
+    for (const id of cache.current.keys())
+      if (!objectIndex.has(id)) cache.current.delete(id);
+  }, [objectIndex]);
+  const baseFrame = (id: string) =>
+    objectIndex.get(id) ?? drawingFrame(o.drawing, id);
   const automatic = useMemo(() => {
     if (gesture.current) return gesture.current.automatic;
     const positions: Record<string, Point> = Object.create(null);
     for (const g of scene.groups) {
       if (!g.auto) continue;
-      Object.assign(positions, groupPlacements(g, raw));
+      Object.assign(
+        positions,
+        groupPlacements(
+          g,
+          g.members.flatMap((id) => baseFrame(id) ?? []),
+        ),
+      );
     }
     return positions;
-  }, [scene.groups, raw, gesture.current?.id]);
+  }, [scene.groups, objectIndex, o.drawing, gesture.current?.id]);
   const displayed = automatic;
-  const frames = useMemo(
-    () => raw.map((f) => ({ ...f, ...displayed[f.id] })),
-    [raw, displayed],
+  const lastPlacements = useRef<Record<string, Point>>({});
+  const drawingPlacements = useMemo(() => {
+    const next = Object.fromEntries(
+      Object.entries(displayed).filter(([id]) => o.drawing.byId.has(id)),
+    );
+    if (!sameJson(lastPlacements.current, next)) lastPlacements.current = next;
+    return lastPlacements.current;
+  }, [o.drawing, displayed]);
+  const drawing = useMemo(
+    () => placeDrawings(o.drawing, drawingPlacements),
+    [o.drawing, drawingPlacements],
   );
+  const frame = (id: string) => {
+    const f = objectIndex.get(id);
+    return f
+      ? displayed[id]
+        ? { ...f, ...displayed[id] }
+        : f
+      : drawingFrame(drawing, id);
+  };
+  // Materialize a mixed scene only for an interaction that asks for one.
+  // Worksheet layout/measurements must not walk or re-create every drawing.
+  const allFrames = () => [
+    ...drawing.frames,
+    ...raw.map((f) => (displayed[f.id] ? { ...f, ...displayed[f.id] } : f)),
+  ];
   const compact = (g: CanvasGroup) =>
     (!!g.collapsed || o.zoom < 0.65) && focus?.id !== g.id;
-  const hidden = new Set(
-    scene.groups.filter(compact).flatMap((g) => g.members),
+  const hidden = useMemo(
+    () => new Set(scene.groups.filter(compact).flatMap((g) => g.members)),
+    [scene.groups, o.zoom < 0.65, focus?.id],
   );
   const closed = new Set(scene.closed || []);
   const camera = (): Camera => ({
@@ -351,7 +359,7 @@ export function useCanvasScene(o: Options) {
     if (!group) return;
     const next = { ...group, layout, auto: true };
     patchPositions(
-      groupPlacements(next, frames),
+      groupPlacements(next, allFrames()),
       true,
       scene.groups.map((g) => (g.id === id ? next : g)),
     );
@@ -365,7 +373,8 @@ export function useCanvasScene(o: Options) {
       group = groups.find((g) =>
         g.members.includes(groupMembers(scene.groups, source)[0]),
       );
-    if (group) patchPositions(groupPlacements(group, frames), true, groups);
+    if (group)
+      patchPositions(groupPlacements(group, allFrames()), true, groups);
   };
   const restoreFocus = () => {
     if (focus) setCamera(focus.camera);
@@ -373,7 +382,7 @@ export function useCanvasScene(o: Options) {
   };
   const focusObject = (id: string) => {
     const members = groupMembers(scene.groups, id),
-      bounds = frameBounds(frames.filter((f) => members.includes(f.id)));
+      bounds = frameBounds(members.flatMap((id) => frame(id) ?? []));
     if (!bounds || !o.canvas.current) return;
     setFocus({ id, camera: focus?.camera || camera() });
     const viewport = o.canvas.current,
@@ -436,7 +445,7 @@ export function useCanvasScene(o: Options) {
       setError("This prototype supports up to 24 canvas tool views.");
       return;
     }
-    const source = frames.find((f) => f.id === (artifact || object)),
+    const source = frame(artifact || object),
       position = at || {
         x: source?.x || 120,
         y: (source?.y || 100) + (source?.height || 70) + 36,
@@ -482,7 +491,8 @@ export function useCanvasScene(o: Options) {
     setMoving(false);
     const measured = o.readFrames(),
       allFrames = measuredFrames(measured);
-    for (const f of measured) cache.current.set(f.id, f);
+    for (const f of measured)
+      if (f.kind !== "drawing") cache.current.set(f.id, f);
     const multiple = !group && selection.includes(id) && selection.length > 1;
     const members = multiple
         ? selection
@@ -556,7 +566,7 @@ export function useCanvasScene(o: Options) {
   };
   const measuredFrames = (measured = o.readFrames()) => {
     const byId = new Map(measured.map((f) => [f.id, f]));
-    return frames.map((f) => ({ ...f, ...byId.get(f.id) }));
+    return allFrames().map((f) => byId.get(f.id) ?? f);
   };
   const currentDockPlan = (g: SceneGesture, target: DockTarget) => {
     if (
@@ -858,7 +868,7 @@ export function useCanvasScene(o: Options) {
       camera: camera(),
       ...(scope ? { scope } : {}),
       positions: Object.fromEntries(
-        frames.map((f) => [f.id, { x: f.x, y: f.y }]),
+        allFrames().map((f) => [f.id, { x: f.x, y: f.y }]),
       ),
       groups: structuredClone(scene.groups),
       tools: structuredClone(scene.tools),
@@ -928,7 +938,12 @@ export function useCanvasScene(o: Options) {
     error,
     preview: displayed,
     dock,
-    frames,
+    get frames() {
+      return allFrames();
+    },
+    frame,
+    objectFrames: raw,
+    drawing,
     hidden,
     closed,
     focus,

@@ -1,5 +1,6 @@
 /** Guarded authored operations; Apply is separate from computation and one Undo step. */
 import * as f from "@manifold/foundation";
+import { rendererViews } from "./rendererViews.ts";
 import { canvasSchemas } from "./app/canvasDocument.ts";
 import type { RegionSession, Point } from "./document.ts";
 import {
@@ -25,6 +26,31 @@ import { responseRequest, type ResponseRequest } from "./modelAnalysis.ts";
 import { optimizationConvert } from "./optimizationQuantities.ts";
 
 type ReceiptLookup = { get(id: string): f.Receipt | undefined };
+/** Response cards are live item heads (not views). Don't search every drawing
+ * for each optimizer on every worksheet/status render. */
+export function optimizationResponses(
+  document: f.Document,
+  changed?: readonly string[],
+  previous: readonly f.Revision[] = [],
+): readonly f.Revision[] {
+  const records: f.Revision[] = [];
+  const add = (id: string) => {
+    const revision = f.current(document, id);
+    if (revision?.schema === "canvas-model-response@1") records.push(revision);
+  };
+  if (!changed) {
+    for (const [id] of document.items.entries()) add(id);
+    return Object.freeze(records);
+  }
+  if (!changed.length) return previous;
+  changed.forEach(add);
+  if (!records.length && !previous.some((r) => changed.includes(r.item)))
+    return previous;
+  return Object.freeze([
+    ...previous.filter((r) => !changed.includes(r.item)),
+    ...records,
+  ]);
+}
 export function validateOptimizationResponses(
   document: f.Document,
   receipts: ReceiptLookup,
@@ -125,18 +151,14 @@ export function computeOptimizationResponse(
     candidate: output.candidate?.x ?? null,
   };
   responseRequest(body);
-  const existing = [...session.document.items.entries()].find(([id]) => {
-    const r = f.current(session.document, id);
-    return (
-      r?.schema === "canvas-model-response@1" &&
-      f.canonical(r.body) === f.canonical(body as unknown as f.Json)
-    );
-  });
+  const existing = optimizationResponses(session.document).find(
+    (r) => f.canonical(r.body) === f.canonical(body as unknown as f.Json),
+  );
   if (existing)
     return {
-      item: existing[0],
+      item: existing.item,
       job: session.compute(
-        modelReference(session.document, existing[0]),
+        modelReference(session.document, existing.item),
         "baseline",
       ),
     };
@@ -382,9 +404,7 @@ export function applyOptimizationCandidate(
   );
 }
 export const optimizationViews = (document: f.Document) =>
-  [...document.views.entries()]
-    .map(([, v]) => v)
-    .filter((v) => v.renderer === OPTIMIZATION_RENDERER);
+  rendererViews(document, OPTIMIZATION_RENDERER);
 export function validateOptimizationViews(document: f.Document) {
   const views = optimizationViews(document);
   f.assert(

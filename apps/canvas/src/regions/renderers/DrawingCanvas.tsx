@@ -4,6 +4,7 @@ import { isCanvasControlEvent } from "../interaction/modalInput";
 import { canvasZoom } from "../interaction/canvasViewport";
 import {
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -42,7 +43,6 @@ import { curvePath, isCurve, MAX_SPLINE_POINTS } from "../drawingCurves";
 import type { RegionSession, Point } from "../document";
 import {
   createDrawing,
-  drawings,
   editDrawings,
   deleteDrawings,
   isInk,
@@ -60,6 +60,7 @@ import {
   inside,
   pointBounds,
   previewDrawings,
+  placeDrawings,
   type MarkGeometry,
 } from "../drawingGeometry";
 import { useEditBuffer } from "../app/useEditBuffer";
@@ -77,6 +78,10 @@ import { defaultDrawingScale, snapDrawingPoint } from "../drawingScale";
 import { DrawingAreaGrid, DrawingDimensions } from "./DrawingDimensions";
 type Tool = "select" | "lasso" | "eraser" | DrawingKind;
 type DrawingPointer = ReactPointerEvent<SVGSVGElement>;
+type Geometry = ReturnType<typeof drawingGeometry>;
+type VisibleMarks = (
+  entries: readonly DrawingEntry[],
+) => readonly DrawingEntry[];
 type Label = {
   at: Point;
   text: string;
@@ -90,7 +95,9 @@ type Gesture = {
   start: InkPoint;
   last: InkPoint;
   expected: Document;
-  geometry: ReturnType<typeof drawingGeometry>;
+  accepted: Geometry;
+  geometry: Geometry;
+  visibleEntries: readonly DrawingEntry[];
   points: InkPoint[];
   mark?: Mark;
   regularized?: Mark;
@@ -161,6 +168,7 @@ function useDrawingCanvas(
   activate: () => boolean,
   shared: {
     ids: readonly string[];
+    allIds: () => readonly string[];
     select: (ids: string[]) => void;
     move: (delta: Point) => void;
     startMove: (e: DrawingPointer, id: string, ids: string[]) => void;
@@ -168,13 +176,17 @@ function useDrawingCanvas(
     remove: () => void;
   },
   hand: boolean,
+  geometry: Geometry,
+  currentDrawing: () => Geometry,
+  positioned: Geometry,
+  visibleMarks: VisibleMarks,
 ) {
   const matchShortcut = useShortcutMatcher();
   const [tool, setTool] = useState<Tool>("select");
   const [areaId, setAreaId] = useState<string>();
   const surface = useRef<SVGSVGElement>(null);
   const [style, setStyle] = useState({ color: "#c5d3e8", width: 3 });
-  const selection = useMemo(() => new Set(shared.ids), [shared.ids]);
+  const selected = useMemo(() => new Set(shared.ids), [shared.ids]);
   const setSelection = (ids: Set<string>) => shared.select([...ids]);
   const [label, setLabel] = useState<Label>();
   const [focused, setFocused] = useState<string>();
@@ -194,16 +206,11 @@ function useDrawingCanvas(
         ? { gesture: preview, mark: fitted }
         : undefined;
   });
-  const entries = drawings(session.document),
-    geometry = drawingGeometry(entries);
-  const selected = useMemo(
-    () => new Set([...selection].filter((id) => geometry.byId.has(id))),
-    [selection, geometry],
-  );
+  const entries = positioned.entries;
   const selectedStroke =
     selected.size === 1 ? geometry.byId.get([...selected][0]) : undefined;
-  const areaAt = (p: Point, scene = geometry) => {
-    const areas = scene.entries
+  const areaAt = (p: Point, scene = positioned) => {
+    const areas = visibleMarks(scene.entries)
       .filter((e) => e.mark.kind === "area")
       .filter((e) => {
         const b = scene.bounds(e);
@@ -310,13 +317,21 @@ function useDrawingCanvas(
     return () => window.removeEventListener("canvaszoom", changed, true);
   }, [zoom]);
   useEffect(() => {
-    if (
-      !visible ||
-      (gesture.current && gesture.current.expected !== session.document) ||
-      (pathDraft.current && pathDraft.current.expected !== session.document)
-    )
+    if (!visible) {
       cancel();
-  }, [session.document, visible]);
+      return;
+    }
+    // Unrelated publications need not render this layer, but must still cancel stale gestures.
+    const changed = () => {
+      if (
+        (gesture.current && gesture.current.expected !== session.document) ||
+        (pathDraft.current && pathDraft.current.expected !== session.document)
+      )
+        cancel();
+    };
+    changed();
+    return session.subscribe(changed);
+  }, [session, visible]);
   const finishLabel = () => {
     if (!label) return true;
     const ok =
@@ -379,13 +394,11 @@ function useDrawingCanvas(
   };
   const editLabel = (entry: DrawingEntry) => {
     if (!activate() || !choose("select")) return;
-    const current = drawingGeometry(drawings(session.document)).byId.get(
-      entry.id,
-    );
+    const current = currentDrawing().byId.get(entry.id);
     if (current)
       setLabel({
         entry: current,
-        at: current.view,
+        at: entry.view,
         text: current.mark.text,
         expected: session.document,
       });
@@ -433,7 +446,7 @@ function useDrawingCanvas(
     e.preventDefault();
     e.stopPropagation();
     if (!activate() || !choose("select")) return;
-    const ids = selected.has(id) ? selection : new Set([id]);
+    const ids = selected.has(id) ? new Set(shared.allIds()) : new Set([id]);
     setSelection(ids);
     if (delta) {
       const step = e.shiftKey ? 20 : 5;
@@ -515,8 +528,10 @@ function useDrawingCanvas(
     e.stopPropagation();
     if (!activate() || !finishLabel()) return;
     const expected = session.document,
-      scene = drawingGeometry(drawings(expected)),
-      target = scene.pick(p, 7 / zoom);
+      accepted = currentDrawing(),
+      scene = accepted === geometry ? positioned : accepted,
+      visibleEntries = visibleMarks(scene.entries),
+      target = scene.pick(p, 7 / zoom, false, visibleEntries);
     const area =
       tool === "select"
         ? target?.mark.kind === "area"
@@ -535,7 +550,10 @@ function useDrawingCanvas(
       setLabel({
         at: p,
         text: target?.mark.kind === "text" ? target.mark.text : "",
-        entry: target?.mark.kind === "text" ? target : undefined,
+        entry:
+          target?.mark.kind === "text"
+            ? accepted.byId.get(target.id)
+            : undefined,
         expected,
       });
       return;
@@ -584,8 +602,8 @@ function useDrawingCanvas(
       controlIndex !== undefined ? selectedStroke : undefined;
     const resize = !!(e.target as Element).closest("[data-drawing-resize]"),
       ids = new Set(
-        e.shiftKey || (target && selection.has(target.id))
-          ? selection
+        e.shiftKey || (target && selected.has(target.id))
+          ? shared.allIds()
           : selected,
       );
     if (tool === "select" && !resize && !controlEntry) {
@@ -612,7 +630,9 @@ function useDrawingCanvas(
       start: p,
       last: p,
       expected,
+      accepted,
       geometry: scene,
+      visibleEntries,
       points: [p],
       erased: new Set(),
       area,
@@ -634,11 +654,12 @@ function useDrawingCanvas(
         text: "",
         start:
           tool === "connector"
-            ? scene.anchor(p, expected.document, 12 / zoom)
+            ? scene.anchor(p, expected.document, 12 / zoom, visibleEntries)
             : null,
         end: null,
       };
     if (controlEntry && controlIndex !== undefined) {
+      const at = scene.byId.get(controlEntry.id)!.view;
       g.transform = (end) => [
         {
           entry: controlEntry,
@@ -648,8 +669,8 @@ function useDrawingCanvas(
               i === controlIndex
                 ? {
                     ...point,
-                    x: end.x - controlEntry.view.x,
-                    y: end.y - controlEntry.view.y,
+                    x: end.x - at.x,
+                    y: end.y - at.y,
                   }
                 : point,
             ),
@@ -692,7 +713,7 @@ function useDrawingCanvas(
       g.points.push(p);
     }
     if (g.tool === "eraser") {
-      const hits = g.geometry.entries
+      const hits = g.visibleEntries
         .filter(
           (e) =>
             e.mark.kind !== "area" &&
@@ -711,7 +732,12 @@ function useDrawingCanvas(
           : [g.start, shift ? constrain(g.start, p, g.tool) : p],
         end:
           g.tool === "connector"
-            ? g.geometry.anchor(p, g.expected.document, 12 / zoom)
+            ? g.geometry.anchor(
+                p,
+                g.expected.document,
+                12 / zoom,
+                g.visibleEntries,
+              )
             : null,
       };
     return true;
@@ -748,7 +774,7 @@ function useDrawingCanvas(
           setTool("select");
         }
         if (acceptedFit) {
-          const entry = drawings(session.document).find((e) => e.id === id);
+          const entry = currentDrawing().byId.get(id);
           if (
             !entry ||
             !sameJson(entry.mark, g.mark) ||
@@ -765,7 +791,7 @@ function useDrawingCanvas(
       else if (g.tool === "lasso")
         setSelection(
           new Set(
-            g.geometry.entries
+            g.visibleEntries
               .filter((entry) => {
                 const b = g.geometry.bounds(entry);
                 if (entry.mark.kind === "area")
@@ -789,7 +815,16 @@ function useDrawingCanvas(
         g.transform &&
         Math.hypot(p.x - g.start.x, p.y - g.start.y) > 0.5
       )
-        editDrawings(session, g.transform(p), g.expected);
+        // Hit/resize geometry can be automatically placed by a mixed group;
+        // only canonical entries from this exact document are command guards.
+        editDrawings(
+          session,
+          g.transform(p).map((edit) => ({
+            ...edit,
+            entry: g.accepted.byId.get(edit.entry.id)!,
+          })),
+          g.expected,
+        );
     });
   };
   const visibleEntries = useMemo(
@@ -1250,7 +1285,7 @@ const DrawingMark = memo(function DrawingMark({
 });
 const DrawingMarks = memo(function DrawingMarks({
   entries,
-  baseline = entries,
+  geometry,
   erased,
   zoom,
   selection,
@@ -1259,7 +1294,7 @@ const DrawingMarks = memo(function DrawingMarks({
   focused,
 }: {
   entries: readonly DrawingEntry[];
-  baseline?: readonly DrawingEntry[];
+  geometry: Geometry;
   erased?: ReadonlySet<string>;
   zoom: number;
   selection: ReadonlySet<string>;
@@ -1267,8 +1302,6 @@ const DrawingMarks = memo(function DrawingMarks({
   drawingKey: Controller["drawingKey"];
   focused: string | undefined;
 }) {
-  const geometry = drawingGeometry(entries),
-    source = drawingGeometry(baseline);
   const tabStop = entries.some((e) => e.id === focused)
     ? focused
     : entries[0]?.id;
@@ -1293,20 +1326,7 @@ const DrawingMarks = memo(function DrawingMarks({
           selected={selection.has(entry.id)}
           tabStop={entry.id === tabStop}
           dimensioned={!!dimensioned}
-          shape={
-            local
-              ? undefined
-              : (entry.mark.kind === "connector" &&
-                [entry.mark.start, entry.mark.end].every(
-                  (anchor) =>
-                    !anchor ||
-                    geometry.byId.get(anchor.target.item) ===
-                      source.byId.get(anchor.target.item),
-                )
-                  ? source
-                  : geometry
-                ).geometry(entry)
-          }
+          shape={local ? undefined : geometry.geometry(entry)}
           zoom={zoom}
           focusDrawing={focusDrawing}
           drawingKey={drawingKey}
@@ -1317,17 +1337,15 @@ const DrawingMarks = memo(function DrawingMarks({
 /** Shared mixed-object movement updates this SVG scene, not the worksheet shell.
  * Unchanged marks retain entry/geometry identity, including unrelated connectors. */
 function DrawingScenePreview({
-  entries,
+  geometry,
+  visibleMarks,
   surface,
   children,
 }: {
-  entries: readonly DrawingEntry[];
+  geometry: Geometry;
+  visibleMarks: VisibleMarks;
   surface: RefObject<SVGSVGElement | null>;
-  children: (
-    entries: readonly DrawingEntry[],
-    geometry: ReturnType<typeof drawingGeometry>,
-    baseline: readonly DrawingEntry[],
-  ) => ReactNode;
+  children: (entries: readonly DrawingEntry[], geometry: Geometry) => ReactNode;
 }) {
   const [positions, setPositions] = useState<Record<string, Point>>({});
   useEffect(() => {
@@ -1337,61 +1355,78 @@ function DrawingScenePreview({
     node?.addEventListener("canvasscenepreview", preview);
     return () => node?.removeEventListener("canvasscenepreview", preview);
   }, [surface]);
-  const shown = useMemo(() => {
-    const source = drawingGeometry(entries);
-    return previewDrawings(
-      entries,
-      Object.entries(positions).flatMap(([id, at]) => {
-        const entry = source.byId.get(id);
-        if (!entry) return [];
-        const before = source.bounds(entry);
-        return [
-          {
-            entry,
-            at: {
-              x: entry.view.x + at.x - before.x,
-              y: entry.view.y + at.y - before.y,
-            },
-          },
-        ];
-      }),
-    );
-  }, [entries, positions]);
-  return children(shown, drawingGeometry(shown), entries);
+  const shown = useMemo(
+    () => placeDrawings(geometry, positions),
+    [geometry, positions],
+  );
+  const entries = useMemo(
+    () => visibleMarks(shown.entries),
+    [visibleMarks, shown],
+  );
+  return children(entries, shown);
+}
+type DrawingActions = Omit<Parameters<typeof useDrawingCanvas>[6], "ids"> & {
+  report: (message: string) => void;
+  onChooseTool: () => void;
+  onShortcut: (action: ShortcutAction) => void;
+  point: (x: number, y: number) => Point;
+  activate: () => boolean;
+};
+/** Input dispatch always sees the latest committed worksheet/selection. Changing
+ * a command closure is not a change to the drawing surface. */
+export function useDrawingActions(actions: DrawingActions) {
+  const latest = useRef(actions);
+  useLayoutEffect(() => {
+    latest.current = actions;
+  });
+  return latest;
 }
 /** Keep pointer samples and editor buffers out of the application shell's render loop. */
-export function DrawingCanvas({
+export const DrawingCanvas = memo(function DrawingCanvas({
   session,
   buffers,
-  report,
   toolbar,
-  onChooseTool,
-  onShortcut,
   hand,
   visible,
   zoom,
-  point,
-  activate,
-  shared,
-  placements,
+  drawing,
+  currentDrawing,
+  actions,
+  ids,
+  positioned,
   hidden,
+  inModel,
 }: {
   session: RegionSession;
   buffers: EditBuffers;
-  report: (message: string) => void;
   toolbar: HTMLElement | null;
-  onChooseTool: () => void;
-  onShortcut: (action: ShortcutAction) => void;
   hand: boolean;
   visible: boolean;
   zoom: number;
-  point: (x: number, y: number) => Point;
-  activate: () => boolean;
-  shared: Parameters<typeof useDrawingCanvas>[6];
-  placements: Record<string, Point>;
+  drawing: ReturnType<typeof drawingGeometry>;
+  currentDrawing: () => ReturnType<typeof drawingGeometry>;
+  actions: RefObject<DrawingActions>;
+  ids: readonly string[];
+  positioned: ReturnType<typeof drawingGeometry>;
   hidden: ReadonlySet<string>;
+  inModel: boolean;
 }) {
   const matchShortcut = useShortcutMatcher();
+  const renders = useRef(0);
+  renders.current++;
+  const report = (message: string) => actions.current.report(message),
+    activate = () => actions.current.activate(),
+    point = (x: number, y: number) => actions.current.point(x, y),
+    onShortcut = (action: ShortcutAction) => actions.current.onShortcut(action);
+  const visibleMarks: VisibleMarks = useCallback(
+    (entries) =>
+      inModel
+        ? []
+        : hidden.size
+          ? entries.filter((e) => !hidden.has(e.id))
+          : entries,
+    [inModel, hidden],
+  );
   const d = useDrawingCanvas(
     session,
     buffers,
@@ -1399,8 +1434,20 @@ export function DrawingCanvas({
     visible,
     zoom,
     activate,
-    shared,
+    {
+      ids,
+      allIds: () => actions.current.allIds(),
+      select: (ids) => actions.current.select(ids),
+      move: (delta) => actions.current.move(delta),
+      startMove: (...args) => actions.current.startMove(...args),
+      duplicate: () => actions.current.duplicate(),
+      remove: () => actions.current.remove(),
+    },
     hand,
+    drawing,
+    currentDrawing,
+    positioned,
+    visibleMarks,
   );
   const latest = useRef(d);
   useLayoutEffect(() => {
@@ -1411,32 +1458,8 @@ export function DrawingCanvas({
     drawingKey: ((event, id) =>
       latest.current.drawingKey(event, id)) as Controller["drawingKey"],
   }));
-  const entries = useMemo(() => {
-    const geometry = drawingGeometry(d.entries);
-    const placed = d.preview?.transform
-      ? d.entries
-      : previewDrawings(
-          d.entries,
-          d.entries
-            .filter((e) => placements[e.id])
-            .map((entry) => {
-              const bounds = geometry.bounds(entry),
-                at = placements[entry.id];
-              return {
-                entry,
-                at: {
-                  x: entry.view.x + at.x - bounds.x,
-                  y: entry.view.y + at.y - bounds.y,
-                },
-              };
-            }),
-        );
-    return placed.some((e) => hidden.has(e.id))
-      ? placed.filter((e) => !hidden.has(e.id))
-      : placed;
-  }, [d.entries, !!d.preview?.transform, placements, hidden]);
   if (!visible) return null;
-  const geometry = drawingGeometry(entries),
+  const geometry = drawingGeometry(d.entries),
     b = geometry.selectionBounds(d.selection),
     active = !hand && d.tool !== "select";
   const coordinates = (e: DrawingPointer): InkPoint => ({
@@ -1453,7 +1476,7 @@ export function DrawingCanvas({
         createPortal(
           <DrawingToolbar
             drawing={d}
-            onChooseTool={onChooseTool}
+            onChooseTool={() => actions.current.onChooseTool()}
             hand={hand}
           />,
           toolbar,
@@ -1462,6 +1485,7 @@ export function DrawingCanvas({
         ref={d.surface}
         className={`drawing-surface ${active ? "is-drawing" : ""} ${b ? "has-selection" : ""}`}
         data-drawing-surface=""
+        data-drawing-layer-renders={renders.current}
         tabIndex={-1}
         role="group"
         aria-label="Drawings"
@@ -1483,12 +1507,21 @@ export function DrawingCanvas({
             d.finishPath();
             return;
           }
-          const entry = geometry.pick(point(e.clientX, e.clientY), 5 / zoom);
+          const entry = geometry.pick(
+            point(e.clientX, e.clientY),
+            5 / zoom,
+            false,
+            visibleMarks(geometry.entries),
+          );
           if (entry?.mark.kind === "text") d.editLabel(entry);
         }}
       >
-        <DrawingScenePreview entries={entries} surface={d.surface}>
-          {(entries, geometry, baseline) => {
+        <DrawingScenePreview
+          geometry={geometry}
+          visibleMarks={visibleMarks}
+          surface={d.surface}
+        >
+          {(entries, geometry) => {
             const b = geometry.selectionBounds(d.selection);
             return (
               <>
@@ -1521,7 +1554,7 @@ export function DrawingCanvas({
                 </desc>
                 <DrawingMarks
                   entries={entries}
-                  baseline={baseline}
+                  geometry={geometry}
                   erased={d.preview?.erased}
                   zoom={zoom}
                   selection={d.selection}
@@ -1531,6 +1564,7 @@ export function DrawingCanvas({
                 />
                 <DrawingDimensions
                   entries={entries}
+                  geometry={geometry}
                   zoom={zoom}
                   session={session}
                   buffers={buffers}
@@ -1650,8 +1684,8 @@ export function DrawingCanvas({
                               e.preventDefault();
                               e.stopPropagation();
                               try {
-                                const current = drawings(session.document).find(
-                                  (drawing) => drawing.id === entry.id,
+                                const current = currentDrawing().byId.get(
+                                  entry.id,
                                 );
                                 if (!current) return;
                                 editDrawings(session, [
@@ -1732,4 +1766,4 @@ export function DrawingCanvas({
       )}
     </>
   );
-}
+});

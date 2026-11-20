@@ -15,8 +15,10 @@ import {
   useCanvasOverlaps,
   canvasObjectId,
   canvasObjectSelector,
+  canvasSelectorFor,
 } from "./useCanvasOverlaps";
-import { DrawingCanvas } from "../renderers/DrawingCanvas";
+import { measureCanvasObjects } from "./canvasMeasurements";
+import { DrawingCanvas, useDrawingActions } from "../renderers/DrawingCanvas";
 import { CanvasCommandMenu } from "../renderers/CanvasCommandMenu";
 import { CanvasDocumentTitle } from "../renderers/CanvasDocumentTitle";
 import {
@@ -26,8 +28,7 @@ import {
 } from "../documentTitle";
 import { CanvasSelectionToolbar } from "../renderers/CanvasSelectionToolbar";
 import { CanvasConnectionPopover } from "../renderers/CanvasConnectionPopover";
-import { drawings } from "../drawing";
-import { drawingGeometry } from "../drawingGeometry";
+import { canvasViewSelection } from "./canvasViewSelection";
 import {
   duplicateSelection,
   deleteSelection,
@@ -62,14 +63,11 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useReducer,
+  useSyncExternalStore,
   useRef,
   useState,
 } from "react";
 import CalculationHistory from "../renderers/CalculationHistory";
-import { optimizationViews } from "../modelOptimizationCommands";
-import { analysisViews } from "../modelAnalysisCommands";
-import { modelViews } from "../modelCommands";
 import CanvasCleanupDialog from "../renderers/CanvasCleanupDialog";
 import {
   ArrowUpRight,
@@ -198,6 +196,7 @@ import {
   type ArtifactFocus,
 } from "../artifacts";
 
+const noSelection: readonly string[] = Object.freeze([]);
 const label = (name: string) => (name === "T_inf" ? "T∞" : name);
 const SystemOverview = lazy(() => import("../renderers/SystemOverview"));
 const SystemInvestigation = lazy(
@@ -293,42 +292,25 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         .map((v) => ({ ...v, height: artifactHeights[v.id] || v.height })),
     [artifacts, artifactHeights],
   );
-  const [, refresh] = useReducer((n) => n + 1, 0);
-  useEffect(() => session.subscribe(refresh), [session]);
+  const views = useMemo(() => canvasViewSelection(session), [session]);
+  useSyncExternalStore(views.subscribe, session.notificationVersion);
   const page = session.state;
   const acceptedDocument = session.document;
-  const drawingEntries = useMemo(
-    () => drawings(acceptedDocument),
-    [acceptedDocument],
-  );
-  const drawingFrames = useMemo(() => {
-    const geometry = drawingGeometry(drawingEntries);
-    return drawingEntries.map((entry) => ({
-      id: entry.id,
-      kind: "drawing" as const,
-      ...geometry.bounds(entry),
-    }));
-  }, [drawingEntries]);
-  const independentViews = useMemo(
-    () => modelViews(acceptedDocument),
-    [acceptedDocument],
-  );
-  const analysisFrames = useMemo(
-    () => analysisViews(acceptedDocument),
-    [acceptedDocument],
-  );
-  const optimizationFrames = useMemo(
-    () => optimizationViews(acceptedDocument),
-    [acceptedDocument],
-  );
+  const {
+    drawing,
+    models: independentViews,
+    analyses: analysisFrames,
+    optimizations: optimizationFrames,
+    responses: optimizationResponses,
+  } = views.read();
+  const drawingEntries = drawing.entries;
   const modelFrames = useMemo(
     () => [...independentViews, ...analysisFrames, ...optimizationFrames],
     [independentViews, analysisFrames, optimizationFrames],
   );
   const extraFrames = useMemo(
-    () => [
-      ...drawingFrames,
-      ...modelFrames.map((v) => ({
+    () =>
+      modelFrames.map((v) => ({
         id: v.id,
         x: v.x,
         y: v.y,
@@ -336,8 +318,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         height: v.renderer === "canvas-model-analysis-view@1" ? 740 : 470,
         kind: "plot" as const,
       })),
-    ],
-    [drawingFrames, modelFrames],
+    [modelFrames],
   );
   const [resume] = useState(() => {
     if (!artifactMode || saved?.blocked) return;
@@ -858,75 +839,32 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       return marqueeGesture.current.frames.filter((f) => !ids || ids.has(f.id));
     const node = canvas.current;
     if (!node) return [];
-    const origin = node.getBoundingClientRect(),
-      scroll = viewportScroll(node),
-      scale = canvasZoom(node, zoom);
-    const frames: CanvasFrame[] = [
-      ...node.querySelectorAll<HTMLElement>(
-        "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
-      ),
-    ]
-      .filter(
-        (el) =>
-          (!ids || ids.has(canvasObjectId(el)!)) &&
-          el.getClientRects().length > 0,
-      )
-      .map((el) => {
-        const rect = el.getBoundingClientRect(),
-          region = el.dataset.regionId;
-        let right = rect.right,
-          bottom = rect.bottom;
-        if (region) {
-          const parts = [
-            ...el.querySelectorAll(
-              "math,.er-result,.er-condition,.er-region-error,textarea,.er-data,.er-external-reference,.er-source-caption,.er-record-feedback",
-            ),
-          ].map((part) => part.getBoundingClientRect());
-          const note = el.querySelector(".er-note");
-          if (note) {
-            const range = document.createRange();
-            range.selectNodeContents(note);
-            parts.push(range.getBoundingClientRect());
-          }
-          if (parts.length) {
-            right = Math.max(...parts.map((r) => r.right));
-            bottom = Math.max(
-              rect.top + 50 * scale,
-              ...parts.map((r) => r.bottom),
-            );
-          }
-        }
-        return {
-          id:
-            region ||
-            el.dataset.viewId ||
-            el.dataset.toolId ||
-            el.dataset.modelId ||
-            el.dataset.dataRelationId ||
-            el.dataset.plotId!,
-          kind: region ? "region" : "plot",
-          x: (rect.left - origin.left + scroll.x) / scale,
-          y: (rect.top - origin.top + scroll.y) / scale,
-          width: Math.max(30, (right - rect.left) / scale),
-          height: Math.max(30, (bottom - rect.top) / scale),
-        };
-      });
-    // One traversal, not one selector search per drawing (quadratic on dense scenes).
-    const visibleDrawings = new Set(
-      [...node.querySelectorAll<HTMLElement>("[data-drawing-id]")]
-        .filter(
-          (el) =>
-            (!ids || ids.has(el.dataset.drawingId!)) &&
-            el.getClientRects().length,
-        )
-        .map((el) => el.dataset.drawingId!),
+    // A few selected hosts need one targeted query. A large lasso still takes
+    // one traversal, never one DOM search per drawing.
+    const targets = ids && ids.size <= 32 ? [...ids] : undefined;
+    const objects =
+      targets?.map(canvasSelectorFor).join(",") ?? canvasObjectSelector;
+    const marks =
+      targets
+        ?.filter((id) => drawing.byId.has(id))
+        .map((id) => `[data-drawing-id="${CSS.escape(id)}"]`)
+        .join(",") ?? "[data-drawing-id]";
+    const nodes = objects ? node.querySelectorAll<HTMLElement>(objects) : [];
+    const frames = measureCanvasObjects(
+      node,
+      zoom,
+      ids && !targets
+        ? [...nodes].filter((el) => ids.has(canvasObjectId(el)!))
+        : nodes,
     );
-    return [
-      ...frames,
-      ...spatial.frames.filter(
-        (f) => f.kind === "drawing" && visibleDrawings.has(f.id),
-      ),
-    ];
+    if (marks)
+      for (const mark of node.querySelectorAll<SVGElement>(marks)) {
+        const id = mark.dataset.drawingId!;
+        if (ids && !ids.has(id)) continue;
+        const f = spatial.frame(id);
+        if (f && mark.getClientRects().length) frames.push(f);
+      }
+    return frames;
   };
   function updateMarquee(clientX: number, clientY: number, pointerId: number) {
     const gesture = marqueeGesture.current;
@@ -1029,17 +967,15 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     places,
     readFrames: readCanvasFrames,
     extraFrames,
+    drawing,
+    setRegionHeights,
   });
-  places = { ...places, ...spatial.preview };
-  const drawingPlacements = useMemo(
-    () =>
-      Object.fromEntries(
-        spatial.frames
-          .filter((f) => f.kind === "drawing")
-          .map((f) => [f.id, { x: f.x, y: f.y }]),
-      ),
-    [spatial.frames],
+  const drawingFrames = spatial.drawing.frames;
+  const drawingBounds = useMemo(
+    () => frameBounds(drawingFrames),
+    [drawingFrames],
   );
+  places = { ...places, ...spatial.preview };
   const [viewName, setViewName] = useState("");
   const [modelReview, setModelReview] = useState<{
     members: string[];
@@ -1197,14 +1133,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     if (!members.length) return;
     setModelReview({ members });
   };
-  for (const f of spatial.frames)
-    if (!hierarchy.visible(f.id)) spatial.hidden.add(f.id);
+  const hiddenObjects = new Set(
+    spatial.objectFrames
+      .filter((f) => spatial.hidden.has(f.id) || !hierarchy.visible(f.id))
+      .map((f) => f.id),
+  );
 
   useLayoutEffect(() => {
     const frames = canvasSelection.length
-      ? (spatial.moving() ? spatial.frames : readCanvasFrames()).filter((f) =>
-          canvasSelection.includes(f.id),
-        )
+      ? spatial.moving()
+        ? canvasSelection.flatMap((id) => spatial.frame(id) ?? [])
+        : readCanvasFrames(new Set(canvasSelection))
       : [];
     setSelectedFrames((previous) =>
       previous.length === frames.length &&
@@ -1231,43 +1170,16 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     overlay,
     spatial.preview,
   ]);
-  // Measured heights are presentation state, never accepted layout or history.
-  useLayoutEffect(() => {
-    const nodes =
-      canvas.current?.querySelectorAll<HTMLElement>("[data-region-id]");
-    if (!nodes) return;
+  useEffect(() => {
     const ids = new Set(page.regions.map((r) => r.id));
-    let active = true;
-    const measure = () => {
-      if (!active) return;
-      const heights: Record<string, number> = Object.create(null);
-      for (const node of nodes) {
-        const id = node.dataset.regionId!;
-        if (id === editing) continue;
-        const height = node.getBoundingClientRect().height / zoom;
-        if (height > 0) heights[id] = height;
-      }
-      setRegionHeights((previous) => {
-        const next: Record<string, number> = Object.create(null);
-        for (const [id, height] of Object.entries(previous))
-          if (ids.has(id)) next[id] = height;
-        let changed = Object.keys(next).length !== Object.keys(previous).length;
-        for (const [id, height] of Object.entries(heights))
-          if (Math.abs((previous[id] ?? 0) - height) > 0.5) {
-            next[id] = height;
-            changed = true;
-          }
-        return changed ? next : previous;
-      });
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    for (const node of nodes) observer.observe(node);
-    return () => {
-      active = false;
-      observer.disconnect();
-    };
-  }, [page.regions, editing, zoom]);
+    setRegionHeights((previous) =>
+      Object.keys(previous).every((id) => ids.has(id))
+        ? previous
+        : Object.fromEntries(
+            Object.entries(previous).filter(([id]) => ids.has(id)),
+          ),
+    );
+  }, [page.regions]);
   const selectionBounds = frameBounds(selectedFrames);
   const organizeSelection = () => {
     const frames = readCanvasFrames().filter((f) =>
@@ -1304,7 +1216,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     }));
     setCanvasSelection([]);
   };
-  const selectionReason = selectionEditReason(session, canvasSelection);
+  const selectionReason = selectionEditReason(
+    session,
+    canvasSelection,
+    drawing.byId,
+  );
   const duplicateSelected = () => {
     try {
       const placements = Object.fromEntries(
@@ -2179,7 +2095,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   ).flatMap((id) => {
     const region = page.regions.find((r) => r.id === id);
     if (!region) return [];
-    const measured = spatial.frames.find((f) => f.id === id);
+    const measured = spatial.frame(id);
     return [
       {
         id,
@@ -2218,7 +2134,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ...(page.dataRelations || []).map((r) => places[r.id].x + 650),
       ...artifactFrames.map((a) => a.at.x + a.width + 70),
       ...modelFrames.map((v) => v.x + 560),
-      ...drawingFrames.map((v) => v.x + v.width + 70),
+      drawingBounds ? drawingBounds.x + drawingBounds.width + 70 : 0,
       ...spatial.scene.tools.map((t) => t.at.x + t.width + 70),
       ...(attachmentAnchor ? [attachmentAt.x + 650] : []),
       ...(internalInvestigation ? [internalAt.x + 560] : []),
@@ -2233,7 +2149,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ...(page.dataRelations || []).map((r) => places[r.id].y + 600),
       ...artifactFrames.map((a) => a.at.y + a.height + 100),
       ...modelFrames.map((v) => v.y + 740),
-      ...drawingFrames.map((v) => v.y + v.height + 70),
+      drawingBounds ? drawingBounds.y + drawingBounds.height + 70 : 0,
       ...spatial.scene.tools.map((t) => t.at.y + t.height + 100),
       ...(attachmentAnchor ? [attachmentAt.y + attachmentHeight + 80] : []),
       ...(internalInvestigation ? [internalAt.y + 600] : []),
@@ -3262,6 +3178,45 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             run: () => {},
           },
   );
+  const selectedDrawings = useMemo(() => {
+    const ids = hierarchy.scope
+      ? []
+      : canvasSelection.filter(
+          (id) => drawing.byId.has(id) && !spatial.hidden.has(id),
+        );
+    return ids.length ? ids : noSelection;
+  }, [canvasSelection, drawing, hierarchy.scope, spatial.hidden]);
+  const drawingActions = useDrawingActions({
+    allIds: () => canvasSelection,
+    report: setMessage,
+    onChooseTool: () => navigation.setHand(false),
+    onShortcut: performShortcut,
+    point: canvasPoint,
+    activate: () => {
+      if (editing) {
+        skipBlur.current = true;
+        if (!commit()) {
+          skipBlur.current = false;
+          return false;
+        }
+      }
+      setSelected(undefined);
+      setArtifactFocus(undefined);
+      setAreaSelection(undefined);
+      setDataSelection(undefined);
+      setTerm(undefined);
+      setLinkMenu(undefined);
+      return true;
+    },
+    select: setCanvasSelection,
+    move: nudgeSelection,
+    duplicate: duplicateSelected,
+    remove: deleteSelected,
+    startMove: (e, id, ids) => {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      spatial.start(id, e, false, ids);
+    },
+  });
   return createElement(
     ShortcutBindingsContext.Provider,
     { value: shortcutPreferences.bindings },
@@ -4376,43 +4331,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     <DrawingCanvas
                       session={session}
                       buffers={editBuffers}
-                      report={setMessage}
                       toolbar={drawingToolbar}
-                      onChooseTool={() => navigation.setHand(false)}
-                      onShortcut={performShortcut}
                       hand={navigation.hand}
                       visible={!systemActive}
                       zoom={zoom}
-                      point={canvasPoint}
-                      activate={() => {
-                        if (editing) {
-                          skipBlur.current = true;
-                          if (!commit()) {
-                            skipBlur.current = false;
-                            return false;
-                          }
-                        }
-                        setSelected(undefined);
-                        setArtifactFocus(undefined);
-                        setAreaSelection(undefined);
-                        setDataSelection(undefined);
-                        setTerm(undefined);
-                        setLinkMenu(undefined);
-                        return true;
-                      }}
-                      shared={{
-                        ids: canvasSelection,
-                        select: setCanvasSelection,
-                        move: nudgeSelection,
-                        duplicate: duplicateSelected,
-                        remove: deleteSelected,
-                        startMove: (e, id, ids) => {
-                          e.currentTarget.setPointerCapture(e.pointerId);
-                          spatial.start(id, e, false, ids);
-                        },
-                      }}
-                      placements={drawingPlacements}
+                      drawing={drawing}
+                      currentDrawing={views.currentDrawing}
+                      actions={drawingActions}
+                      ids={selectedDrawings}
+                      positioned={spatial.drawing}
                       hidden={spatial.hidden}
+                      inModel={!!hierarchy.scope}
                     />
                     {!page.regions.length &&
                       !modelFrames.length &&
@@ -4593,7 +4522,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         (m) =>
                           !systemActive &&
                           hierarchy.visible(m.id) &&
-                          !spatial.hidden.has(m.id),
+                          !hiddenObjects.has(m.id),
                       )
                       .map((model) => (
                         <ModelObject
@@ -4646,7 +4575,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     {spatial.scene.groups.map((g) => {
                       if (!g.members.every(hierarchy.visible)) return null;
                       const bounds = frameBounds(
-                        spatial.frames.filter((f) => g.members.includes(f.id)),
+                        g.members.flatMap((id) => spatial.frame(id) ?? []),
                       );
                       return (
                         bounds && (
@@ -4695,9 +4624,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     })}
                     {spatial.dock &&
                       (() => {
-                        const target = spatial.frames.find(
-                          (f) => f.id === spatial.dock!.id,
-                        );
+                        const target = spatial.frame(spatial.dock!.id);
                         if (!target) return null;
                         const stack = spatial.dock.layout === "stack";
                         return (
@@ -5389,7 +5316,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         relation={relation}
                         state={datasetStates[relation.id]}
                         hidden={
-                          spatial.hidden.has(relation.id) ||
+                          hiddenObjects.has(relation.id) ||
                           !!(
                             relationshipNav.focus?.mode === "arrange" &&
                             !relationshipNav.focus.ids.includes(relation.id)
@@ -5440,7 +5367,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       version={acceptedDocument}
                       places={places}
                       visible={(id) =>
-                        !spatial.hidden.has(id) &&
+                        !hiddenObjects.has(id) &&
                         !(
                           relationshipNav.focus?.mode === "arrange" &&
                           !relationshipNav.focus.ids.includes(id)
@@ -5670,6 +5597,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                           models={independentViews}
                           analyses={analysisFrames}
                           optimizations={optimizationFrames}
+                          responses={optimizationResponses}
                           positions={spatial.preview}
                           move={(id, event) => spatial.start(id, event, true)}
                           beforeAction={beforeModelAction}
@@ -5755,7 +5683,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             )
                           }
                           closedViews={spatial.closed}
-                          hiddenViews={spatial.hidden}
+                          hiddenViews={hiddenObjects}
                           groupedViews={
                             new Set(
                               spatial.scene.groups.flatMap((g) => g.members),
@@ -5766,9 +5694,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                           focusCanvas={spatial.focusObject}
                           detach={spatial.detach}
                           openTool={(editor, view, context) => {
-                            const frame = spatial.frames.find(
-                              (f) => f.id === view,
-                            );
+                            const frame = spatial.frame(view);
                             spatial.openTool(
                               editor,
                               a.output,
@@ -5902,7 +5828,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         cancel={spatial.cancel}
                         tool={{ ...t, at: spatial.preview[t.id] || t.at }}
                         zoom={zoom}
-                        hidden={spatial.hidden.has(t.id)}
+                        hidden={hiddenObjects.has(t.id)}
                         editorProps={canvasEditors}
                         change={(next) =>
                           spatial.setScene((s) => ({

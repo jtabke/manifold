@@ -29,6 +29,7 @@ import { CanvasDocument, type CanvasRecovery } from "./app/canvasDocument.ts";
 import {
   createTaskScheduler,
   type Command,
+  type Event as FoundationEvent,
   type Reference,
   type Revision,
   type View,
@@ -132,6 +133,31 @@ export type ConnectionEdit = {
   label: string;
 };
 export type Receipt = WorksheetReceipt;
+/** Foundation changes since the last notification, delivered after session attention/history settles.
+ * No previous root across Open. Session-only notifications have no publication. */
+export type SessionPublication = Readonly<{
+  previous?: FoundationDocument;
+  document: FoundationDocument;
+  event: FoundationEvent;
+}>;
+// Concurrent job completions can notify the reader before either completion
+// resumes its session callback. Preserve both deltas in that notification.
+function combineEvents(
+  a: FoundationEvent,
+  b: FoundationEvent,
+): FoundationEvent {
+  const union = (first: readonly string[], next: readonly string[]) =>
+    Object.freeze([...new Set([...first, ...next])]);
+  return Object.freeze({
+    items: union(a.items, b.items),
+    affected: union(a.affected, b.affected),
+    views: union(a.views, b.views),
+    alternatives: union(a.alternatives, b.alternatives),
+    receiptIds: union(a.receiptIds, b.receiptIds),
+    evidence: a.evidence || b.evidence,
+    preview: a.preview || b.preview,
+  });
+}
 
 const clone = <T>(value: T): T => structuredClone(value);
 function freeze<T>(value: T): T {
@@ -299,6 +325,9 @@ export class RegionSession {
     this.closed = true;
     this.computationOwner?.dispose();
     if (this.ownsScheduler) this.taskScheduler.dispose();
+    this.stopObserving?.();
+    this.stopObserving = undefined;
+    this.pendingPublication = undefined;
     this.listeners.clear();
   }
   get foundation() {
@@ -535,7 +564,11 @@ export class RegionSession {
   /** Optional browser arrangement restoration; accepted definitions and views restore through the owner. */
   private past: { undo?: () => void }[] = [];
   private future: { undo?: () => void }[] = [];
-  private listeners = new Set<() => void>();
+  private listeners = new Set<(publication?: SessionPublication) => void>();
+  private stopObserving?: () => void;
+  private pendingPublication?: SessionPublication;
+  private version = 0;
+  notificationVersion = () => this.version;
   private staging = false;
   private retainedRegions: () => string[];
   constructor(
@@ -585,15 +618,45 @@ export class RegionSession {
     );
     this.staging = staging;
   }
-  subscribe = (listener: () => void) => {
+  subscribe = (listener: (publication?: SessionPublication) => void) => {
+    if (!this.stopObserving && !this.staging && !this.closed) {
+      const reader = this.foundation;
+      let previous = reader.read(),
+        binding = reader.stamp().binding;
+      this.stopObserving = reader.subscribe((event) => {
+        const document = reader.read(),
+          nextBinding = reader.stamp().binding,
+          pending = this.pendingPublication;
+        this.pendingPublication = Object.freeze({
+          previous:
+            binding !== nextBinding
+              ? undefined
+              : pending
+                ? pending.previous
+                : previous,
+          document,
+          event: pending ? combineEvents(pending.event, event) : event,
+        });
+        previous = document;
+        binding = nextBinding;
+      });
+    }
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+      if (!this.listeners.size) {
+        this.stopObserving?.();
+        this.stopObserving = undefined;
+        this.pendingPublication = undefined;
+      }
     };
   };
   private emit() {
     if (this.staging) return;
-    this.listeners.forEach((listener) => listener());
+    const publication = this.pendingPublication;
+    this.pendingPublication = undefined;
+    this.version++;
+    this.listeners.forEach((listener) => listener(publication));
   }
   private apply(
     next: Page,

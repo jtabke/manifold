@@ -1,5 +1,6 @@
 /** Model features issue the same authored commands and use the same owner as worksheet edits. */
 import * as f from "@manifold/foundation";
+import { rendererViews } from "./rendererViews.ts";
 import {
   AUTHORED_MODEL,
   compileModel,
@@ -309,9 +310,7 @@ export function applyModelConnection(
   return session.applyCommands(reviewed.commands, reviewed.document);
 }
 export function modelViews(document: f.Document) {
-  return [...document.views.entries()]
-    .map(([, view]) => view)
-    .filter((view) => view.renderer === MODEL_RENDERER);
+  return rendererViews(document, MODEL_RENDERER);
 }
 
 /** Publish source and graph as one versioned record. Existing instances remain pinned. */

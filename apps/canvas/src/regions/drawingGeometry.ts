@@ -2,7 +2,7 @@
 import * as f from "@manifold/foundation";
 import { curveHull, flattenCurve, isCurve } from "./drawingCurves.ts";
 import type { Point } from "./document.ts";
-import { frameBounds } from "./selection.ts";
+import { frameBounds, type CanvasFrame } from "./selection.ts";
 import { withAreaMembers } from "./drawingScale.ts";
 import type {
   Anchor,
@@ -104,6 +104,17 @@ const scenes = new WeakMap<readonly DrawingEntry[], DrawingGeometry>();
 // Bounds-only entries upgrade to full geometry without changing bounds identity.
 // Non-connector geometry survives unrelated edits and selection previews.
 const fixed = new WeakMap<PositionedMark, CachedGeometry>();
+// A view move doesn't revise the connector. Its endpoints are inputs to the
+// projection too, including during group/selection previews.
+const connected = new WeakMap<
+  PositionedMark,
+  {
+    start?: DrawingEntry;
+    end?: DrawingEntry;
+    geometry: MarkGeometry;
+  }
+>();
+const frames = new WeakMap<Bounds, CanvasFrame>();
 const flattened = new WeakMap<PositionedMark, Point[]>();
 const boundsPoints = (mark: Mark) =>
   isCurve(mark.kind) ? curveHull(mark.kind, mark.points) : mark.points;
@@ -140,14 +151,35 @@ export function drawingGeometry(entries: readonly DrawingEntry[]) {
 class DrawingGeometry {
   readonly byId: ReadonlyMap<string, DrawingEntry>;
   readonly entries: readonly DrawingEntry[];
-  private cache = new WeakMap<PositionedMark, CachedGeometry>();
+  private frameList?: readonly CanvasFrame[];
+  frame(entry: DrawingEntry) {
+    const bounds = this.bounds(entry);
+    let frame = frames.get(bounds);
+    if (!frame) {
+      frame = Object.freeze({ id: entry.id, kind: "drawing", ...bounds });
+      frames.set(bounds, frame);
+    }
+    return frame;
+  }
+  get frames() {
+    return (this.frameList ??= Object.freeze(
+      this.entries.map((entry) => this.frame(entry)),
+    ));
+  }
   constructor(entries: readonly DrawingEntry[]) {
     this.entries = entries;
     this.byId = new Map(entries.map((e) => [e.id, e]));
   }
   geometry(e: PositionedMark): MarkGeometry {
-    const cache = e.mark.kind === "connector" ? this.cache : fixed;
-    let result = cache.get(e);
+    const connector = e.mark.kind === "connector",
+      start = e.mark.start
+        ? this.byId.get(e.mark.start.target.item)
+        : undefined,
+      end = e.mark.end ? this.byId.get(e.mark.end.target.item) : undefined;
+    const previous = connector && connected.get(e);
+    if (previous && previous.start === start && previous.end === end)
+      return previous.geometry;
+    let result = connector ? undefined : fixed.get(e);
     if (!result || !result.points) {
       const bounds = result?.bounds;
       const points = e.mark.points.map((p, i) => {
@@ -157,7 +189,7 @@ class DrawingGeometry {
               ? e.mark.start
               : e.mark.end
             : null;
-        const target = anchor && this.byId.get(anchor.target.item);
+        const target = i === 0 ? start : end;
         if (!anchor || !target)
           return { ...p, x: p.x + e.view.x, y: p.y + e.view.y };
         const b = this.bounds(target);
@@ -176,7 +208,8 @@ class DrawingGeometry {
             : pointBounds(points)),
       };
       f.freeze(result);
-      cache.set(e, result);
+      if (connector) connected.set(e, { start, end, geometry: result });
+      else fixed.set(e, result);
     }
     return result;
   }
@@ -255,9 +288,14 @@ class DrawingGeometry {
           : segmentDistance(from, to, a, points[i + 1] || a)) <= hitMargin,
     );
   }
-  pick(p: Point, tolerance: number, shapesOnly = false) {
-    for (let i = this.entries.length - 1; i >= 0; i--) {
-      const e = this.entries[i];
+  pick(
+    p: Point,
+    tolerance: number,
+    shapesOnly = false,
+    visible = this.entries,
+  ) {
+    for (let i = visible.length - 1; i >= 0; i--) {
+      const e = visible[i];
       if (
         (!shapesOnly || ["rectangle", "ellipse"].includes(e.mark.kind)) &&
         this.hit(e, p, tolerance)
@@ -265,8 +303,13 @@ class DrawingGeometry {
         return e;
     }
   }
-  anchor(p: Point, document: string, tolerance: number): Anchor | null {
-    const e = this.pick(p, tolerance, true);
+  anchor(
+    p: Point,
+    document: string,
+    tolerance: number,
+    visible = this.entries,
+  ): Anchor | null {
+    const e = this.pick(p, tolerance, true, visible);
     if (!e) return null;
     const b = this.bounds(e),
       u = unit((p.x - b.x) / b.width),
@@ -294,7 +337,9 @@ class DrawingGeometry {
     });
   }
   selectionBounds(ids: ReadonlySet<string>) {
-    return frameBounds(this.selected(ids).map((e) => this.bounds(e)));
+    return ids.size
+      ? frameBounds(this.selected(ids).map((e) => this.bounds(e)))
+      : undefined;
   }
   transform(ids: ReadonlySet<string>, start: Point, resize: boolean) {
     ids = withAreaMembers(this.entries, ids);
@@ -358,6 +403,32 @@ export function previewDrawings(
         }
       : entry;
   });
+}
+/** Scene placements address world bounds, while marks store a local translation.
+ * Keep the complete graph so connectors follow the displayed endpoints too. */
+export function placeDrawings(
+  scene: DrawingGeometry,
+  positions: Record<string, Point>,
+) {
+  return drawingGeometry(
+    previewDrawings(
+      scene.entries,
+      Object.entries(positions).flatMap(([id, at]) => {
+        const entry = scene.byId.get(id);
+        if (!entry) return [];
+        const bounds = scene.bounds(entry);
+        return [
+          {
+            entry,
+            at: {
+              x: entry.view.x + (at.x - bounds.x),
+              y: entry.view.y + (at.y - bounds.y),
+            },
+          },
+        ];
+      }),
+    ),
+  );
 }
 export function constrain(
   start: InkPoint,

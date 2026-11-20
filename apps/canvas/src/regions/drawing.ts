@@ -1,5 +1,6 @@
 /** Portable visual marks. References preserve connector identity, not computation. */
 import * as f from "@manifold/foundation";
+import { rendererViews } from "./rendererViews.ts";
 import { isCurve, MAX_SPLINE_POINTS } from "./drawingCurves.ts";
 import type { RegionSession, Point } from "./document.ts";
 import { drawingGeometry } from "./drawingGeometry.ts";
@@ -222,8 +223,7 @@ export function drawings(document: f.Document): DrawingEntry[] {
   const known = projections.get(document);
   if (known) return known;
   const result: DrawingEntry[] = [];
-  for (const [, view] of document.views.entries()) {
-    if (view.renderer !== DRAWING_RENDERER) continue;
+  for (const view of rendererViews(document, DRAWING_RENDERER)) {
     const revision = f.current(document, view.reference.item);
     f.assert(
       revision?.schema === DRAWING ||

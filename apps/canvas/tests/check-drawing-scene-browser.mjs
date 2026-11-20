@@ -175,10 +175,64 @@ try {
     reopened.document.evidenceSequence,
     baseline.document.evidenceSequence,
   );
+  // A worksheet reflow in an automatic stack changes the displayed shape and
+  // its connector without writing a single drawing item or view.
+  const mixed = drawingFixture(10);
+  const note = mixed.session.create({ x: 120, y: 120 });
+  mixed.session.write(note, "Layout note");
+  mixed.session.setScene((scene) => ({
+    ...scene,
+    groups: [
+      {
+        id: "group-test",
+        name: "Layout",
+        layout: "stack",
+        auto: true,
+        members: [note, mixed.ids[0]],
+      },
+    ],
+  }));
+  const source = archive(mixed.session.native());
+  mixed.session.dispose();
+  await page.getByLabel("Open workspace file", { exact: true }).setInputFiles({
+    name: "group.manifold",
+    mimeType: "application/json",
+    buffer: Buffer.from(source),
+  });
+  await expect(page.locator("[data-drawing-id]")).toHaveCount(10);
+  const shape = page.locator(
+      `[data-drawing-id="${mixed.ids[0]}"] rect[stroke]`,
+    ),
+    line = page.locator(`[data-drawing-id="${mixed.ids[9]}"] line`),
+    y = async () => Number(await shape.getAttribute("y")),
+    endpoint = async () => Number(await line.getAttribute("y1"));
+  await paint();
+  const originalY = await y();
+  await page
+    .getByRole("button", { name: "Edit thought: Layout note" })
+    .dblclick();
+  const editor = page.getByLabel("Write an engineering region", {
+    exact: true,
+  });
+  await editor.fill("A wrapping layout note for this group. ".repeat(18));
+  await editor.press("Escape");
+  await expect.poll(y).toBeGreaterThan(originalY + 50);
+  await expect.poll(endpoint).toBe((await y()) + 20);
+  const placed = await endpoint();
+  await page.getByRole("button", { name: "Collapse canvas group" }).click();
+  await expect(shape).toHaveCount(0);
+  assert.equal(
+    await endpoint(),
+    placed,
+    "hiding the anchor does not detach a visible connector",
+  );
+  await page.getByRole("button", { name: "Expand canvas group" }).click();
+  await expect(shape).toBeVisible();
+  assert.equal(await endpoint(), (await y()) + 20);
   assert.deepEqual(requests, []);
   assert.deepEqual(errors, []);
   console.log(
-    "Drawing scene: one 100-mark native Open, full-scene resize/Undo, view-only group translation and durable reload pass without execution or measurement loops.",
+    "Drawing scene: 100-mark native Open, resize/Undo, translation/reload and mixed-group reflow/collapse with an attached connector pass.",
   );
 } finally {
   await browser.close();

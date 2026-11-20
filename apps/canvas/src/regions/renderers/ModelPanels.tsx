@@ -1,4 +1,4 @@
-import type { View } from "@manifold/foundation";
+import type { Revision, View } from "@manifold/foundation";
 import type { ComponentProps } from "react";
 import { IndependentModels } from "./IndependentModels";
 import { ModelAnalyses } from "./ModelAnalyses";
@@ -9,17 +9,23 @@ export default function ModelPanels({
   models,
   analyses,
   optimizations,
+  responses,
   askAgent,
   ...ports
 }: Omit<ComponentProps<typeof ModelAnalyses>, "views"> & {
   models: readonly View[];
   analyses: readonly View[];
   optimizations: readonly View[];
+  responses: readonly Revision[];
   askAgent: ComponentProps<typeof IndependentModels>["askAgent"];
 }) {
   return (
     <>
-      <ModelOptimizations {...ports} views={optimizations} />
+      <ModelOptimizations
+        {...ports}
+        views={optimizations}
+        responses={responses}
+      />
       <ModelAnalyses {...ports} views={analyses} />
       <IndependentModels
         session={ports.session}
