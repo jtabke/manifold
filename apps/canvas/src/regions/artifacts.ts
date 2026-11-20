@@ -21,6 +21,7 @@ import {
 } from "./app/canvasDocument.ts";
 import {
   canonical,
+  deeplyFrozen,
   object,
   fields,
   decodeEnvelope,
@@ -697,6 +698,7 @@ const validatedSources = new WeakMap<
   { headers: { length: number }; rows: { length: number } }
 >();
 const validatedCells = new WeakMap<object, object>();
+const validatedCalculations = new WeakSet<object>();
 function validateStoredCsv(data: Parameters<typeof readCsv>[0]) {
   const cached = Object.isFrozen(data) ? validatedSources.get(data) : undefined;
   if (cached) return cached;
@@ -766,11 +768,17 @@ export function validateWorkspaceData(
       /[\u0000-\u001f\u007f]/.test(p.title))
   )
     fail();
-  if (p.calculations !== undefined) {
+  if (
+    p.calculations !== undefined &&
+    !validatedCalculations.has(p.calculations)
+  ) {
     if (!Array.isArray(p.calculations)) fail();
     p.calculations.forEach(validateKeptCalculation);
     if (new Set(p.calculations.map((c) => c.id)).size !== p.calculations.length)
       fail();
+    // Only the collection's intrinsic validity is shared. Pinned sources have
+    // their own document-bound check at admission.
+    if (deeplyFrozen(p.calculations)) validatedCalculations.add(p.calculations);
   }
   if (
     !Array.isArray(p.regions) ||

@@ -63,6 +63,12 @@ export type WorkspaceState = Readonly<{
   receipts: SharedMap<Receipt>;
   resources: Resources;
 }>;
+/** Apply from a root checked by both policies. Existing revisions and receipts are retained; resources may change. */
+export type WorkspaceEdit = Readonly<{
+  previous: d.Document;
+  changes: d.Changes;
+  addedRevisions: readonly string[];
+}>;
 export type Stamp = Readonly<{
   root: string;
   evidence: number;
@@ -106,9 +112,9 @@ export function createWorkspace(
     maxReceipts?: number;
     maxEvidenceBytes?: number;
     /** Trusted synchronous domain checks run before authored selection publication. */
-    validateDocument?: (candidate: d.Document) => void;
+    validateDocument?: (candidate: d.Document, edit?: WorkspaceEdit) => void;
     /** Runs before every retained-state publication, including evidence/resource admission. */
-    validateState?: (candidate: WorkspaceState) => void;
+    validateState?: (candidate: WorkspaceState, edit?: WorkspaceEdit) => void;
   }>,
 ) {
   config = Object.freeze({ ...config });
@@ -256,8 +262,10 @@ export function createWorkspace(
       order: Math.max(order, next.document.evidenceSequence),
     };
   }
-  function validateDocument(candidate: d.Document) {
-    synchronous(config.validateDocument?.(candidate), "Document");
+  const checkedDocuments = new WeakSet<d.Document>();
+  function validateDocument(candidate: d.Document, edit?: WorkspaceEdit) {
+    synchronous(config.validateDocument?.(candidate, edit), "Document");
+    checkedDocuments.add(candidate);
     return candidate;
   }
   function synchronous(result: unknown, kind: string) {
@@ -273,6 +281,7 @@ export function createWorkspace(
     candidate: d.Document,
     nextReceipts = receipts,
     nextResources = resources,
+    edit?: WorkspaceEdit,
   ) {
     synchronous(
       config.validateState?.(
@@ -281,6 +290,7 @@ export function createWorkspace(
           receipts: nextReceipts,
           resources: nextResources,
         }),
+        edit,
       ),
       "State",
     );
@@ -366,18 +376,19 @@ export function createWorkspace(
       assert(!usedRoots.has(id), "Root identity reused");
     }
   }
-  function reserve(commands: readonly d.Command[]) {
-    for (const c of commands)
-      if (c.kind === "create" || c.kind === "revise")
-        assert(
-          !reservedRevisions.has(c.revision.id),
-          "Revision identity was already allocated",
-        );
-  }
-  function recordReserved(commands: readonly d.Command[]) {
-    for (const c of commands)
-      if (c.kind === "create" || c.kind === "revise")
-        reservedRevisions.add(c.revision.id);
+  function prepare(id: string, commands: readonly d.Command[]) {
+    const next = d.prepare(doc, id, commands, config.schemas);
+    for (const rid of next.addedRevisions) {
+      assert(
+        !reservedRevisions.has(rid),
+        "Revision identity was already allocated",
+      );
+      const r = next.document.revisions.get(rid)!;
+      for (const receipt of config.schemas.get(r.schema)?.evidence?.(r.body) ??
+        [])
+        assert(receipts.get(receipt), "Cited receipt unavailable");
+    }
+    return next;
   }
   function publish(next: d.Document, changes: d.Changes, clearPreview = false) {
     future.length = 0;
@@ -587,20 +598,22 @@ export function createWorkspace(
                 expected.evidence === doc.evidenceSequence,
                 "Resource replacement is stale after evidence arrival",
               );
-            reserve(commands);
-            const next = d.prepare(doc, id, commands, config.schemas);
-            for (const c of commands)
-              if (c.kind === "create" || c.kind === "revise")
-                for (const id of config.schemas
-                  .get(c.revision.schema)
-                  ?.evidence?.(c.revision.body) ?? [])
-                  assert(receipts.get(id), "Cited receipt unavailable");
-            validateDocument(next.document);
+            const next = prepare(id, commands);
+            // Evidence-only publication can extend retained roots without a
+            // document-policy call. Never offer it as a checked policy baseline.
+            const edit = checkedDocuments.has(doc)
+              ? Object.freeze({
+                  previous: doc,
+                  changes: next.changes,
+                  addedRevisions: next.addedRevisions,
+                })
+              : undefined;
+            validateDocument(next.document, edit);
             const candidateResources = nextResources
               ? replaceExecutionResources(resources, nextResources)
               : resources;
-            validateState(next.document, receipts, candidateResources);
-            recordReserved(commands);
+            validateState(next.document, receipts, candidateResources, edit);
+            for (const rid of next.addedRevisions) reservedRevisions.add(rid);
             resources = candidateResources;
             publish(next.document, next.changes);
             return next;
@@ -669,18 +682,10 @@ export function createWorkspace(
             kind: "revise" as const,
             ...v,
           }));
-          reserve(commands);
-          const candidate = d.prepare(
-            doc,
+          const candidate = prepare(
             config.namespace + ":preview:" + ++serial,
             commands,
-            config.schemas,
           );
-          for (const c of commands)
-            for (const id of config.schemas
-              .get(c.revision.schema)
-              ?.evidence?.(c.revision.body) ?? [])
-              assert(receipts.get(id), "Cited receipt unavailable");
           validateDocument(candidate.document);
           validateState(candidate.document);
           const selected = captureSelection(
@@ -691,7 +696,8 @@ export function createWorkspace(
             before = captureSelection(doc, target, config.schemas),
             guard = guardSelection(doc, before, selected),
             context = selected.context;
-          recordReserved(commands);
+          for (const rid of candidate.addedRevisions)
+            reservedRevisions.add(rid);
           lifecycle++;
           preview = Object.freeze({
             token: config.namespace + ":preview-token:" + serial,

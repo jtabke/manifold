@@ -12,6 +12,14 @@ import {
 } from "../src/regions/artifacts.ts";
 import { planConnection } from "../src/regions/linking.ts";
 import { observeAuthoring } from "./authoring-probe.mjs";
+import { drawingFixture } from "./drawing-fixture.mjs";
+import {
+  canvasSchemas,
+  canvasPage,
+  validateCanvasDocument,
+} from "../src/regions/app/canvasDocument.ts";
+import { validateOptimizationResponses } from "../src/regions/modelOptimizationCommands.ts";
+import { CanvasStorageBudget } from "../src/regions/app/canvasStorageBudget.ts";
 
 const s = new RegionSession();
 const add = (text) => {
@@ -50,14 +58,16 @@ function observe(operation) {
 
 // One literal edit preserves every unrelated immutable record and the selected recipe.
 const before = s.document,
-  page = s.state;
+  page = canvasPage(before); // The renderer may still reuse an equal Page from before setArtifacts().
 observe(() => assert.equal(s.write(x, "x := 2 mm").ok, true));
 assert.equal(s.document.revisions.size, before.revisions.size + 1);
 assert.equal(
   s.state.regions.find((r) => r.id === k),
   page.regions.find((r) => r.id === k),
 );
-assert.equal(s.state.contexts[0], page.contexts[0]);
+assert.equal(s.state.contexts, page.contexts);
+assert.equal(s.state.calculations, page.calculations);
+assert.equal(s.state.layout, page.layout);
 assert.equal(page.regions.find((r) => r.id === x).text, "x := 1 mm");
 assert.equal(project(s.state).solved.values.get("F").value, 20);
 const changed = s.document;
@@ -121,7 +131,159 @@ assert.equal(
 );
 assert.equal(semanticKey(decoded.page), semanticKey(s.state));
 assert.equal(f.current(s.document, "region:" + dataset).body.value, csv);
+// Compare the public live command port with full admission over fresh immutable
+// roots (no retained answers from the live materialization/validation caches).
+function compareAdmission(session, commands, rejects) {
+  const before = session.document,
+    receipts = session.foundation.evidence(),
+    prepared = f.prepare(before, "oracle", commands, canvasSchemas).document,
+    cold = f.fromPlain(f.toPlain(prepared), canvasSchemas),
+    admit = () => {
+      validateCanvasDocument(cold);
+      validateOptimizationResponses(cold, receipts);
+      new CanvasStorageBudget().check(
+        { document: cold, receipts, resources: session.foundation.resources() },
+        canvasSchemas,
+      );
+    };
+  let notices = 0;
+  const off = session.subscribe(() => notices++);
+  try {
+    if (rejects) {
+      assert.throws(admit, rejects);
+      assert.throws(() => session.applyCommands(commands, before), rejects);
+      assert.equal(session.document, before);
+      assert.equal(notices, 0);
+    } else {
+      admit();
+      assert(session.applyCommands(commands, before));
+      assert.deepEqual(session.state, canvasPage(cold));
+      assert.equal(notices, 1);
+    }
+    assert.equal(session.foundation.evidence(), receipts);
+  } finally {
+    off();
+  }
+}
+function revise(session, id, update) {
+  const item = "region:" + id,
+    revision = structuredClone(f.current(session.document, item));
+  revision.id = "test:" + crypto.randomUUID();
+  update(revision.body);
+  return { kind: "revise", item, revision };
+}
+compareAdmission(s, [revise(s, x, (b) => (b.value.text = "x := 8 mm"))]);
+compareAdmission(
+  s,
+  [revise(s, x, (b) => (b.document = "other"))],
+  /binding mismatch/,
+);
+compareAdmission(
+  s,
+  [revise(s, x, (b) => (b.value.text = "a".repeat(5001)))],
+  /workspace archive/,
+);
+// The changed record alone is valid. Its source-backed cell / compiled recipe is not.
+compareAdmission(
+  s,
+  [revise(s, dataset, (b) => (b.value.data.csv = "gain,noise\n11,new"))],
+  /workspace archive/,
+);
+compareAdmission(
+  s,
+  [revise(s, force, (b) => (b.value.text = "F := 0 N"))],
+  /worksheet meaning/,
+);
 s.dispose();
+
+// Count actual traversal during the first scalar write on each admitted root;
+// no wall-clock threshold, validation-only proxy operation or manual prewarming.
+function writeWork(drawings, retainedRevisions) {
+  const page = {
+    regions: Array.from({ length: 64 }, (_, i) => ({
+      id: "row-" + i,
+      text: `q${i} := ${i + 1}`,
+      mathVersion: 3,
+    })),
+    contexts: [{ id: "original", label: "Original", base: {}, overrides: {} }],
+    active: "original",
+    plots: [],
+    origin: { x: 0, y: 0 },
+    layout: {},
+  };
+  const session = drawings
+    ? drawingFixture(drawings, page).session
+    : new RegionSession(page);
+  if (retainedRevisions)
+    session.applyCommands(
+      Array.from({ length: retainedRevisions }, (_, i) =>
+        revise(session, "row-0", (b) => (b.value.text = `q0 := ${i}`)),
+      ),
+    );
+  const before = session.document,
+    work = { entries: 0, gets: 0, folds: 0, drawingGets: 0 };
+  const proto = f.SharedMap.prototype,
+    { entries, get, fold } = proto;
+  proto.entries = function* () {
+    for (const pair of entries.call(this)) {
+      work.entries++;
+      yield pair;
+    }
+  };
+  proto.get = function (key, counters) {
+    work.gets++;
+    if (key.startsWith("drawing-load-")) work.drawingGets++;
+    return get.call(this, key, counters);
+  };
+  proto.fold = function (visit, memo) {
+    return fold.call(
+      this,
+      (...args) => {
+        work.folds++;
+        return visit(...args);
+      },
+      memo,
+    );
+  };
+  let write;
+  try {
+    write = session.write("row-32", "q32 := 100");
+  } finally {
+    Object.assign(proto, { entries, get, fold });
+  }
+  assert(write.ok, write.error);
+  assert.equal(session.document.revisions.size, before.revisions.size + 1);
+  assert.equal(project(session.state).solved.values.get("q32").value, 100);
+  if (drawings) {
+    // A second changed domain must force complete checks: a live drawing view cannot lose its target.
+    compareAdmission(
+      session,
+      [
+        revise(session, "row-32", (b) => (b.value.text = "q32 := 101")),
+        { kind: "delete", item: "drawing-load-0" },
+      ],
+      /Missing drawing/,
+    );
+  }
+  session.dispose();
+  return work;
+}
+const small = writeWork(0, 0),
+  dense = writeWork(1999, 0),
+  history = writeWork(0, 2048);
+assert(small.entries < 8 && small.gets < 64, JSON.stringify(small));
+for (const work of [dense, history]) {
+  assert(work.entries <= small.entries + 2, JSON.stringify(work));
+  assert(work.gets <= small.gets + 2, JSON.stringify(work));
+  assert.equal(work.drawingGets, 0);
+  // AVL storage-budget folds visit changed paths, not all drawings or old revisions.
+  assert(work.folds <= small.folds + 64, JSON.stringify(work));
+}
+console.log("RegionSession.write traversal (64 equations):", {
+  small,
+  dense,
+  history,
+});
 console.log(
-  "Targeted authoring: source/kept-record sharing, literal/no-op edits, placement, model interfaces, contexts, failure, connection/rename, branch review, Undo and native provenance pass.",
+  "Targeted authoring: source/kept-record sharing, literal/no-op edits, placement, model interfaces, contexts, failure, connection/rename, branch review, Undo, native provenance and differential admission pass.",
 );

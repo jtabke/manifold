@@ -24,53 +24,60 @@ import type { OptimizationInput } from "./modelOptimization.ts";
 import { responseRequest, type ResponseRequest } from "./modelAnalysis.ts";
 import { optimizationConvert } from "./optimizationQuantities.ts";
 
-/** Bind authored and imported response annotations to independently checked retained evidence. */
+type ReceiptLookup = { get(id: string): f.Receipt | undefined };
 export function validateOptimizationResponses(
   document: f.Document,
-  receipts: { get(id: string): f.Receipt | undefined },
+  receipts: ReceiptLookup,
 ) {
+  for (const [, revision] of document.revisions.entries())
+    validateOptimizationResponse(document, receipts, revision);
+}
+/** Bind each response annotation to independently checked retained evidence. */
+export function validateOptimizationResponse(
+  document: f.Document,
+  receipts: ReceiptLookup,
+  revision: f.Revision,
+) {
+  if (revision.schema !== "canvas-model-response@1") return;
   const same = (a: unknown, b: unknown) =>
     f.canonical(a as f.Json) === f.canonical(b as f.Json);
-  for (const [, revision] of document.revisions.entries()) {
-    if (revision.schema !== "canvas-model-response@1") continue;
-    responseRequest(revision.body);
-    const body = revision.body;
-    const receipt = receipts.get(body.receipt);
-    f.assert(
-      receipt?.kind === "typed@1" && receipt.outcome.status === "success",
-      "Response optimization evidence unavailable",
-    );
-    f.assert(
-      f.methodKey(receipt.snapshot.method) ===
-        f.methodKey(modelOptimizations.method.requirements) &&
-        body.source.document === document.document &&
-        body.source.document === receipt.snapshot.origin.document &&
-        body.source.item === receipt.snapshot.origin.item &&
-        body.source.selection.kind === "pin" &&
-        body.source.selection.revision === receipt.snapshot.origin.revision &&
-        same(body.source.selector, receipt.snapshot.origin.selector),
-      "Response source differs from optimization evidence",
-    );
-    const source = f.resolve(document, body.source);
-    f.assert(
-      source.status === "resolved" &&
-        isOptimizationSchema(source.revision.schema),
-      "Response optimization source unavailable",
-    );
-    modelOptimizations.validateOutput(
-      receipt.snapshot.input.body,
-      receipt.outcome.output.body,
-    );
-    const capture = receipt.snapshot.input.body as unknown as OptimizationInput;
-    const output = receipt.outcome.output.body as unknown as OptimizationOutput;
-    f.assert(
-      same(body.capture, { ...capture.scalar, points: body.capture.points }) &&
-        body.target === capture.request.target &&
-        body.current === capture.scalar.inputs[capture.scalar.x.port]!.value &&
-        body.candidate === (output.candidate?.x ?? null),
-      "Response capture or markers differ from optimization evidence",
-    );
-  }
+  responseRequest(revision.body);
+  const body = revision.body;
+  const receipt = receipts.get(body.receipt);
+  f.assert(
+    receipt?.kind === "typed@1" && receipt.outcome.status === "success",
+    "Response optimization evidence unavailable",
+  );
+  f.assert(
+    f.methodKey(receipt.snapshot.method) ===
+      f.methodKey(modelOptimizations.method.requirements) &&
+      body.source.document === document.document &&
+      body.source.document === receipt.snapshot.origin.document &&
+      body.source.item === receipt.snapshot.origin.item &&
+      body.source.selection.kind === "pin" &&
+      body.source.selection.revision === receipt.snapshot.origin.revision &&
+      same(body.source.selector, receipt.snapshot.origin.selector),
+    "Response source differs from optimization evidence",
+  );
+  const source = f.resolve(document, body.source);
+  f.assert(
+    source.status === "resolved" &&
+      isOptimizationSchema(source.revision.schema),
+    "Response optimization source unavailable",
+  );
+  modelOptimizations.validateOutput(
+    receipt.snapshot.input.body,
+    receipt.outcome.output.body,
+  );
+  const capture = receipt.snapshot.input.body as unknown as OptimizationInput;
+  const output = receipt.outcome.output.body as unknown as OptimizationOutput;
+  f.assert(
+    same(body.capture, { ...capture.scalar, points: body.capture.points }) &&
+      body.target === capture.request.target &&
+      body.current === capture.scalar.inputs[capture.scalar.x.port]!.value &&
+      body.candidate === (output.candidate?.x ?? null),
+    "Response capture or markers differ from optimization evidence",
+  );
 }
 
 /** Explicit sampling authors an immutable capture request, then uses the session scheduler. */

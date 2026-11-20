@@ -10,6 +10,7 @@ import { optimizationMethodRef } from "../modelOptimization.ts";
 import {
   validateOptimizationViews,
   validateOptimizationResponses,
+  validateOptimizationResponse,
 } from "../modelOptimizationCommands.ts";
 import { validateAnalysisViews } from "../modelAnalysisCommands.ts";
 import {
@@ -77,6 +78,51 @@ const ownedItem = (doc: f.Document, item: string) => {
   const revision = f.current(doc, item);
   return !!revision && ownedSchemas.has(revision.schema);
 };
+/** Reconciliation visits only this adapter's records/slots. Indexes are disposable projections of immutable roots. */
+const viewIndex = new WeakMap<f.SharedMap<f.View>, readonly f.View[]>();
+function worksheetViews(doc: f.Document): readonly f.View[] {
+  const hit = viewIndex.get(doc.views);
+  if (hit) return hit;
+  const views: f.View[] = [];
+  for (const [, view] of doc.views.entries())
+    if (ownedRenderer(view.renderer)) views.push(view);
+  viewIndex.set(doc.views, views);
+  return views;
+}
+type WorksheetMembers = ReadonlyMap<Group | undefined, readonly string[]>;
+const itemIndex = new WeakMap<
+  f.SharedMap<f.Item>,
+  WeakMap<f.SharedMap<f.Revision>, WorksheetMembers>
+>();
+function membership(doc: f.Document) {
+  let cache = itemIndex.get(doc.items);
+  if (!cache) itemIndex.set(doc.items, (cache = new WeakMap()));
+  return cache;
+}
+function worksheetItems(doc: f.Document): WorksheetMembers {
+  const cache = membership(doc),
+    hit = cache.get(doc.revisions);
+  if (hit) return hit;
+  const index = new Map<Group | undefined, string[]>(),
+    groupOf = new Map<string, Group>(),
+    body = f.current(doc, META)?.body;
+  if (f.object(body)) {
+    meta(body);
+    for (const group of groups)
+      for (const id of (body[group] ?? []) as string[])
+        groupOf.set(itemId(group, id), group);
+  }
+  for (const [key, item] of doc.items.entries()) {
+    const revision = item.revision && doc.revisions.get(item.revision);
+    if (!revision || !ownedSchemas.has(revision.schema)) continue;
+    const group = groupOf.get(key),
+      ids = index.get(group);
+    if (ids) ids.push(key);
+    else index.set(group, [key]); // Includes unindexed owned items: the full gate must reject them.
+  }
+  cache.set(doc.revisions, index);
+  return index;
+}
 const META = "canvas";
 const groups = [
   "regions",
@@ -135,8 +181,10 @@ function plain(value: unknown, ancestors = new Set<object>()): f.Json {
   return result;
 }
 
+const checkedMetadata = new WeakSet<object>();
 function meta(body: f.Json): asserts body is Record<string, f.Json> {
   f.assert(f.object(body), "Invalid canvas metadata");
+  if (checkedMetadata.has(body)) return;
   f.fields(body, [
     "document",
     "regions",
@@ -196,6 +244,7 @@ function meta(body: f.Json): asserts body is Record<string, f.Json> {
       "Invalid canvas collection",
     );
   }
+  if (f.deeplyFrozen(body)) checkedMetadata.add(body);
 }
 function record(body: f.Json): asserts body is Record<string, f.Json> {
   f.assert(f.object(body), "Invalid canvas record");
@@ -250,10 +299,6 @@ function workspaceReferences(body: f.Json): f.Reference[] {
       reference(body.document as string, "artifact:" + id),
     ),
   ];
-}
-function validateCalculationSources(document: f.Document) {
-  for (const calculation of canvasPage(document).calculations ?? [])
-    validateWorksheetSources(document, calculation.snapshot);
 }
 export const canvasSchemas = f.createSchemas([
   drawingSchema,
@@ -408,13 +453,44 @@ const pageBranches = new WeakMap<
   f.SharedMap<f.Item>,
   Readonly<Record<string, unknown>>
 >();
-export function canvasPage(doc: f.Document): Page {
+function pages(doc: f.Document) {
   let views = pageCache.get(doc.items);
-  if (!views) {
-    views = new WeakMap();
-    pageCache.set(doc.items, views);
-  }
-  const cached = views.get(doc.views);
+  if (!views) pageCache.set(doc.items, (views = new WeakMap()));
+  return views;
+}
+function rememberPage(doc: f.Document, page: Page) {
+  if (!pageBranches.has(doc.items))
+    pageBranches.set(
+      doc.items,
+      Object.fromEntries(groups.map((group) => [group, page[group]])),
+    );
+  pages(doc).set(doc.views, page);
+  return page;
+}
+const worksheetRecord = (schema?: string) =>
+  schema === "canvas-record@1" || schema === "canvas-record@2";
+function pageRecord(doc: f.Document, group: Group, id: string) {
+  const r = f.current(doc, itemId(group, id));
+  f.assert(
+    r &&
+      (group === "calculations"
+        ? r.schema === "canvas-calculation@1"
+        : worksheetRecord(r.schema)),
+    "Missing canvas record",
+  );
+  if (group === "calculations") calculationRecord(r.body);
+  else record(r.body);
+  const value = r.body.value as Record<string, f.Json>;
+  f.assert(
+    r.body.document === doc.document &&
+      r.body.kind === kinds[group] &&
+      value.id === id,
+    "Canvas record binding mismatch",
+  );
+  return value;
+}
+export function canvasPage(doc: f.Document): Page {
+  const cached = pages(doc).get(doc.views);
   if (cached) return cached;
   const head = f.current(doc, META);
   f.assert(
@@ -438,28 +514,8 @@ export function canvasPage(doc: f.Document): Page {
     if (body[group] === undefined) continue;
     const values = Object.freeze(
       (body[group] as string[]).map((id) => {
-        const key = itemId(group, id),
-          r = f.current(doc, key);
-        expected.add(key);
-        f.assert(
-          r?.schema ===
-            (group === "calculations"
-              ? "canvas-calculation@1"
-              : r?.schema === "canvas-record@2"
-                ? "canvas-record@2"
-                : "canvas-record@1"),
-          "Missing canvas record",
-        );
-        if (group === "calculations") calculationRecord(r.body);
-        else record(r.body);
-        const value = r.body.value as Record<string, f.Json>;
-        f.assert(
-          r.body.document === doc.document &&
-            r.body.kind === kinds[group] &&
-            value.id === id,
-          "Canvas record binding mismatch",
-        );
-        return value;
+        expected.add(itemId(group, id));
+        return pageRecord(doc, group, id);
       }),
     );
     out[group] = pageBranches.get(doc.items)?.[group] || values;
@@ -477,20 +533,14 @@ export function canvasPage(doc: f.Document): Page {
         expected.add(ref.item);
       }
   }
-  for (const [key, item] of doc.items.entries())
-    f.assert(
-      !item.revision || expected.has(key) || !ownedItem(doc, key),
-      "Unexpected active canvas item",
-    );
+  for (const ids of worksheetItems(doc).values())
+    for (const key of ids)
+      f.assert(expected.has(key), "Unexpected active canvas item");
   const layout = out.layout as Record<string, { x: number; y: number }>,
     regionIds = new Set((out.regions as Region[]).map((r) => r.id)),
     seen = new Set<string>();
-  for (const [, view] of doc.views.entries()) {
-    if (
-      !ownedRenderer(view.renderer) ||
-      view.renderer === "canvas-artifact-view@1"
-    )
-      continue;
+  for (const view of worksheetViews(doc)) {
+    if (view.renderer === "canvas-artifact-view@1") continue;
     f.assert(
       view.alternative === null &&
         view.reference.document === doc.document &&
@@ -538,15 +588,7 @@ export function canvasPage(doc: f.Document): Page {
     plots: Object.freeze(out.plots as unknown[]),
     layout: Object.freeze({ ...layout }),
   }) as unknown as Page;
-  if (!pageBranches.has(doc.items))
-    pageBranches.set(
-      doc.items,
-      Object.freeze(
-        Object.fromEntries(groups.map((group) => [group, out[group]])),
-      ),
-    );
-  views.set(doc.views, page);
-  return page;
+  return rememberPage(doc, page);
 }
 export function canvasArtifacts(doc: f.Document): Artifact[] {
   const head = f.current(doc, META);
@@ -566,13 +608,11 @@ export function canvasArtifacts(doc: f.Document): Artifact[] {
       b.document === doc.document && b.value.id === id,
       "Artifact binding mismatch",
     );
-    const views = [...doc.views.entries()]
-      .map(([, v]) => v)
-      .filter(
-        (v) =>
-          v.renderer === "canvas-artifact-view@1" &&
-          v.reference.item === "artifact:" + id,
-      );
+    const views = worksheetViews(doc).filter(
+      (v) =>
+        v.renderer === "canvas-artifact-view@1" &&
+        v.reference.item === "artifact:" + id,
+    );
     const slots = views
       .map((v) => {
         const q = v.reference.selector;
@@ -618,19 +658,22 @@ export function canvasArtifacts(doc: f.Document): Artifact[] {
     }) as unknown as Artifact;
   });
   const known = new Set(ids.map((id) => "artifact:" + id));
-  for (const [, v] of doc.views.entries())
+  for (const v of worksheetViews(doc))
     if (v.renderer === "canvas-artifact-view@1")
       f.assert(known.has(v.reference.item), "Orphan artifact view");
   validateArtifactRecords(page, artifacts);
   return Object.freeze(artifacts) as Artifact[];
 }
 function desired(
+  previous: f.Document,
   page: Page,
-  document: string,
   artifacts: readonly Artifact[],
-  previous?: f.Document,
+  baseline?: Page,
 ) {
-  const bodies = new Map<string, f.Json>(),
+  const document = previous.document,
+    head = f.current(previous, META)?.body,
+    unchanged = new Set<Group>(),
+    bodies = new Map<string, f.Json | undefined>(), // undefined: retain the current record
     metadata: Record<string, f.Json> = {
       document,
       active: page.active,
@@ -640,10 +683,21 @@ function desired(
   for (const group of groups) {
     const values = page[group];
     if (values === undefined) continue;
+    // Only a branch from the projection of this exact document proves its
+    // membership, order and immutable bodies are already selected.
+    if (values === baseline?.[group] && f.object(head)) {
+      metadata[group] = head[group] as f.Json;
+      unchanged.add(group);
+      continue;
+    }
     metadata[group] = values.map((v) => v.id);
-    for (const value of values) {
-      const id = itemId(group, value.id),
-        old = previous && f.current(previous, id)?.body;
+    for (const [i, value] of values.entries()) {
+      const id = itemId(group, value.id);
+      if (value === baseline?.[group]?.[i]) {
+        bodies.set(id, undefined);
+        continue;
+      }
+      const old = f.current(previous, id)?.body;
       bodies.set(
         id,
         f.object(old) && old.value === value
@@ -703,17 +757,16 @@ function desired(
       ...definition
     } = artifact;
     const prior =
-      previous &&
-      (f.current(previous, "artifact:" + artifact.id) ??
-        [...previous.revisions.entries()]
-          .map(([, r]) => r)
-          .find(
-            (r) =>
-              r.item === "artifact:" + artifact.id &&
-              r.schema === "canvas-artifact@2" &&
-              f.object(r.body) &&
-              same(r.body.value as f.Json, plain(definition)),
-          ));
+      f.current(previous, "artifact:" + artifact.id) ??
+      [...previous.revisions.entries()]
+        .map(([, r]) => r)
+        .find(
+          (r) =>
+            r.item === "artifact:" + artifact.id &&
+            r.schema === "canvas-artifact@2" &&
+            f.object(r.body) &&
+            same(r.body.value as f.Json, plain(definition)),
+        );
     bodies.set("artifact:" + artifact.id, {
       document,
       value: plain(definition),
@@ -731,8 +784,8 @@ function desired(
       for (const ref of Object.values(prior.body.plans)) {
         f.validateReference(ref);
         const plan =
-          f.current(previous!, ref.item) ??
-          [...previous!.revisions.entries()]
+          f.current(previous, ref.item) ??
+          [...previous.revisions.entries()]
             .map(([, r]) => r)
             .find(
               (r) => r.item === ref.item && r.schema === samplingPlanSchema.id,
@@ -754,18 +807,18 @@ function desired(
         y: v.at.y,
       });
   }
-  return { bodies, slots };
+  return { bodies, slots, unchanged };
 }
 function commands(
   doc: f.Document,
   page: Page,
   artifacts: readonly Artifact[],
+  baseline?: Page,
 ): f.Command[] {
-  const next = desired(page, doc.document, artifacts, doc),
+  const next = desired(doc, page, artifacts, baseline),
     result: f.Command[] = [],
     slotViews = new Map<string, f.View>();
-  for (const [, v] of doc.views.entries()) {
-    if (!ownedRenderer(v.renderer)) continue;
+  for (const v of worksheetViews(doc)) {
     const id =
       (v.renderer === "canvas-artifact-view@1" ? "artifact-view:" : "page:") +
       (v.renderer === "canvas-region@1"
@@ -774,10 +827,13 @@ function commands(
     slotViews.set(id, v);
     if (!next.slots.has(id)) result.push({ kind: "removeView", id: v.id });
   }
-  for (const [id, item] of doc.items.entries())
-    if (item.revision && ownedItem(doc, id) && !next.bodies.has(id))
-      result.push({ kind: "delete", item: id });
+  for (const [group, ids] of worksheetItems(doc)) {
+    if (group && next.unchanged.has(group)) continue;
+    for (const id of ids)
+      if (!next.bodies.has(id)) result.push({ kind: "delete", item: id });
+  }
   for (const [id, body] of next.bodies) {
+    if (body === undefined) continue;
     const current = f.current(doc, id);
     if (
       current &&
@@ -991,7 +1047,7 @@ export type CanvasRetentionReview = Readonly<{
   before: Readonly<{ revisions: number; results: number }>;
   after: Readonly<{ revisions: number; results: number }>;
 }>;
-/** The same domain gate protects initial/adopted work and every authored publication. */
+/** Complete domain gate for cold adoption, lifecycle transitions and unclassified edits. */
 export function validateCanvasDocument(
   document: f.Document,
   allowLegacy = false,
@@ -1001,14 +1057,65 @@ export function validateCanvasDocument(
   validateModelViews(document);
   validateAnalysisViews(document);
   validateOptimizationViews(document);
-  validateWorkspaceData(canvasPage(document), canvasArtifacts(document), false);
-  validateCalculationSources(document);
-  validateSamplingPlans(
-    document,
-    canvasPage(document),
-    canvasArtifacts(document),
-    allowLegacy,
-  );
+  const page = canvasPage(document);
+  for (const calculation of page.calculations ?? [])
+    validateWorksheetSources(document, calculation.snapshot);
+  validateWorksheet(document, page, allowLegacy);
+}
+function validateWorksheet(
+  document: f.Document,
+  page: Page,
+  allowLegacy = false,
+) {
+  const artifacts = canvasArtifacts(document);
+  validateWorkspaceData(page, artifacts, false);
+  validateSamplingPlans(document, page, artifacts, allowLegacy);
+}
+/** Reuse the admitted projection only for a replacement within the worksheet.
+ * Changing a renderer/identity or affecting another schema requires full admission. */
+function revisedRegionPage(
+  document: f.Document,
+  edit: f.WorkspaceEdit,
+): Page | undefined {
+  const { previous, changes, addedRevisions } = edit,
+    key = changes.items[0];
+  if (
+    changes.items.length !== 1 ||
+    !key?.startsWith("region:") ||
+    addedRevisions.length !== 1 ||
+    document.known !== previous.known ||
+    document.views !== previous.views ||
+    document.alternatives !== previous.alternatives
+  )
+    return;
+  const after = f.current(document, key);
+  if (
+    !after ||
+    after.id !== addedRevisions[0] ||
+    !worksheetRecord(after.schema) ||
+    !worksheetRecord(f.current(previous, key)?.schema) ||
+    changes.affected.some(
+      (item) => item !== key && item !== META && !ownedItem(document, item),
+    )
+  )
+    return;
+  const base = canvasPage(previous),
+    id = key.slice("region:".length),
+    index = base.regions.findIndex((r) => r.id === id);
+  if (index < 0) return;
+  const regions = base.regions.slice();
+  regions[index] = pageRecord(document, "regions", id) as Region;
+  Object.freeze(regions);
+  membership(document).set(document.revisions, worksheetItems(previous));
+  return rememberPage(document, Object.freeze({ ...base, regions }));
+}
+function validateLiveDocument(document: f.Document, edit?: f.WorkspaceEdit) {
+  const page = edit && revisedRegionPage(document, edit);
+  if (page) {
+    // No drawing, scene binding, model/analysis view target or pinned calculation
+    // source changed. Recheck live CSV cells, membership, compiled plans, etc.
+    validateWorksheet(document, page);
+  } else validateCanvasDocument(document);
 }
 function normalizeCanvasDocument(
   document: f.Document,
@@ -1147,9 +1254,19 @@ export class CanvasDocument {
             return sampling(snapshot, signal, io);
           },
           scheduler,
-          validateDocument: validateCanvasDocument,
-          validateState: (state) => {
-            validateOptimizationResponses(state.document, state.receipts);
+          validateDocument: validateLiveDocument,
+          validateState: (state, edit) => {
+            // Apply retains every prior receipt and pinned source. Check *all*
+            // new revisions, not only the heads selected at the end of the batch.
+            if (edit) {
+              for (const id of edit.addedRevisions)
+                validateOptimizationResponse(
+                  state.document,
+                  state.receipts,
+                  state.document.revisions.get(id)!,
+                );
+            } else
+              validateOptimizationResponses(state.document, state.receipts);
             this.#storageBudget.check(state, canvasSchemas);
           },
         },
@@ -1286,7 +1403,8 @@ export class CanvasDocument {
     const document = this.document,
       cached = this.#artifactCache;
     if (cached?.document === document) return cached.value;
-    const latest = this.latestResults(),
+    let history: ReadonlyMap<string, f.Receipt> | undefined;
+    const latest = () => (history ??= this.latestResults()),
       context = canvasPage(document).active,
       value = canvasArtifacts(document).map((artifact) => {
         const selected = this.#workspace?.reader.result(
@@ -1295,8 +1413,8 @@ export class CanvasDocument {
           receipt =
             selected?.status === "current"
               ? selected.receipt
-              : (latest.get(samplingObservationKey(artifact.id, context)) ??
-                latest.get(artifact.id));
+              : (latest().get(samplingObservationKey(artifact.id, context)) ??
+                latest().get(artifact.id));
         return Object.freeze({
           ...artifact,
           ...(receipt ? { receipt: samplingReceipt(receipt) } : {}),
@@ -1429,8 +1547,9 @@ export class CanvasDocument {
     checkpoint = false,
     artifacts: readonly Artifact[] = this.artifacts,
   ) {
-    const edits = commands(this.document, page, artifacts);
-    return this.applyCommands(edits, this.document, checkpoint);
+    const doc = this.document,
+      edits = commands(doc, page, artifacts, canvasPage(doc));
+    return this.applyCommands(edits, doc, checkpoint);
   }
   undo() {
     f.assert(

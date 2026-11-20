@@ -53,6 +53,55 @@ test("one domain validation sees the exact immutable edit candidate before its s
   assert.equal(f.current(before, "force").body.value, 100);
   assert.equal(w.diagnostics().undoSteps, 1);
 });
+test("only Apply supplies a retained edit, including intermediate revisions and the keys actually mutated", async () => {
+  const authored = [],
+    states = [];
+  const w = f.createWorkspace(await initial(), {
+    ...config((_candidate, edit) => {
+      authored.push(edit);
+    }),
+    validateState: (_state, edit) => {
+      states.push(edit);
+    },
+  });
+  const before = w.reader.read();
+  let reads = 0;
+  const result = w.owner.apply(w.reader.stamp(), id("root"), [
+    ...force(150, "first-force"),
+    ...force(200, "last-force"),
+    {
+      kind: "rename",
+      get item() {
+        assert.equal(++reads, 1);
+        return "draft";
+      },
+      label: "Renamed",
+    },
+  ]);
+  assert(result.ok, result.error);
+  const edit = authored.at(-1);
+  assert.equal(edit.previous, before);
+  assert(Object.isFrozen(edit));
+  assert(Object.isFrozen(edit.addedRevisions));
+  assert.deepEqual(edit.changes.items, ["force", "draft"]);
+  assert.deepEqual(edit.addedRevisions, ["first-force", "last-force"]);
+  assert.equal(states.at(-1), edit);
+  assert.equal(w.reader.read().items.get("draft").label, "Renamed");
+  assert(w.owner.undo(w.reader.stamp(), id("undo")).ok);
+  assert(w.owner.redo(w.reader.stamp(), id("redo")).ok);
+  assert(w.owner.preview(w.reader.stamp(), ref("pressure"), []).ok);
+  assert(w.owner.open(w.reader.stamp(), await initial()).ok);
+  assert.deepEqual(authored, [
+    undefined,
+    edit,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  assert.deepEqual(states, authored);
+  w.owner.dispose();
+});
 test("domain rejection preserves state, resources, evidence, Undo, identities and notifications", async () => {
   const loaded = await initial();
   const w = f.createWorkspace(
@@ -247,7 +296,12 @@ test("failed Open preserves old binding, pending jobs, original resources and Un
 test("evidence-only arrival uses its own checked lane without rerunning authored domain validation", async () => {
   let calls = 0;
   const w = f.createWorkspace(await initial(), {
-    ...config(() => {
+    ...config((_candidate, edit) => {
+      assert.equal(
+        edit,
+        undefined,
+        "an evidence-only root has not run the document policy",
+      );
       calls++;
     }),
     executor: async (s) => calculate(s),
@@ -258,4 +312,6 @@ test("evidence-only arrival uses its own checked lane without rerunning authored
   assert.equal(calls, 1);
   assert.equal(w.diagnostics().receipts, 1);
   assert.equal(w.diagnostics().undoSteps, 0);
+  assert(w.owner.apply(w.reader.stamp(), id("root"), force(150)).ok);
+  assert.equal(calls, 2);
 });

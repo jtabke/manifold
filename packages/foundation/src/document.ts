@@ -617,80 +617,76 @@ export function prepare(
     altIds = new Set<string>(),
     newIds: string[] = [];
   for (const c of commands) {
-    if (c.kind === "create" || c.kind === "revise") {
-      identity(c.item);
-      const old = items.get(c.item, work);
+    // Record the same keys we mutate, not a second read from caller-owned commands.
+    const kind = c.kind;
+    if (kind === "create" || kind === "revise") {
+      const item = c.item;
+      identity(item);
+      const old = items.get(item, work);
       assert(
-        c.kind === "create" ? !known.get(c.item, work) : old?.revision,
+        kind === "create" ? !known.get(item, work) : old?.revision,
         "Missing item or reused lineage",
       );
-      assert(c.revision.item === c.item, "Revision lineage mismatch");
-      assert(
-        !allocated.revisions.get(c.revision.id, work),
-        "Revision identity reused",
-      );
       const r = retained(c.revision as unknown as Json) as unknown as Revision;
+      assert(r.item === item, "Revision lineage mismatch");
+      assert(!allocated.revisions.get(r.id, work), "Revision identity reused");
       assert(validateRevision(r, schemas), "Cannot author unsupported content");
       revisions = revisions.set(r.id, r, work);
       allocated = Object.freeze({
         ...allocated,
         revisions: allocated.revisions.set(r.id, true, work),
       });
-      known = known.set(c.item, true, work);
+      known = known.set(item, true, work);
+      const label = kind === "create" ? c.label : old!.label;
+      assert(typeof label === "string", "Invalid label");
       items = items.set(
-        c.item,
-        freeze({
-          id: c.item,
-          label: c.kind === "create" ? c.label : old!.label,
-          revision: r.id,
-        }),
+        item,
+        freeze({ id: item, label, revision: r.id }),
         work,
       );
-      assert(typeof items.get(c.item)!.label === "string", "Invalid label");
-      changed.add(c.item);
-      presentation.add(c.item);
+      changed.add(item);
+      presentation.add(item);
       newIds.push(r.id);
-    } else if (c.kind === "restore") {
-      identity(c.item);
-      identity(c.revision);
-      const old = items.get(c.item, work),
-        r = revisions.get(c.revision, work);
+    } else if (kind === "restore") {
+      const { item, revision, label } = c;
+      identity(item);
+      identity(revision);
+      const old = items.get(item, work),
+        r = revisions.get(revision, work);
       assert(
-        known.get(c.item, work) && !old?.revision,
+        known.get(item, work) && !old?.revision,
         "Restore requires an inactive known item",
       );
       assert(
-        r?.item === c.item && allocated.revisions.get(r.id, work),
+        r?.item === item && allocated.revisions.get(r.id, work),
         "Retained restore revision is unavailable or belongs to another item",
       );
-      assert(typeof c.label === "string", "Invalid label");
+      assert(typeof label === "string", "Invalid label");
       items = items.set(
-        c.item,
-        freeze({ id: c.item, label: c.label, revision: r.id }),
+        item,
+        freeze({ id: item, label, revision: r.id }),
         work,
       );
-      changed.add(c.item);
-      presentation.add(c.item);
-    } else if (c.kind === "delete" || c.kind === "rename") {
-      const old = items.get(c.item, work);
+      changed.add(item);
+      presentation.add(item);
+    } else if (kind === "delete" || kind === "rename") {
+      const item = c.item,
+        old = items.get(item, work);
       assert(old?.revision, "Missing item");
-      if (c.kind === "delete") {
+      if (kind === "delete") {
         items = items.set(
-          c.item,
+          item,
           Object.freeze({ ...old, revision: null }),
           work,
         );
-        changed.add(c.item);
+        changed.add(item);
       } else {
-        assert(typeof c.label === "string", "Invalid label");
-        items = items.set(
-          c.item,
-          Object.freeze({ ...old, label: c.label }),
-          work,
-        );
+        const label = c.label;
+        assert(typeof label === "string", "Invalid label");
+        items = items.set(item, Object.freeze({ ...old, label }), work);
       }
-      presentation.add(c.item);
-    } else if (c.kind === "view") {
+      presentation.add(item);
+    } else if (kind === "view") {
       const v = retained(c.view as unknown as Json) as unknown as View;
       validateView(v);
       assert(
@@ -703,14 +699,16 @@ export function prepare(
       });
       views = views.set(v.id, v, work);
       viewIds.add(v.id);
-    } else if (c.kind === "removeView") {
-      assert(views.get(c.id, work), "Missing view");
-      views = views.delete(c.id, work);
-      viewIds.add(c.id);
-    } else if (c.kind === "removeAlternative") {
-      assert(alternatives.get(c.id, work), "Missing alternative");
-      alternatives = alternatives.delete(c.id, work);
-      altIds.add(c.id);
+    } else if (kind === "removeView") {
+      const id = c.id;
+      assert(views.get(id, work), "Missing view");
+      views = views.delete(id, work);
+      viewIds.add(id);
+    } else if (kind === "removeAlternative") {
+      const id = c.id;
+      assert(alternatives.get(id, work), "Missing alternative");
+      alternatives = alternatives.delete(id, work);
+      altIds.add(id);
     } else {
       throw Error("Unknown command");
     }
@@ -758,6 +756,8 @@ export function prepare(
       views: [...viewIds],
       alternatives: [...altIds],
     }),
+    // Includes intermediate revisions no longer selected at the end of the batch.
+    addedRevisions: Object.freeze(newIds),
     cost: work,
   };
 }

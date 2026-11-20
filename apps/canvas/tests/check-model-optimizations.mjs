@@ -292,6 +292,24 @@ if (!capability) {
         ]),
       );
     }
+    // A later valid head cannot hide an inconsistent intermediate annotation:
+    // every newly retained revision must agree with its pinned evidence.
+    const originalResponse = f.current(s.document, sampled.item),
+      hidden = structuredClone(originalResponse),
+      beforeBatch = s.document;
+    hidden.id = "hidden-response";
+    hidden.body.target =
+      hidden.body.target === null ? 1 : hidden.body.target + 1;
+    assert.throws(
+      () =>
+        s.applyCommands(
+          [hidden, { ...originalResponse, id: "final-response" }].map(
+            (revision) => ({ kind: "revise", item: sampled.item, revision }),
+          ),
+        ),
+      /markers differ/,
+    );
+    assert.equal(s.document, beforeBatch);
     const sampledNative = await stageWorkspaceFile(archive(s.native()));
     assert.equal(sampledNative.executionDiagnostics.running, 0);
     assert.deepEqual(
