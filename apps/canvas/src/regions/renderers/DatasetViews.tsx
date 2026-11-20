@@ -3,7 +3,12 @@ import { GripVertical, X, Link2, Maximize2 } from "lucide-react";
 import { display, references, unitLabel } from "../../notebook/math";
 import { project, type Page, type Point } from "../document";
 import { readCsv } from "../dataSources";
-import { evaluateDataset, type DatasetComputation } from "../datasetModel";
+import {
+  createDatasetStatesSelector,
+  type DataRecord,
+  type DatasetComputation,
+  type DatasetState,
+} from "../datasetModel";
 import { sampleDatasetPlot } from "../datasetPlot";
 import {
   recordFeedback,
@@ -22,7 +27,7 @@ export function RecordFeedback({
 }: {
   page: Page;
   relation: DatasetComputation;
-  records: ReturnType<typeof evaluateDataset>["records"];
+  records: readonly DataRecord[];
   selection: DataSelection;
   follow: (row: number) => void;
   clear: () => void;
@@ -184,13 +189,8 @@ export function DatasetReview({
     scope: scope === "all" ? { kind: "all" } : { kind: "records", rows },
     paired: true,
   };
-  let result: ReturnType<typeof evaluateDataset> | undefined,
-    error = "";
-  try {
-    result = evaluateDataset(page, relation);
-  } catch (e) {
-    error = (e as Error).message;
-  }
+  const selectPreview = useMemo(createDatasetStatesSelector, []);
+  const { result, error } = selectPreview(page, [relation])[relation.id];
   return (
     <aside
       className="er-link-popover er-dataset-review"
@@ -373,6 +373,7 @@ export function DatasetReview({
 export function DatasetResult({
   page,
   relation,
+  state: { result, error },
   at,
   selected,
   selection,
@@ -385,6 +386,7 @@ export function DatasetResult({
 }: {
   page: Page;
   relation: DatasetComputation;
+  state: DatasetState;
   at: Point;
   selected: boolean;
   selection?: DataSelection;
@@ -399,15 +401,7 @@ export function DatasetResult({
     [axis, setAxis] = useState(relation.bindings.at(-1)?.symbol || ""),
     [start, setStart] = useState(0),
     [failureFilter, setFailureFilter] = useState<{ requirement?: string }>();
-  const state = useMemo(() => {
-    try {
-      return { result: evaluateDataset(page, relation) };
-    } catch (e) {
-      return { error: (e as Error).message };
-    }
-  }, [page, relation]);
-  const { result, error } = state,
-    source = page.regions.find((r) => r.id === relation.dataset)?.data;
+  const source = page.regions.find((r) => r.id === relation.dataset)?.data;
   const symbol =
     relation.bindings.find((b) => b.symbol === axis) || relation.bindings[0];
   const p = project(page),

@@ -1,7 +1,12 @@
 import { legacyWorkspace } from "./legacy-workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { RegionSession, project } from "../src/regions/document.ts";
-import { evaluateDataset } from "../src/regions/datasetModel.ts";
+import {
+  createDatasetStatesSelector,
+  evaluateDataset,
+} from "../src/regions/datasetModel.ts";
+import { evaluationWork, resetEvaluationWork } from "../src/notebook/math.ts";
+import { worksheetProjection } from "../src/regions/worksheetProjection.ts";
 const s = new RegionSession();
 const add = (t) => {
   const id = s.create();
@@ -150,10 +155,36 @@ const many = large.importData(
     Array.from({ length: 10000 }, (_, i) => `${i + 1},3`).join("\n"),
   { x: 0, y: 0 },
 );
-const all = evaluateDataset(large.state, { ...binding, dataset: many });
+const manyId = large.bindDataset({ ...binding, dataset: many }),
+  select = createDatasetStatesSelector();
+project(large.state); // Count dataset work separately from the accepted worksheet.
+resetEvaluationWork();
+const states = select(large.state),
+  all = states[manyId].result;
 assert.equal(all.records.length, 10000);
 assert.equal(all.records[9999].value.value, 30000);
 assert.equal(large.state.regions.length, 4);
+assert.equal(evaluationWork().parses, 4); // Two definitions and two measurement units, not per row.
+assert.equal(evaluationWork().assignments, 10000);
+assert.equal(evaluationWork().constraints, 10000);
+large.move(manyId, { x: 900, y: 560 });
+worksheetProjection.clear(); // Layout reuse does not depend on that shared cache staying warm.
+resetEvaluationWork();
+assert.equal(select(large.state), states);
+assert.deepEqual(evaluationWork(), {
+  parses: 0,
+  expressions: 0,
+  assignments: 0,
+  constraints: 0,
+});
+assert.throws(() => all.records.pop(), TypeError);
+assert.throws(() => (all.records[0].inputs.force.value = 99), TypeError);
+const smallId = large.bindDataset(binding);
+resetEvaluationWork();
+const both = select(large.state);
+assert.equal(both[manyId], states[manyId]);
+assert.equal(both[smallId].result.records[1].value.value, 96);
+assert.equal(evaluationWork().assignments, 2); // Only the added relation was solved.
 console.log(
   "Clean recovery, invalid bindings, Undo, independent scalar hypotheses, paired evidence and 10,000-row evaluation pass.",
 );
@@ -173,6 +204,78 @@ const ambiguous = new RegionSession(s.state),
   duplicate = ambiguous.create();
 ambiguous.write(duplicate, "P = force+speed");
 assert.throws(() => evaluateDataset(ambiguous.state, binding), /ambiguous/);
+
+// A shallow-frozen caller can still change evidence, mappings and the model in place.
+// In particular, bound scalar definitions are not in the row solver's definition list.
+{
+  const page = Object.freeze({
+      ...structuredClone(scalar.state),
+      links: {},
+      dataRelations: [structuredClone(linked)],
+    }),
+    select = createDatasetStatesSelector(),
+    read = (p = page) => select(p)[linked.id],
+    source = page.regions.find((r) => r.id === dataset).data,
+    force = page.regions.find((r) => r.id === f),
+    requirement = page.regions.find((r) => r.id === limit),
+    relation = page.dataRelations[0];
+  assert.equal(read().result.records[1].value.value, 96);
+  source.csv = "force [N],speed [m/s]\n20,3\n25,";
+  const badRow = read();
+  assert.match(badRow.error, /Row 2.*speed/);
+  resetEvaluationWork();
+  assert.equal(read({ ...page, layout: {} }), badRow);
+  assert.equal(evaluationWork().assignments, 0); // Don't repeat the successful first row.
+  source.csv = "force [N],speed [m/s]\n20,3\n25,4";
+  assert.equal(read().result.records[1].value.value, 100);
+  source.name = "";
+  assert.match(read().error, /named CSV/);
+  source.name = "paired.csv";
+
+  force.text = "force := 20 s";
+  assert.match(read().error, /units for force/);
+  force.text = "force := 20 N";
+  page.regions.push({ ...force, id: "duplicate-force" });
+  assert.match(read().error, /force is ambiguous/);
+  page.regions.pop();
+  page.links[output] = { force: v }; // A stale explicit link, even for a row override.
+  assert.match(read().error, /Linked force is unavailable/);
+  delete page.links[output];
+  assert.equal(read().result.records[1].conditions[limit], false);
+  requirement.text = "P <= 100 W";
+  assert.equal(read().result.records[1].conditions[limit], true);
+  requirement.text = "P <= 100 m";
+  assert.match(read().error, /Row 1.*limit has units m/);
+  requirement.text = "P <= 100 W";
+
+  page.contexts.push({
+    id: "alt",
+    label: "Alternative",
+    base: {},
+    overrides: {},
+  });
+  const alt = { ...page, active: "alt" };
+  assert.notEqual(read().result.key, read(alt).result.key);
+  alt.contexts.at(-1).overrides[output] = "P = 2*force*speed";
+  assert.equal(read(alt).result.records[1].value.value, 200);
+  assert.equal(read().result.records[1].value.value, 100);
+  relation.scope = { kind: "records", rows: [1] };
+  assert.deepEqual(
+    read().result.records.map((r) => r.row),
+    [1],
+  );
+  relation.bindings[0].quantity = v;
+  assert.match(read().error, /different model input/);
+  relation.bindings[0].quantity = f;
+  const prior = read();
+  page.dataRelations.pop();
+  assert.deepEqual(select(page), {});
+  page.dataRelations.push(relation);
+  assert.notEqual(read(), prior); // Removed relations are not retained for Undo.
+}
+console.log(
+  "Dataset state reuse, source and model invalidation, diagnostics and recovery pass.",
+);
 
 // Unit fields describe a measurement, not an equation. Both use paths must
 // retain the same independently calculated SI value and dimensions.

@@ -2,13 +2,17 @@
  * Arrays remain results of a relation; they never become scalar worksheet definitions.
  */
 import {
-  calculate,
+  prepareCalculation,
   references,
   same,
+  solvePrepared,
+  type CalculationState,
   type Quantity,
   type Statement,
 } from "../notebook/math.ts";
-import { project, effective, type Page } from "./document.ts";
+import { immutable } from "../notebook/immutable.ts";
+import { project, type Page, type Projection } from "./document.ts";
+import { deeplyFrozen, sameJson } from "./immutableJson.ts";
 import { readCsv, measurementUnit, numericCell } from "./dataSources.ts";
 export type DatasetComputation = {
   id: string;
@@ -39,10 +43,18 @@ export function evaluateDataset(
   relation: DatasetComputation,
   context = page.active,
 ) {
+  return evaluateRelation(page, relation, context);
+}
+function evaluateRelation(
+  page: Page,
+  relation: DatasetComputation,
+  context: string,
+  worksheet?: Projection,
+) {
   const source = page.regions.find((r) => r.id === relation.dataset)?.data;
   if (!source) throw Error("The source dataset is unavailable.");
   const table = readCsv(source),
-    p = project(page, context),
+    p = worksheet ?? project(page, context),
     output = p.statements.get(relation.output);
   if (
     !output ||
@@ -107,9 +119,6 @@ export function evaluateDataset(
     ([, s]) => s.relation !== "=" && s.name === output.name,
   );
   for (const [id] of requirements) visit(id);
-  const definitions = effective(page, context)
-    .filter((r) => required.has(r.id))
-    .map((r) => ({ ...r, x: 0, y: 0 }));
   const rows =
     relation.scope.kind === "all"
       ? table.rows.map((_, i) => i)
@@ -139,6 +148,11 @@ export function evaluateDataset(
       );
     return { one: q, zero: q.absolute ? q.value - 1 : 0 };
   });
+  const definitions = page.regions.filter((r) => required.has(r.id)),
+    prepared = definitions.map((r) =>
+      prepareCalculation(r.id, p.texts[r.id], r.mathVersion ?? 1),
+    );
+  let previousRow: CalculationState | undefined;
   const records: DataRecord[] = rows.map((row) => {
     const overrides: Record<string, Quantity> = {};
     relation.bindings.forEach((b, i) => {
@@ -160,7 +174,8 @@ export function evaluateDataset(
         value,
       };
     });
-    const solved = calculate(definitions, overrides),
+    previousRow = solvePrepared(prepared, overrides, previousRow);
+    const { solved } = previousRow,
       value = solved.values.get(output.name);
     const error =
       solved.errors.get(relation.output) ||
@@ -213,7 +228,7 @@ export function evaluateDataset(
       source.csv,
       definitions.map((r) => [
         r.id,
-        r.text,
+        p.texts[r.id],
         ...(r.mathVersion ? [r.mathVersion] : []),
       ]),
       relation.dataset,
@@ -222,6 +237,85 @@ export function evaluateDataset(
       relation.scope,
       context,
     ]),
+  };
+}
+
+export type DatasetState = Readonly<
+  | { result: ReturnType<typeof evaluateDataset>; error?: never }
+  | { result?: never; error: string }
+>;
+type DatasetStates = Readonly<Record<string, DatasetState>>;
+const emptyStates: DatasetStates = Object.freeze({});
+
+/** Disposable derivation for one canvas (or its mapping preview). Keep only the
+ * current relations, never a row cache indexed by every past page or mapping. */
+export function createDatasetStatesSelector() {
+  type Entry = {
+    relation: DatasetComputation;
+    name?: string;
+    csv?: string;
+    state: DatasetState;
+  };
+  let entries = new Map<string, Entry>(),
+    worksheet: Projection | undefined,
+    context: string | undefined,
+    frozenInputs: readonly unknown[] | undefined,
+    states = emptyStates;
+  return (
+    page: Page,
+    relations: readonly DatasetComputation[] = page.dataRelations ?? [],
+  ): DatasetStates => {
+    const active = page.contexts.find((c) => c.id === page.active),
+      inputs = [page.regions, page.links, active?.base, active?.overrides];
+    // A layout edit can reuse the worksheet even if its bounded projection
+    // cache has evicted it. Never trust identity for mutable caller input.
+    const projection =
+      !relations.length || !active
+        ? undefined
+        : sameJson(frozenInputs, inputs)
+          ? worksheet
+          : project(page);
+    const reuse = projection === worksheet && context === page.active;
+    worksheet = projection;
+    context = page.active;
+    frozenInputs = projection && deeplyFrozen(page) ? inputs : undefined;
+
+    const next = new Map<string, Entry>();
+    let changed = relations.length !== entries.size;
+    for (const relation of relations) {
+      const source = page.regions.find((r) => r.id === relation.dataset)?.data,
+        prior = reuse && entries.get(relation.id);
+      if (
+        prior &&
+        prior.csv === source?.csv &&
+        prior.name === source?.name &&
+        sameJson(prior.relation, relation)
+      ) {
+        next.set(relation.id, prior);
+        continue;
+      }
+      changed = true;
+      let state: DatasetState;
+      try {
+        state = immutable({
+          result: evaluateRelation(page, relation, page.active, projection),
+        });
+      } catch (e) {
+        state = Object.freeze({ error: (e as Error).message });
+      }
+      next.set(relation.id, {
+        relation: deeplyFrozen(relation) ? relation : structuredClone(relation),
+        name: source?.name,
+        csv: source?.csv,
+        state,
+      });
+    }
+    entries = next;
+    if (changed)
+      states = Object.freeze(
+        Object.fromEntries([...next].map(([id, e]) => [id, e.state])),
+      );
+    return states;
   };
 }
 
@@ -254,14 +348,19 @@ export function measurementOverlay(page: Page, output: string, input: string) {
   };
   visit(output);
   if (bindings.length < 2) return;
-  const result = evaluateDataset(page, {
-    id: "data-relation-overlay",
-    dataset: source.dataset,
-    output,
-    bindings,
-    scope: { kind: "all" },
-    paired: true,
-  });
+  const result = evaluateRelation(
+    page,
+    {
+      id: "data-relation-overlay",
+      dataset: source.dataset,
+      output,
+      bindings,
+      scope: { kind: "all" },
+      paired: true,
+    },
+    page.active,
+    p,
+  );
   return {
     ...result,
     dataset: source.dataset,
