@@ -244,7 +244,7 @@ export type DatasetState = Readonly<
   | { result: ReturnType<typeof evaluateDataset>; error?: never }
   | { result?: never; error: string }
 >;
-type DatasetStates = Readonly<Record<string, DatasetState>>;
+export type DatasetStates = Readonly<Record<string, DatasetState>>;
 const emptyStates: DatasetStates = Object.freeze({});
 
 /** Disposable derivation for one canvas (or its mapping preview). Keep only the
@@ -320,7 +320,12 @@ export function createDatasetStatesSelector() {
 }
 
 /** Observations are evaluated as paired records, never points on a fixed-input sweep. */
-export function measurementOverlay(page: Page, output: string, input: string) {
+export function measurementOverlay(
+  page: Page,
+  output: string,
+  input: string,
+  select = createDatasetStatesSelector(),
+) {
   const p = project(page),
     source = page.regions.find((r) => r.id === input)?.source;
   if (!source) return;
@@ -348,19 +353,16 @@ export function measurementOverlay(page: Page, output: string, input: string) {
   };
   visit(output);
   if (bindings.length < 2) return;
-  const result = evaluateRelation(
-    page,
-    {
-      id: "data-relation-overlay",
-      dataset: source.dataset,
-      output,
-      bindings,
-      scope: { kind: "all" },
-      paired: true,
-    },
-    page.active,
-    p,
-  );
+  const relation: DatasetComputation = {
+    id: "data-relation-overlay",
+    dataset: source.dataset,
+    output,
+    bindings,
+    scope: { kind: "all" },
+    paired: true,
+  };
+  const { result, error } = select(page, [relation])[relation.id];
+  if (!result) throw Error(error);
   return {
     ...result,
     dataset: source.dataset,

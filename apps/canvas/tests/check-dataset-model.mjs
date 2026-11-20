@@ -7,6 +7,7 @@ import {
 } from "../src/regions/datasetModel.ts";
 import { evaluationWork, resetEvaluationWork } from "../src/notebook/math.ts";
 import { worksheetProjection } from "../src/regions/worksheetProjection.ts";
+import { modelExterior } from "../src/regions/systemExploration.ts";
 const s = new RegionSession();
 const add = (t) => {
   const id = s.create();
@@ -135,6 +136,15 @@ assert.deepEqual(
   measurementOverlay(scalar.state, output, f).records.map((r) => r.value.value),
   [60, 96],
 );
+const selectEvidence = createDatasetStatesSelector();
+const paired = measurementOverlay(scalar.state, output, f, selectEvidence);
+resetEvaluationWork();
+scalar.move(f, { x: 30, y: 90 });
+assert.equal(
+  measurementOverlay(scalar.state, output, f, selectEvidence).records,
+  paired.records,
+);
+assert.equal(evaluationWork().assignments, 0);
 const linked = {
   ...binding,
   bindings: [
@@ -177,6 +187,26 @@ assert.deepEqual(evaluationWork(), {
   assignments: 0,
   constraints: 0,
 });
+// A model's vector status reads those same accepted results, not a second row solve.
+const envelope = {
+  id: "model-envelope",
+  name: "Envelope",
+  members: [manyId, output, limit],
+  inputs: [],
+  outputs: [output],
+};
+project(large.state);
+resetEvaluationWork();
+assert.equal(
+  modelExterior(large.state, envelope, states).computation,
+  "current",
+);
+assert.equal(
+  modelExterior(large.state, envelope, { [manyId]: { error: "Blocked" } })
+    .computation,
+  "incomplete",
+);
+assert.equal(evaluationWork().assignments, 0);
 assert.throws(() => all.records.pop(), TypeError);
 assert.throws(() => (all.records[0].inputs.force.value = 99), TypeError);
 const smallId = large.bindDataset(binding);

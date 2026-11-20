@@ -1,9 +1,8 @@
-import { useMemo } from "react";
 import { ArrowLeft, MoreHorizontal, Scan, Waypoints } from "lucide-react";
 import { display } from "../../notebook/math";
 import { project, type Page, type Point } from "../document";
 import { recordFeedback, type DataSelection } from "../dataFeedback";
-import { evaluateDataset, type DatasetComputation } from "../datasetModel";
+import type { DatasetState, DatasetComputation } from "../datasetModel";
 import {
   relationshipObjects,
   type RelationshipLocation,
@@ -12,6 +11,7 @@ export function RelationshipTrail({
   page,
   selection,
   relation,
+  state: { result },
   at,
   follow,
   back,
@@ -28,6 +28,7 @@ export function RelationshipTrail({
   page: Page;
   selection: DataSelection;
   relation: DatasetComputation;
+  state: DatasetState;
   at: Point;
   follow: (r: DatasetComputation, to: RelationshipLocation) => void;
   back: () => void;
@@ -43,13 +44,6 @@ export function RelationshipTrail({
 }) {
   const p = project(page),
     name = p.statements.get(relation.output)?.name || "Calculation";
-  const result = useMemo(() => {
-    try {
-      return evaluateDataset(page, relation);
-    } catch {
-      return undefined;
-    }
-  }, [page, relation]);
   const record = result?.records.find((r) => selection.rows.includes(r.row)),
     story = record ? recordFeedback(page, relation, record) : undefined;
   const objects = relationshipObjects(page, relation),

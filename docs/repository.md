@@ -37,8 +37,9 @@ record architecture choices.
 The application shell in `app/Regions.tsx` subscribes to the session. Worksheet records render
 in `renderers/WorksheetLayer.tsx`; toolbars, shortcuts and search execute through
 `app/dispatchCanvasCommand.ts`. Neither renderer nor dispatcher owns accepted state or Undo.
-The shell shares one `datasetModel.ts` derivation per relation between worksheet feedback and
-the result card. A mapping preview evaluates its own tentative relation.
+The result card, worksheet feedback, relationship navigation and model status share one
+`datasetModel.ts` result or error per accepted relation. Mapping previews and paired
+measurement overlays evaluate their own inputs; they never replace accepted results.
 
 `notebook/math.ts` owns dimensional evaluation. `worksheetProjection.ts` owns bounded
 worksheet derivation/caches. `authoredModels.ts`, `modelCommands.ts` and `modelResults.ts`

@@ -3,7 +3,10 @@ import { useValueGesture } from "../interaction/useValueGesture";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Code2, GripVertical, MoreHorizontal, X } from "lucide-react";
 import { display, passes } from "../../notebook/math";
-import { measurementOverlay } from "../datasetModel";
+import {
+  createDatasetStatesSelector,
+  measurementOverlay,
+} from "../datasetModel";
 import type { DataSelection } from "./DatasetViews";
 import type { Page, RegionSession } from "../document";
 import {
@@ -329,13 +332,17 @@ function ArtifactPresentationView({
       return undefined;
     }
   }, [current, a]);
+  // This is paired evidence, not the fixed-input artifact sweep or an accepted mapping.
+  const selectEvidence = useMemo(createDatasetStatesSelector, []);
   const evidence = useMemo(() => {
     try {
-      return { result: measurementOverlay(page, a.output, a.input) };
+      return {
+        result: measurementOverlay(page, a.output, a.input, selectEvidence),
+      };
     } catch (e) {
       return { error: (e as Error).message };
     }
-  }, [page, a.output, a.input]);
+  }, [page, a.output, a.input, selectEvidence]);
   const observed =
     evidence.result?.records.filter(
       (r) =>

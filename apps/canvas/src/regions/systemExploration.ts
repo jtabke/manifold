@@ -14,7 +14,7 @@ import {
   type Point,
 } from "./document.ts";
 import { modelContents, modelParent, type NestedModel } from "./models.ts";
-import { evaluateDataset } from "./datasetModel.ts";
+import type { DatasetStates } from "./datasetModel.ts";
 /** Labels belong to authored objects, never to a domain-wide symbol dictionary. */
 export function quantityTitle(name: string, page?: Page): string {
   if (page) {
@@ -152,7 +152,11 @@ export function definitionPaths(
   }
   return found;
 }
-export function modelExterior(page: Page, model: NestedModel) {
+export function modelExterior(
+  page: Page,
+  model: NestedModel,
+  datasets: DatasetStates,
+) {
   const p = project(page),
     inside = modelContents(page, model.members);
   const feeds = Object.entries(p.bindings)
@@ -181,14 +185,11 @@ export function modelExterior(page: Page, model: NestedModel) {
     dataIncomplete = false;
   for (const relation of page.dataRelations || []) {
     if (!inside.has(relation.id)) continue;
-    try {
-      evaluateDataset(page, relation);
+    if (datasets[relation.id]?.result) {
       dataCurrent = true;
       for (const id of [relation.output, ...ancestors(p, relation.output)])
         covered.add(id);
-    } catch {
-      dataIncomplete = true;
-    }
+    } else dataIncomplete = true;
   }
   return {
     inputs: model.inputs,

@@ -10,7 +10,7 @@ import {
 import { display, quantityLiteral, references } from "../../notebook/math";
 import { ancestors, type Page, type Point, type Projection } from "../document";
 import type { DataSelection } from "../dataFeedback";
-import type { DatasetComputation, DatasetState } from "../datasetModel";
+import type { DatasetComputation, DatasetStates } from "../datasetModel";
 import { matchesMeasurementText } from "../dataSources";
 import type { Scrub } from "../interaction/useNumberScrub";
 import {
@@ -98,7 +98,7 @@ function WorksheetCommands({
 }
 
 type SheetData = {
-  states: Readonly<Record<string, DatasetState>>;
+  states: DatasetStates;
   selection?: DataSelection;
   relatedIds: ReadonlySet<string>;
   symbols: Set<string>;

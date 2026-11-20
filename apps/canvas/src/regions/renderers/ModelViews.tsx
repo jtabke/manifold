@@ -33,7 +33,7 @@ import {
   type NestedModel,
   type ModelRepresentation,
 } from "../models";
-import { evaluateDataset } from "../datasetModel";
+import type { DatasetStates } from "../datasetModel";
 import { readCsv } from "../dataSources";
 import { planConnection } from "../linking";
 import "../styles/models.css";
@@ -95,25 +95,22 @@ export function modelLabel(page: Page, id: string) {
       : r?.text || id)
   );
 }
-export function modelValue(page: Page, id: string) {
+function modelValue(page: Page, id: string, datasets: DatasetStates) {
   const p = project(page),
     s = p.statements.get(id),
     r = page.regions.find((r) => r.id === id);
   if (p.errors.has(id)) return "Unresolved";
   if (r?.data) return `${readCsv(r.data).rows.length} records`;
-  const data = page.dataRelations?.find((r) => r.id === id);
-  if (data) {
-    try {
-      return `${evaluateDataset(page, data).records.length} calculated records`;
-    } catch {
-      return "Blocked";
-    }
+  if (Object.hasOwn(datasets, id)) {
+    const { result } = datasets[id];
+    return result ? `${result.records.length} calculated records` : "Blocked";
   }
   const q = s && p.solved.values.get(s.name);
   return q ? display(q) : "Unresolved";
 }
 export function ModelReview({
   page,
+  datasets,
   members,
   representations,
   existing,
@@ -121,6 +118,7 @@ export function ModelReview({
   save,
 }: {
   page: Page;
+  datasets: DatasetStates;
   members: string[];
   representations: ModelRepresentation[];
   existing?: NestedModel;
@@ -240,7 +238,7 @@ export function ModelReview({
                     <span>
                       {modelLabel(page, id)}
                       <small>
-                        {modelValue(page, id)}
+                        {modelValue(page, id, datasets)}
                         {required ? " · crosses boundary" : ""}
                       </small>
                     </span>
@@ -280,6 +278,7 @@ export function ModelReview({
 export function ModelObject({
   changeAppearance,
   page,
+  datasets,
   model,
   at,
   level,
@@ -303,6 +302,7 @@ export function ModelObject({
 }: {
   changeAppearance: AppearanceChange;
   page: Page;
+  datasets: DatasetStates;
   model: NestedModel;
   at: Point;
   level: string;
@@ -330,7 +330,8 @@ export function ModelObject({
     needsReview =
       boundary.requiredInputs.some((id) => !model.inputs.includes(id)) ||
       boundary.requiredOutputs.some((id) => !model.outputs.includes(id)),
-    blocked = modelExterior(page, model).computation === "incomplete",
+    exterior = modelExterior(page, model, datasets),
+    blocked = exterior.computation === "incomplete",
     checks = [...p.solved.constraints].filter(
       ([id]) =>
         inside.has(id) ||
@@ -344,10 +345,9 @@ export function ModelObject({
       ? "Interface changed"
       : blocked
         ? "Blocked"
-        : modelExterior(page, model).computation === "current"
+        : exterior.computation === "current"
           ? "Evaluated"
           : "Defined · not evaluated";
-  const exterior = modelExterior(page, model);
   const briefInputs = exteriorPorts(page, model, highlight).slice(
     0,
     system ? 3 : 2,
@@ -408,7 +408,7 @@ export function ModelObject({
                   onClick={() => inspect(id)}
                 >
                   <span>IN · {modelLabel(page, id)}</span>
-                  <b>{modelValue(page, id)}</b>
+                  <b>{modelValue(page, id, datasets)}</b>
                 </button>
               ))}
               {model.outputs.map((id) => (
@@ -418,7 +418,7 @@ export function ModelObject({
                     onClick={() => inspect(id)}
                   >
                     <span>OUT · {modelLabel(page, id)}</span>
-                    <b>{modelValue(page, id)}</b>
+                    <b>{modelValue(page, id, datasets)}</b>
                   </button>
                   <button
                     aria-label={`Connect model output ${modelLabel(page, id)}`}
@@ -532,7 +532,7 @@ export function ModelObject({
                 onClick={() => inspect(id)}
               >
                 <span>◦ {modelLabel(page, id)}</span>
-                <b>{modelValue(page, id)}</b>
+                <b>{modelValue(page, id, datasets)}</b>
               </button>
             ))}
           </div>
@@ -547,7 +547,7 @@ export function ModelObject({
                   onClick={() => inspect(id)}
                 >
                   <span>{modelLabel(page, id)}</span>
-                  <b>{modelValue(page, id)}</b>
+                  <b>{modelValue(page, id, datasets)}</b>
                 </button>
                 <button
                   aria-label={`Connect model output ${modelLabel(page, id)}`}
@@ -643,11 +643,13 @@ export function ModelBreadcrumb({
 }
 export function ModelTrace({
   page,
+  datasets,
   object,
   follow,
   close,
 }: {
   page: Page;
+  datasets: DatasetStates;
   object: string;
   follow: (id: string) => void;
   close: () => void;
@@ -672,7 +674,7 @@ export function ModelTrace({
     <aside className="nm-trace" aria-label="Model quantity trace">
       <header>
         <b>
-          {modelLabel(page, object)} · {modelValue(page, object)}
+          {modelLabel(page, object)} · {modelValue(page, object, datasets)}
         </b>
         <button aria-label="Close model trace" onClick={close}>
           ×
@@ -700,12 +702,14 @@ const modelParentFor = (page: Page, id: string) =>
   page.models?.find((m) => m.members.includes(id))?.id;
 export function ModelConnection({
   page,
+  datasets,
   source,
   initialTarget,
   close,
   accept,
 }: {
   page: Page;
+  datasets: DatasetStates;
   source: string;
   initialTarget?: string;
   close: () => void;
@@ -767,7 +771,8 @@ export function ModelConnection({
             <option value="">Choose an input…</option>
             {candidates.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.model} / {modelLabel(page, c.id)} · {modelValue(page, c.id)}
+                {c.model} / {modelLabel(page, c.id)} ·{" "}
+                {modelValue(page, c.id, datasets)}
               </option>
             ))}
           </select>
@@ -776,7 +781,7 @@ export function ModelConnection({
           <>
             <p>{edit.label}</p>
             <div className="nm-binding-preview">
-              {modelValue(page, source)} → {modelLabel(page, target)}
+              {modelValue(page, source, datasets)} → {modelLabel(page, target)}
               <small>
                 Computational binding · shared identity · unit checked
               </small>

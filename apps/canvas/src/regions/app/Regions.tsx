@@ -4319,6 +4319,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   {modelTrace && (
                     <ModelTrace
                       page={page}
+                      datasets={datasetStates}
                       object={modelTrace}
                       follow={hierarchy.reveal}
                       close={() => setModelTrace(undefined)}
@@ -4329,6 +4330,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               {activeData && activeRelation && (
                 <RelationshipTrail
                   page={page}
+                  state={datasetStates[activeRelation.id]}
                   selection={activeData}
                   relation={activeRelation}
                   at={{
@@ -4426,6 +4428,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       )}
                     {systemActive && (
                       <SystemOverview
+                        acceptedDatasets={
+                          working === page ? datasetStates : undefined
+                        }
                         failure={systemFailure}
                         investigate={investigateFailure}
                         preview={working !== page}
@@ -4590,6 +4595,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                           }
                           key={model.id}
                           page={page}
+                          datasets={datasetStates}
                           model={model}
                           at={places[model.id] || hierarchy.at(model.id)}
                           level={hierarchy.level(model.id) || "interface"}
@@ -6098,6 +6104,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         )}
         {modelReview && (
           <ModelReview
+            datasets={datasetStates}
             key={modelReview.existing?.id || "new-model"}
             page={page}
             members={modelReview.members}
@@ -6155,6 +6162,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         {modelConnection && (
           <ModelConnection
             page={page}
+            datasets={datasetStates}
             source={modelConnection}
             initialTarget={modelConnectionTarget}
             close={() => {

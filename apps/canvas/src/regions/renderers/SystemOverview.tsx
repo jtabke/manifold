@@ -4,6 +4,10 @@ import { ArrowRight, X } from "lucide-react";
 import { ancestors, project, type Page, type Point } from "../document";
 import { display, relationGlyph, same } from "../../notebook/math";
 import { modelContents, modelParent } from "../models";
+import {
+  createDatasetStatesSelector,
+  type DatasetStates,
+} from "../datasetModel";
 import { type Scrub } from "./Interactions";
 import {
   causalNeighborhood,
@@ -38,6 +42,7 @@ import { systemAssessment } from "../systemAssessment";
 import { planConnection } from "../linking";
 export function SystemOverview({
   page,
+  acceptedDatasets,
   response,
   setResponse,
   pathFocus,
@@ -77,6 +82,7 @@ export function SystemOverview({
   preview?: boolean;
   changeAppearance: AppearanceChange;
   page: Page;
+  acceptedDatasets?: DatasetStates;
   response: InvestigationView;
   setResponse: (mode: InvestigationView) => void;
   pathFocus?: InvestigationPath;
@@ -112,6 +118,11 @@ export function SystemOverview({
   scrub: (id: string) => Scrub | undefined;
 }) {
   const p = useMemo(() => project(page), [page]);
+  const selectPreview = useMemo(createDatasetStatesSelector, []);
+  const datasets = useMemo(
+    () => acceptedDatasets ?? selectPreview(page),
+    [page, acceptedDatasets, selectPreview],
+  );
   const assessment = useMemo(() => systemAssessment(page), [page]);
   const failureAncestors = new Set(failure ? ancestors(p, failure) : []);
   const balance = useMemo(
@@ -828,6 +839,7 @@ export function SystemOverview({
       <div className="sx-system-models" aria-label="Subsystem interfaces">
         {models.map((model) => (
           <SystemModel
+            datasets={datasets}
             preview={preview}
             investigate={investigate}
             changeAppearance={changeAppearance}

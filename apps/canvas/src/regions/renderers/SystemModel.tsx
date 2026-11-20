@@ -7,6 +7,7 @@ import {
 import type { PointerEvent, ReactNode } from "react";
 import { project, type Page, type Point } from "../document";
 import { modelBoundary, modelContents, type NestedModel } from "../models";
+import type { DatasetStates } from "../datasetModel";
 import {
   engineeringValue,
   exteriorPorts,
@@ -29,6 +30,7 @@ export type BoundaryDrag = (
 ) => void;
 export function SystemModel({
   page,
+  datasets,
   model,
   at,
   selected,
@@ -63,6 +65,7 @@ export function SystemModel({
   responseExpanded?: boolean;
   write: (id: string, value: string) => string | undefined;
   page: Page;
+  datasets: DatasetStates;
   model: NestedModel;
   at: Point;
   selected: boolean;
@@ -79,7 +82,7 @@ export function SystemModel({
   scrub: (id: string) => Scrub | undefined;
 }) {
   const p = project(page),
-    exterior = modelExterior(page, model);
+    exterior = modelExterior(page, model, datasets);
   const result = model.presentation?.primaryOutput || model.outputs[0];
   const failed = exterior.checks.filter(([, c]) => !c.pass),
     blocked = exterior.computation === "incomplete";
