@@ -24,6 +24,8 @@ import {
 import { stageWorkspaceFile } from "../src/regions/app/workspaceFiles.ts";
 import { canvasLocalStore } from "../src/regions/app/canvasLocalStore.ts";
 import { memoryBackend } from "@manifold/foundation";
+import { insertModel, modelReference } from "../src/regions/modelCommands.ts";
+import { createModelAnalysis } from "../src/regions/modelAnalysisCommands.ts";
 const fixture = readFileSync(
   new URL("./canvas-v2.fixture.json", import.meta.url),
   "utf8",
@@ -162,12 +164,20 @@ const backend = memoryBackend(),
 await store.load();
 assert.equal((await store.save(e)).current, true);
 assert.equal(e.isSaved, true);
-const oldCapture = e.capture();
+const oldCapture = e.capture(),
+  beforeEvidence = e.prepare((draft) =>
+    draft.write(e.artifacts[0].input, "x := 5 mm"),
+  );
+assert(beforeEvidence.value.ok && beforeEvidence.commands.length);
 assert.equal(await deliver(e, e.artifacts[0].id, r), true);
 assert.equal(e.document.id, root.id);
 assert.equal(e.document.items, root.items);
 assert.equal(e.document.revisions, root.revisions);
 assert.equal(e.canUndo, false);
+assert.throws(
+  () => e.applyCommands(beforeEvidence.commands, beforeEvidence.expected),
+  /Workspace changed/,
+);
 assert.equal(e.isSaved, false);
 assert.equal(
   e.acknowledge(oldCapture),
@@ -294,20 +304,145 @@ const { session: clearance } = owner();
 const art = clearance.artifacts[0],
   originalPosition = structuredClone(art.at);
 const cursor = clearance.create({ x: art.at.x, y: art.at.y - 72 });
-clearance.atomic((staged) => {
-  assert.equal(staged.write(cursor, "Accepted note", true).ok, true);
-});
+const cursorRoot = clearance.document;
+let publications = 0,
+  undos = 0;
+clearance.foundation.subscribe(() => publications++);
+assert.equal(
+  clearance.prepare((draft) => draft.state.regions.some((r) => r.id === cursor))
+    .value,
+  false,
+);
+assert.throws(
+  () =>
+    clearance.atomic((draft) => {
+      assert(draft.write(cursor, "Discard this", true).ok);
+      throw Error("Cancel the operation");
+    }),
+  /Cancel the operation/,
+);
+assert.equal(clearance.document, cursorRoot);
+assert.equal(clearance.state.regions.find((r) => r.id === cursor).text, "");
+assert.equal(publications, 0);
+clearance.atomic(
+  (staged) => {
+    assert.equal(staged.write(cursor, "Accepted note", true).ok, true);
+  },
+  () => undos++,
+);
+assert.equal(publications, 1);
 assert.deepEqual(
   clearance.artifacts[0].at,
   originalPosition,
   "continuation never moves an independently placed artifact",
 );
 clearance.undo();
+assert.equal(publications, 2);
+assert.equal(undos, 1);
+assert.equal(clearance.canUndo, false);
 assert.deepEqual(clearance.artifacts[0].at, originalPosition);
 assert.equal(
   clearance.state.regions.some((r) => r.text === "Accepted note"),
   false,
 );
+// Reentrant changes win; the old draft cannot publish its commands or attention.
+assert.throws(
+  () =>
+    clearance.atomic((draft) => {
+      draft.renameDocument("stale");
+      clearance.renameDocument("current");
+    }),
+  /Workspace changed/,
+);
+assert.equal(clearance.state.title, "current");
+assert.equal(publications, 3);
+
+// A privately validated document is not an accepted state. Publication must
+// check even *unselected* revisions against real receipts and the storage budget.
+const guards = new RegionSession(),
+  spring = insertModel(guards, "spring", { x: 0, y: 0 }),
+  analysis = createModelAnalysis(
+    guards,
+    spring,
+    { input: "displacement", output: "force", low: 0, high: 5, points: 3 },
+    { x: 50, y: 50 },
+  ),
+  ref = modelReference(guards.document, analysis),
+  computed = await guards.compute(ref).completion;
+assert.equal(computed.status, "retained");
+guards.renameDocument("Checked baseline");
+const baseline = guards.document,
+  realEvidence = guards.foundation.evidence(),
+  analysisReceipt = computed.receipt,
+  capture = analysisReceipt.snapshot.input.body,
+  item = "staged-item",
+  create = (schema, body) => ({
+    kind: "create",
+    item,
+    label: item,
+    revision: { id: "staged-revision", item, schema, body, required: true },
+  });
+let guardPublications = 0;
+guards.foundation.subscribe(() => guardPublications++);
+for (const [schema, body, error] of [
+  [
+    "canvas-model-response@1",
+    {
+      source: {
+        ...ref,
+        selection: { kind: "pin", revision: analysisReceipt.requestRevision },
+      },
+      receipt: analysisReceipt.id,
+      capture,
+      current: capture.inputs.displacement.value,
+      target: null,
+      candidate: null,
+    },
+    /differs from optimization evidence/,
+  ],
+  [
+    "source@1",
+    {
+      asset: {
+        digest: "sha256:" + "0".repeat(64),
+        size: 12 * 1024 * 1024,
+        mediaType: "application/json",
+        disposition: "included",
+      },
+      rows: 1,
+      columns: 1,
+      interpretation: [
+        { unit: "N", subject: "spring", frame: "world", condition: "nominal" },
+      ],
+    },
+    /recovery budget/,
+  ],
+]) {
+  let prepared = false;
+  assert.throws(
+    () =>
+      guards.atomic((draft) => {
+        draft.applyCommands([create(schema, body)]);
+        draft.applyCommands([{ kind: "delete", item }]);
+        prepared = true;
+      }),
+    error,
+  );
+  assert(prepared);
+  assert.equal(guards.document, baseline);
+  assert.equal(guards.foundation.evidence(), realEvidence);
+  assert.equal(guardPublications, 0);
+}
+// Neither failed batch reserved its identities or allocated an Undo step.
+guards.atomic((draft) =>
+  draft.applyCommands([create("note@1", { mode: "note", text: "retry" })]),
+);
+assert.equal(guards.foundation.evidence(), realEvidence);
+assert.equal(guardPublications, 1);
+guards.undo();
+assert.equal(guards.document.items, baseline.items);
+assert.equal(guardPublications, 2);
+guards.dispose();
 console.log(
   "Workspace owner: one Keep/Undo publication, staging failures, layout independence, stale proposals/results, V1/V2 migration, V3 handoff, evidence without Undo and capture-specific save ACKs pass.",
 );

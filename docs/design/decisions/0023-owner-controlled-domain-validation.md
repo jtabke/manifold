@@ -31,9 +31,14 @@ lifecycle mutation. Apply prepares once. Initial creation, Undo, preview, Keep, 
 cleanup use the same validator; evidence-only arrival retains its own validation lane.
 Non-synchronous return values reject. Native data cannot register executable validation.
 
-The canvas moves its Page/artifact/source checks to this boundary. Its private draft
-adapter still prepares and validates its own unpublished candidate. No public prepared
-candidate registry, additional history system or native version is introduced.
+The canvas moves its Page/artifact/source checks to this boundary. `prepare` and `atomic`
+fork the exact checked root from their owner into a private, unpublished draft. Each draft
+step retains its commands and validates its own foundation-prepared candidate and delta
+before advancing. A public staging flag is not proof of admission; external construction,
+preview, migration and uncertain roots keep the full gate. Only commands cross back to
+the live owner. Its ordinary Apply checks the expected root, reservations, evidence and
+storage, validates the final batch (in full if unclassified), and publishes once. No public
+prepared-candidate registry, additional history system or native version is introduced.
 
 ## Consequences
 
@@ -47,7 +52,8 @@ view/membership indexes and skip unrelated domains; the canvas still checks the 
 sampling plans, all newly retained optimization annotations and the storage budget. Mixed-domain or
 unclassified edits use full validation. Nothing read from a file can supply a validator hint.
 The [differential admission tests](../../../apps/canvas/tests/check-targeted-authoring.mjs) compare
-live results with full admission on freshly reconstructed roots.
+live and staged results with full admission on freshly reconstructed roots, and count map
+traversals from draft construction through publication of an actual worksheet write.
 
 ## Validation and review
 

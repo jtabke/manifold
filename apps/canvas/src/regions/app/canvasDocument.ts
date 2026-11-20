@@ -21,6 +21,7 @@ import { sameJson as same } from "../immutableJson.ts";
 import * as f from "@manifold/foundation";
 import {
   sceneSchemas,
+  SCENE_ITEM,
   validateSceneDocument,
   prepareSceneLoaded,
 } from "../sceneRecords.ts";
@@ -990,16 +991,19 @@ function commands(
   }
   return result;
 }
+const serialLimit = 100_000_000;
+function legacySerial(id: string) {
+  const match = id
+    .slice(id.indexOf(":") + 1)
+    .match(/^(?:region|plot|alternative|data-relation)-(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
 export function canvasSerial(document: f.Document) {
   let max = 0;
-  for (const [id] of document.known.entries()) {
-    const match = id
-      .slice(id.indexOf(":") + 1)
-      .match(/^(?:region|plot|alternative|data-relation)-(\d+)$/);
-    if (match) max = Math.max(max, Number(match[1]));
-  }
+  for (const [id] of document.known.entries())
+    max = Math.max(max, legacySerial(id));
   f.assert(
-    Number.isSafeInteger(max) && max < 100_000_000,
+    Number.isSafeInteger(max) && max < serialLimit,
     "Canvas identity allocation limit exceeded",
   );
   return max;
@@ -1181,10 +1185,13 @@ export function legacyCanvasLoaded(
   validateCanvasDocument(candidate);
   return { document: candidate, receipts: [], resources };
 }
+const ownerFork = Symbol("private canvas draft");
 export class CanvasDocument {
   readonly #workspace?: ReturnType<typeof f.createWorkspace>;
+  readonly #checked = new WeakSet<f.Document>();
+  readonly #checkedLedgers = new WeakSet<f.Document["known"]>();
   #draft?: f.Document;
-  #staged: f.Command[] = [];
+  #staged?: f.Command[];
   readonly #storageBudget = new CanvasStorageBudget();
   #lastPage?: Page;
   #artifactCache?: {
@@ -1205,7 +1212,7 @@ export class CanvasDocument {
   >();
   #saved?: Readonly<{ root: string; evidence: number }>;
   constructor(
-    page: Page,
+    page: Page | typeof ownerFork,
     document?: f.Document,
     artifacts: readonly Artifact[] = [],
     draft = false,
@@ -1213,6 +1220,14 @@ export class CanvasDocument {
     scheduler?: f.TaskScheduler,
     executor?: ArtifactExecutor | null,
   ) {
+    if (page === ownerFork) {
+      f.assert(document, "Missing private draft root");
+      this.#draft = document;
+      this.#staged = [];
+      this.#checked.add(document);
+      this.#checkedLedgers.add(document.known);
+      return;
+    }
     f.assert(
       !recovery || recovery.foundation.document === document,
       "Invalid canvas recovery binding",
@@ -1221,6 +1236,7 @@ export class CanvasDocument {
     if (draft) {
       validateCanvasDocument(document);
       this.#draft = document;
+      this.#staged = [];
     } else
       this.#workspace = f.createWorkspace(
         recovery
@@ -1254,7 +1270,8 @@ export class CanvasDocument {
             return sampling(snapshot, signal, io);
           },
           scheduler,
-          validateDocument: validateLiveDocument,
+          validateDocument: (candidate, edit) =>
+            this.#validate(candidate, edit),
           validateState: (state, edit) => {
             // Apply retains every prior receipt and pinned source. Check *all*
             // new revisions, not only the heads selected at the end of the batch.
@@ -1287,6 +1304,39 @@ export class CanvasDocument {
       "Legacy results require async workspace import; recover core receipts with their capture",
     );
     canvasSerial(this.document);
+    this.#checkedLedgers.add(this.document.known);
+  }
+  #validate(candidate: f.Document, edit?: f.WorkspaceEdit) {
+    validateLiveDocument(candidate, edit);
+    this.#checked.add(candidate);
+    // Only creates extend the item ledger. Preserve the constructor's legacy
+    // numeric-ID check without scanning (or duplicating) an admitted ledger.
+    if (
+      edit &&
+      candidate.known !== edit.previous.known &&
+      this.#checkedLedgers.has(edit.previous.known) &&
+      edit.changes.items.every((id) => legacySerial(id) < serialLimit)
+    )
+      this.#checkedLedgers.add(candidate.known);
+  }
+  /** No caller-supplied candidate: fork only this owner's exact, checked root. */
+  fork() {
+    const reader = this.#workspace?.reader,
+      root = reader?.read() ?? this.#draft!;
+    f.assert(reader || this.#staged, "Workspace draft is closed");
+    if (
+      this.#checked.has(root) &&
+      !reader?.preview() &&
+      f.current(root, META)?.schema !== "canvas-page@1" &&
+      f.current(root, SCENE_ITEM)
+    ) {
+      if (!this.#checkedLedgers.has(root.known)) {
+        canvasSerial(root);
+        this.#checkedLedgers.add(root.known);
+      }
+      return new CanvasDocument(ownerFork, root);
+    }
+    return new CanvasDocument(canvasPage(root), root, [], true);
   }
   get document() {
     return this.#draft ?? this.#workspace!.reader.read();
@@ -1297,9 +1347,10 @@ export class CanvasDocument {
   }
   dispose() {
     this.#workspace?.owner.dispose();
+    this.#staged = undefined;
   }
   stagedCommands(): readonly f.Command[] {
-    f.assert(this.#draft, "Only a staging owner has a command log");
+    f.assert(this.#staged, "Only an open staging owner has a command log");
     return Object.freeze([...this.#staged]);
   }
   applyCommands(
@@ -1314,14 +1365,21 @@ export class CanvasDocument {
     if (!edits.length && !checkpoint) return false;
     const root = uid("root");
     if (this.#draft) {
-      const prepared = f.prepare(this.document, root, edits, canvasSchemas);
-      validateCanvasDocument(prepared.document);
-      this.#draft = prepared.document;
-      this.#staged.push(
-        ...(f.retained(
+      f.assert(this.#staged, "Workspace draft is closed");
+      const previous = this.#draft,
+        commands = f.retained(
           edits as unknown as f.Json,
-        ) as unknown as readonly f.Command[]),
-      );
+        ) as unknown as readonly f.Command[],
+        prepared = f.prepare(previous, root, commands, canvasSchemas);
+      if (this.#checked.has(previous))
+        this.#validate(prepared.document, {
+          previous,
+          changes: prepared.changes,
+          addedRevisions: prepared.addedRevisions,
+        });
+      else validateCanvasDocument(prepared.document);
+      this.#staged.push(...commands);
+      this.#draft = prepared.document;
     } else {
       const result = this.#workspace!.owner.apply(
         this.reader.stamp(),

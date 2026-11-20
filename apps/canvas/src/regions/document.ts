@@ -217,6 +217,16 @@ export function ancestors(p: Projection, id: string): string[] {
   visit(id);
   return [...result];
 }
+// Internal construction only. A public Page, document or staging flag still takes cold admission.
+class SessionDraft {
+  readonly #owner: CanvasDocument;
+  constructor(source: CanvasDocument) {
+    this.#owner = source.fork();
+  }
+  get owner() {
+    return this.#owner;
+  }
+}
 export class RegionSession {
   private readonly documentOwner: CanvasDocument;
   private cursors: {
@@ -393,19 +403,30 @@ export class RegionSession {
       paused: this.loadedArtifacts,
     }));
   }
+  private withDraft<T>(
+    use: (staged: RegionSession) => T,
+    artifactExecutor?: null,
+  ): T {
+    if (this.closed) throw Error("Workspace owner is closed");
+    const staged = new RegionSession(
+      new SessionDraft(this.documentOwner),
+      () => this.retainedRegions(),
+      undefined,
+      [],
+      true,
+      undefined,
+      { artifactExecutor },
+    );
+    try {
+      return use(staged);
+    } finally {
+      staged.dispose();
+    }
+  }
   /** Build a reviewable command batch without publishing, executing or changing attention. */
   prepare<T>(operation: (staged: RegionSession) => T) {
     const expected = this.document;
-    const staged = new RegionSession(
-      this.documentOwner.page,
-      () => this.retainedRegions(),
-      expected,
-      this.artifacts,
-      true,
-      undefined,
-      { artifactExecutor: null },
-    );
-    try {
+    return this.withDraft((staged) => {
       const value = operation(staged);
       if (value && typeof (value as { then?: unknown }).then === "function") {
         void Promise.resolve(value).catch(() => {});
@@ -416,9 +437,7 @@ export class RegionSession {
         commands: staged.documentOwner.stagedCommands(),
         value,
       });
-    } finally {
-      staged.dispose();
-    }
+    }, null);
   }
   /** Staging runs only synchronous domain commands; subscribers see one final publication. */
   atomic<T>(
@@ -427,35 +446,31 @@ export class RegionSession {
   ): T {
     const expected = this.document,
       beforeMeaning = semanticKey(this.state);
-    const staged = new RegionSession(
-      this.state,
-      () => this.retainedRegions(),
-      this.document,
-      this.artifacts,
-      true,
-    );
-    staged.cursors = this.cursors;
-    staged.cursorOrigin = this.cursorOrigin;
-    staged.cursorPage = undefined;
-    const value = operation(staged);
-    if (value && typeof (value as { then?: unknown }).then === "function")
-      throw Error("Workspace operations must be synchronous");
-    const changed = this.documentOwner.applyCommands(
-      staged.documentOwner.stagedCommands(),
-      expected,
-      !!undoAttention,
-    );
-    if (changed) {
-      this.future = [];
-      this.past.push({ undo: undoAttention });
-      this.past = this.past.slice(-this.documentOwner.historySize);
-    }
-    this.cursors = staged.cursors;
-    this.cursorOrigin = staged.cursorOrigin;
-    this.cursorPage = undefined;
-    if (semanticKey(staged.state) !== beforeMeaning) this.evaluate();
-    else this.emit();
-    return value;
+    return this.withDraft((staged) => {
+      staged.cursors = this.cursors;
+      staged.cursorOrigin = this.cursorOrigin;
+      const value = operation(staged);
+      if (value && typeof (value as { then?: unknown }).then === "function") {
+        void Promise.resolve(value).catch(() => {});
+        throw Error("Workspace operations must be synchronous");
+      }
+      const changed = this.documentOwner.applyCommands(
+        staged.documentOwner.stagedCommands(),
+        expected,
+        !!undoAttention,
+      );
+      if (changed) {
+        this.future = [];
+        this.past.push({ undo: undoAttention });
+        this.past = this.past.slice(-this.documentOwner.historySize);
+      }
+      this.cursors = staged.cursors;
+      this.cursorOrigin = staged.cursorOrigin;
+      this.cursorPage = undefined;
+      if (semanticKey(staged.state) !== beforeMeaning) this.evaluate();
+      else this.emit();
+      return value;
+    });
   }
   private recent = new RecentCalculations();
   get receipts() {
@@ -524,7 +539,7 @@ export class RegionSession {
   private staging = false;
   private retainedRegions: () => string[];
   constructor(
-    initial?: Page,
+    initial?: Page | SessionDraft,
     retainedRegions: () => string[] = () => [],
     document?: FoundationDocument,
     artifacts: readonly Artifact[] = [],
@@ -539,6 +554,11 @@ export class RegionSession {
     this.ownsScheduler = !execution.scheduler;
     this.samplingAvailable = execution.artifactExecutor !== null;
     this.retainedRegions = retainedRegions;
+    if (initial instanceof SessionDraft) {
+      this.documentOwner = initial.owner;
+      this.staging = true;
+      return;
+    }
     this.loadedArtifacts = artifacts.map((a) => a.id);
     const page = initial
       ? document
@@ -1288,30 +1308,25 @@ export class RegionSession {
   }
   /** Stage a proposed scalar change in a new context, then publish once. */
   branchValue(input: string, text: string): string {
-    const staged = new RegionSession(
-      this.state,
-      () => this.retainedRegions(),
-      this.document,
-      this.artifacts,
-      true,
-    );
-    const before = project(this.state);
-    if (before.kinds[input] !== "quantity" || before.errors.has(input))
-      throw Error("Choose a resolved assigned quantity to explore.");
-    const context = staged.branch();
-    const result = staged.write(input, text);
-    if (!result.ok) throw Error(result.error);
-    const after = project(staged.state);
-    if (
-      [...after.errors].some(
-        ([id]) => id === input || ancestors(after, id).includes(input),
+    return this.withDraft((staged) => {
+      const before = project(this.state);
+      if (before.kinds[input] !== "quantity" || before.errors.has(input))
+        throw Error("Choose a resolved assigned quantity to explore.");
+      const context = staged.branch();
+      const result = staged.write(input, text);
+      if (!result.ok) throw Error(result.error);
+      const after = project(staged.state);
+      if (
+        [...after.errors].some(
+          ([id]) => id === input || ancestors(after, id).includes(input),
+        )
       )
-    )
-      throw Error(
-        "Resolve the affected calculation before keeping an alternative.",
-      );
-    this.apply(staged.state, true);
-    return context;
+        throw Error(
+          "Resolve the affected calculation before keeping an alternative.",
+        );
+      this.apply(staged.state, true);
+      return context;
+    });
   }
   keepAlternative(
     input: string,

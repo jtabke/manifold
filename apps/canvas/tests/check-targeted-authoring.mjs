@@ -148,14 +148,27 @@ function compareAdmission(session, commands, rejects) {
     };
   let notices = 0;
   const off = session.subscribe(() => notices++);
+  const step = (draft) => {
+    assert.equal(draft.document, before);
+    draft.applyCommands(commands);
+    return draft.state;
+  };
   try {
     if (rejects) {
       assert.throws(admit, rejects);
+      assert.throws(() => session.prepare(step), rejects);
+      assert.throws(() => session.atomic(step), rejects);
       assert.throws(() => session.applyCommands(commands, before), rejects);
       assert.equal(session.document, before);
       assert.equal(notices, 0);
     } else {
       admit();
+      const plan = session.prepare(step);
+      assert.deepEqual(plan.value, canvasPage(cold));
+      assert.deepEqual(plan.commands, commands);
+      assert.equal(plan.expected, before);
+      assert.equal(session.document, before);
+      assert.equal(notices, 0);
       assert(session.applyCommands(commands, before));
       assert.deepEqual(session.state, canvasPage(cold));
       assert.equal(notices, 1);
@@ -194,11 +207,70 @@ compareAdmission(
   [revise(s, force, (b) => (b.value.text = "F := 0 N"))],
   /worksheet meaning/,
 );
+// A valid final head cannot hide a rejected intermediate step. A caught rejection
+// must not even advance the private draft or reserve its proposed revision ID.
+const start = s.document,
+  bad = revise(s, x, (b) => (b.document = "other")),
+  good = revise(s, x, (b) => (b.value.text = "x := 12 mm"));
+validateCanvasDocument(
+  f.fromPlain(
+    f.toPlain(
+      f.prepare(start, "final-only", [bad, good], canvasSchemas).document,
+    ),
+    canvasSchemas,
+  ),
+);
+for (const method of ["prepare", "atomic"]) {
+  let repaired = false;
+  assert.throws(
+    () =>
+      s[method]((draft) => {
+        draft.applyCommands([bad]);
+        repaired = true;
+        draft.applyCommands([good]);
+      }),
+    /binding mismatch/,
+  );
+  assert.equal(repaired, false);
+  assert.equal(s.document, start);
+}
+const plan = observe(() =>
+  s.prepare((draft) => {
+    assert.throws(
+      () => draft.applyCommands([{ ...good, extra: undefined }]),
+      /Non-JSON/,
+    );
+    assert.equal(draft.document, start);
+    assert.throws(() => draft.applyCommands([bad]), /binding mismatch/);
+    assert.equal(draft.document, start);
+    draft.applyCommands([
+      { ...good, revision: { ...good.revision, id: bad.revision.id } },
+    ]);
+    assert.equal(draft.write(x, "x := 13 mm").ok, true);
+    return draft.state;
+  }),
+);
+let escaped;
+assert.throws(
+  () =>
+    s.atomic(async (draft) => {
+      escaped = draft;
+      throw Error("late rejection");
+    }),
+  /synchronous/,
+);
+assert.throws(() => escaped.applyCommands([good]), /closed/);
+assert.equal(plan.commands.length, 2);
+assert.equal(s.document, start);
+observe(() => s.atomic((draft) => draft.applyCommands(plan.commands)));
+assert.deepEqual(s.state, plan.value);
+s.undo();
+assert.equal(s.document.items, start.items);
 s.dispose();
 
 // Count actual traversal during the first scalar write on each admitted root;
 // no wall-clock threshold, validation-only proxy operation or manual prewarming.
-function writeWork(drawings, retainedRevisions) {
+function writeWork(drawings, retainedRevisions, mode) {
   const page = {
     regions: Array.from({ length: 64 }, (_, i) => ({
       id: "row-" + i,
@@ -247,14 +319,22 @@ function writeWork(drawings, retainedRevisions) {
   };
   let write;
   try {
-    write = session.write("row-32", "q32 := 100");
+    const change = (target) => target.write("row-32", "q32 := 100");
+    if (mode === "direct") write = change(session);
+    else if (mode === "atomic") write = session.atomic(change);
+    else {
+      const plan = session.prepare(change);
+      assert.equal(session.document, plan.expected);
+      write = plan.value;
+      session.applyCommands(plan.commands, plan.expected);
+    }
   } finally {
     Object.assign(proto, { entries, get, fold });
   }
   assert(write.ok, write.error);
   assert.equal(session.document.revisions.size, before.revisions.size + 1);
   assert.equal(project(session.state).solved.values.get("q32").value, 100);
-  if (drawings) {
+  if (drawings && mode === "direct") {
     // A second changed domain must force complete checks: a live drawing view cannot lose its target.
     compareAdmission(
       session,
@@ -268,22 +348,85 @@ function writeWork(drawings, retainedRevisions) {
   session.dispose();
   return work;
 }
-const small = writeWork(0, 0),
-  dense = writeWork(1999, 0),
-  history = writeWork(0, 2048);
-assert(small.entries < 8 && small.gets < 64, JSON.stringify(small));
-for (const work of [dense, history]) {
-  assert(work.entries <= small.entries + 2, JSON.stringify(work));
-  assert(work.gets <= small.gets + 2, JSON.stringify(work));
-  assert.equal(work.drawingGets, 0);
-  // AVL storage-budget folds visit changed paths, not all drawings or old revisions.
-  assert(work.folds <= small.folds + 64, JSON.stringify(work));
+for (const mode of ["direct", "atomic", "prepare+apply"]) {
+  const small = writeWork(0, 0, mode),
+    dense = writeWork(1999, 0, mode),
+    history = writeWork(0, 2048, mode);
+  console.log(`RegionSession.write traversal (${mode}, 64 equations):`, {
+    small,
+    dense,
+    history,
+  });
+  assert(
+    small.entries < 8 && small.gets < (mode === "direct" ? 64 : 128),
+    JSON.stringify(small),
+  );
+  for (const work of [dense, history]) {
+    assert(work.entries <= small.entries + 2, JSON.stringify(work));
+    assert(work.gets <= small.gets + 2, JSON.stringify(work));
+    assert.equal(work.drawingGets, 0);
+    // AVL storage-budget folds visit changed paths, not all drawings or old revisions.
+    assert(work.folds <= small.folds + 64, JSON.stringify(work));
+  }
 }
-console.log("RegionSession.write traversal (64 equations):", {
-  small,
-  dense,
-  history,
-});
+// A public staging flag is not provenance, even with the same root ID or a
+// caller-owned document which changes *after* the constructor checked it.
+{
+  const { session } = drawingFixture(10),
+    id = session.create();
+  assert(session.write(id, "x := 1").ok);
+  const before = session.document,
+    bad = f.prepare(
+      before,
+      before.id,
+      [{ kind: "delete", item: "drawing-load-0" }],
+      canvasSchemas,
+    ).document,
+    edit = revise(session, id, (b) => (b.value.text = "x := 2"));
+  for (const staging of [false, true])
+    assert.throws(
+      () => new RegionSession(session.state, () => [], bad, [], staging),
+      /Missing drawing/,
+    );
+  const supplied = { ...before },
+    external = new RegionSession(session.state, () => [], supplied, [], true);
+  Object.assign(supplied, bad);
+  const change = (draft) => draft.applyCommands([edit]);
+  assert.throws(() => change(external), /Missing drawing/);
+  assert.throws(() => external.prepare(change), /Missing drawing/);
+  assert.throws(() => external.atomic(change), /Missing drawing/);
+  external.dispose();
+
+  // Preview revision IDs are reserved by the real owner, even after cancellation.
+  const preview = session.preview(f.reference(before.document, edit.item), [
+    edit,
+  ]);
+  for (const active of [true, false]) {
+    if (!active) session.cancelPreview();
+    assert.throws(() => session.atomic(change), /already allocated/);
+    assert.equal(session.document, before);
+    assert.equal(session.foundation.preview(), active ? preview : undefined);
+  }
+  // An unrelated raw create can extend the legacy identity ledger. Forking must
+  // still refuse an out-of-range retired ID rather than bypassing canvasSerial.
+  const item = "other:region-100000000";
+  session.applyCommands([
+    {
+      kind: "create",
+      item,
+      label: item,
+      revision: {
+        ...f.current(before, "drawing-load-0"),
+        id: "oversize-id",
+        item,
+      },
+    },
+    { kind: "delete", item },
+  ]);
+  assert.throws(() => session.prepare(() => {}), /identity allocation limit/);
+  assert.throws(() => session.atomic(() => {}), /identity allocation limit/);
+  session.dispose();
+}
 console.log(
   "Targeted authoring: source/kept-record sharing, literal/no-op edits, placement, model interfaces, contexts, failure, connection/rename, branch review, Undo, native provenance and differential admission pass.",
 );
