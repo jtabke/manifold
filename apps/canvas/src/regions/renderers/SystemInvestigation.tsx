@@ -58,7 +58,7 @@ export type InvestigationProps = {
   dismissInvestigation: () => void;
 };
 /** A contextual presentation over existing quantities and evaluation. Never a model member. */
-export function SystemInvestigation({
+export default function SystemInvestigation({
   page,
   input,
   output,

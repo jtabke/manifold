@@ -146,13 +146,12 @@ import { RelationshipTrail } from "../renderers/RelationshipTrail";
 import { MEMORY_STORAGE, restoreMemory } from "../workspaceMemory";
 import { useWorkspaceMemory } from "./useWorkspaceMemory";
 import { useModels } from "./useModels";
-import {
-  SystemInvestigation,
-  type InvestigationView,
-  type InvestigationPath,
+import type {
+  InvestigationView,
+  InvestigationPath,
 } from "../renderers/SystemInvestigation";
 import { placeInvestigation } from "../systemPresentation";
-import { SystemOverview } from "../renderers/SystemOverview";
+import "../styles/system-exploration.css";
 import { ExternalReferenceEditor } from "../renderers/ExternalReferenceView";
 import {
   quantityTitle,
@@ -200,6 +199,10 @@ import {
 } from "../artifacts";
 
 const label = (name: string) => (name === "T_inf" ? "T∞" : name);
+const SystemOverview = lazy(() => import("../renderers/SystemOverview"));
+const SystemInvestigation = lazy(
+  () => import("../renderers/SystemInvestigation"),
+);
 const ModelPanels = lazy(() => import("../renderers/ModelPanels"));
 const ModelDefinitionEditor = lazy(() =>
   import("../renderers/ModelDefinitionEditor").then((m) => ({
@@ -4426,125 +4429,30 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                           </small>
                         </div>
                       )}
-                    {systemActive && (
-                      <SystemOverview
-                        acceptedDatasets={
-                          working === page ? datasetStates : undefined
-                        }
-                        failure={systemFailure}
-                        investigate={investigateFailure}
-                        preview={working !== page}
-                        changeAppearance={(id, patch) =>
-                          session.styleModel(id, patch)
-                        }
-                        page={working}
-                        response={systemResponse}
-                        setResponse={setSystemResponse}
-                        pathFocus={systemPath}
-                        selectPath={setSystemPath}
-                        toggleCompare={() => setCompare(!compare)}
-                        branch={() => {
-                          setSystemReference(page.active);
-                          try {
-                            session.branch();
-                            setCompare(true);
-                          } catch (error) {
-                            setMessage((error as Error).message);
+                    <Suspense
+                      fallback={
+                        <span className="system-overview" role="status">
+                          Opening system view…
+                        </span>
+                      }
+                    >
+                      {systemActive && (
+                        <SystemOverview
+                          acceptedDatasets={
+                            working === page ? datasetStates : undefined
                           }
-                        }}
-                        write={writeSystemInput}
-                        positions={systemPositions}
-                        arrange={(
-                          next,
-                          checkpoint = true,
-                          prior = systemPositions,
-                        ) => {
-                          if (checkpoint)
-                            session.arrange({}, true, () =>
-                              setSystemPositions(prior),
-                            );
-                          setSystemPositions(next);
-                        }}
-                        output={systemOutput}
-                        input={
-                          systemInput && p.kinds[systemInput] === "quantity"
-                            ? systemInput
-                            : undefined
-                        }
-                        selected={selected}
-                        anchorModel={systemAnchor}
-                        choose={(id, model) => {
-                          setSystemFailure(undefined);
-                          setSystemInput(id);
-                          setSystemPath(undefined);
-                          if (systemResponse === "internal")
-                            setSystemResponse("contextual");
-                          setSystemAnchor(model || hierarchy.owner(id));
-                          setSelected(model || hierarchy.owner(id) || id);
-                          setSystemInvestigating(true);
-                        }}
-                        investigating={systemInvestigating}
-                        dismissInvestigation={() => {
-                          setSystemInvestigating(false);
-                          setSystemFailure(undefined);
-                        }}
-                        selectModel={(id) => setSelected(id)}
-                        connect={(source, target) => {
-                          setModelConnectionTarget(target);
-                          setModelConnection(source);
-                        }}
-                        zoom={zoom}
-                        compare={compare}
-                        comparisonContext={
-                          systemReference && systemReference !== page.active
-                            ? systemReference
-                            : page.active === "original"
-                              ? comparisonContext
-                              : "original"
-                        }
-                        tracePaths={overlay === "dependencies"}
-                        toggleTrace={() =>
-                          setOverlay(
-                            overlay === "dependencies"
-                              ? "none"
-                              : "dependencies",
-                          )
-                        }
-                        requirements={overlay === "requirements"}
-                        enter={enterSystemModel}
-                        follow={followSystemQuantity}
-                        close={closeSystem}
-                        canvas={closeSystem}
-                        scrub={scrubFor}
-                      />
-                    )}
-                    {internalInvestigation && (
-                      <div
-                        className="sx-internal-investigation"
-                        style={{
-                          position: "absolute",
-                          left: internalAt.x,
-                          top: internalAt.y,
-                          width: 520,
-                        }}
-                      >
-                        <SystemInvestigation
                           failure={systemFailure}
+                          investigate={investigateFailure}
                           preview={working !== page}
+                          changeAppearance={(id, patch) =>
+                            session.styleModel(id, patch)
+                          }
                           page={working}
-                          response="internal"
-                          setResponse={(mode) => {
-                            setSystemResponse(mode);
-                            if (mode !== "internal") openSystem();
-                          }}
-                          input={systemInput}
-                          output={systemOutput}
-                          sourceOwner={systemAnchor}
+                          response={systemResponse}
+                          setResponse={setSystemResponse}
                           pathFocus={systemPath}
                           selectPath={setSystemPath}
-                          choose={setSystemInput}
-                          follow={followSystemQuantity}
-                          write={writeSystemInput}
+                          toggleCompare={() => setCompare(!compare)}
                           branch={() => {
                             setSystemReference(page.active);
                             try {
@@ -4554,19 +4462,56 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                               setMessage((error as Error).message);
                             }
                           }}
+                          write={writeSystemInput}
+                          positions={systemPositions}
+                          arrange={(
+                            next,
+                            checkpoint = true,
+                            prior = systemPositions,
+                          ) => {
+                            if (checkpoint)
+                              session.arrange({}, true, () =>
+                                setSystemPositions(prior),
+                              );
+                            setSystemPositions(next);
+                          }}
+                          output={systemOutput}
+                          input={
+                            systemInput && p.kinds[systemInput] === "quantity"
+                              ? systemInput
+                              : undefined
+                          }
+                          selected={selected}
+                          anchorModel={systemAnchor}
+                          choose={(id, model) => {
+                            setSystemFailure(undefined);
+                            setSystemInput(id);
+                            setSystemPath(undefined);
+                            if (systemResponse === "internal")
+                              setSystemResponse("contextual");
+                            setSystemAnchor(model || hierarchy.owner(id));
+                            setSelected(model || hierarchy.owner(id) || id);
+                            setSystemInvestigating(true);
+                          }}
+                          investigating={systemInvestigating}
+                          dismissInvestigation={() => {
+                            setSystemInvestigating(false);
+                            setSystemFailure(undefined);
+                          }}
+                          selectModel={(id) => setSelected(id)}
+                          connect={(source, target) => {
+                            setModelConnectionTarget(target);
+                            setModelConnection(source);
+                          }}
+                          zoom={zoom}
                           compare={compare}
-                          toggleCompare={() => setCompare(!compare)}
                           comparisonContext={
                             systemReference && systemReference !== page.active
                               ? systemReference
-                              : page.active !== "original"
-                                ? "original"
-                                : comparisonContext
+                              : page.active === "original"
+                                ? comparisonContext
+                                : "original"
                           }
-                          enterSource={() => {
-                            if (systemAnchor) enterSystemModel(systemAnchor);
-                          }}
-                          scrub={scrubFor}
                           tracePaths={overlay === "dependencies"}
                           toggleTrace={() =>
                             setOverlay(
@@ -4575,12 +4520,78 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                                 : "dependencies",
                             )
                           }
-                          dismissInvestigation={() =>
-                            setSystemInvestigating(false)
-                          }
+                          requirements={overlay === "requirements"}
+                          enter={enterSystemModel}
+                          follow={followSystemQuantity}
+                          close={closeSystem}
+                          canvas={closeSystem}
+                          scrub={scrubFor}
                         />
-                      </div>
-                    )}
+                      )}
+                      {internalInvestigation && (
+                        <div
+                          className="sx-internal-investigation"
+                          style={{
+                            position: "absolute",
+                            left: internalAt.x,
+                            top: internalAt.y,
+                            width: 520,
+                          }}
+                        >
+                          <SystemInvestigation
+                            failure={systemFailure}
+                            preview={working !== page}
+                            page={working}
+                            response="internal"
+                            setResponse={(mode) => {
+                              setSystemResponse(mode);
+                              if (mode !== "internal") openSystem();
+                            }}
+                            input={systemInput}
+                            output={systemOutput}
+                            sourceOwner={systemAnchor}
+                            pathFocus={systemPath}
+                            selectPath={setSystemPath}
+                            choose={setSystemInput}
+                            follow={followSystemQuantity}
+                            write={writeSystemInput}
+                            branch={() => {
+                              setSystemReference(page.active);
+                              try {
+                                session.branch();
+                                setCompare(true);
+                              } catch (error) {
+                                setMessage((error as Error).message);
+                              }
+                            }}
+                            compare={compare}
+                            toggleCompare={() => setCompare(!compare)}
+                            comparisonContext={
+                              systemReference && systemReference !== page.active
+                                ? systemReference
+                                : page.active !== "original"
+                                  ? "original"
+                                  : comparisonContext
+                            }
+                            enterSource={() => {
+                              if (systemAnchor) enterSystemModel(systemAnchor);
+                            }}
+                            scrub={scrubFor}
+                            tracePaths={overlay === "dependencies"}
+                            toggleTrace={() =>
+                              setOverlay(
+                                overlay === "dependencies"
+                                  ? "none"
+                                  : "dependencies",
+                              )
+                            }
+                            dismissInvestigation={() =>
+                              setSystemInvestigating(false)
+                            }
+                          />
+                        </div>
+                      )}
+                    </Suspense>
                     {(page.models || [])
                       .filter(
                         (m) =>

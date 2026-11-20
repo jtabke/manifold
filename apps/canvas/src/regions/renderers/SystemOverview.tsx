@@ -21,10 +21,8 @@ import {
   systemPortOutputs,
   exteriorPorts,
 } from "../systemExploration";
-import "../styles/system-exploration.css";
 import { SystemModel } from "./SystemModel";
-import {
-  SystemInvestigation,
+import SystemInvestigation, {
   type InvestigationView,
   type InvestigationPath,
 } from "./SystemInvestigation";
@@ -40,7 +38,7 @@ import {
 import type { AppearanceChange } from "./ModelAppearance";
 import { systemAssessment } from "../systemAssessment";
 import { planConnection } from "../linking";
-export function SystemOverview({
+export default function SystemOverview({
   page,
   acceptedDatasets,
   response,
