@@ -138,7 +138,7 @@ import {
   DatasetResult,
   type DataSelection,
 } from "../renderers/DatasetViews";
-import { createDatasetStatesSelector } from "../datasetModel";
+import { useDatasetStates } from "./useDatasetStates";
 import { placeDataResult } from "../dataFeedback";
 import { DataRelationshipOverlay } from "../renderers/DataRelationshipOverlay";
 import { useRelationshipNavigation } from "../interaction/useRelationshipNavigation";
@@ -364,11 +364,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     if (artifactMode && !saved.blocked && !session.isSaved) void saveLocal();
   }, [artifactMode, acceptedDocument, artifacts, saved]);
   const accepted = useMemo(() => project(page), [page]);
-  const selectDatasetStates = useMemo(createDatasetStatesSelector, []);
-  const datasetStates = useMemo(
-    () => selectDatasetStates(page),
-    [page, selectDatasetStates],
-  );
+  const datasetStates = useDatasetStates(page);
   const trial = params.get("trial");
   const quiet = trial !== "baseline";
   const explicit = params.get("interaction") === "A";
@@ -5296,7 +5292,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         page={page}
                         {...dataReview}
                         close={() => setDataReview(undefined)}
-                        accept={(relation, placement) => {
+                        accept={(relation, placement, review) => {
                           try {
                             const frames = readCanvasFrames(),
                               anchor = frames.find(
@@ -5318,7 +5314,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                                 (canvas.current?.clientWidth || 1200)) /
                                 zoom,
                             );
-                            const id = session.bindDataset(relation, spot);
+                            const id = session.bindDataset(
+                              relation,
+                              spot,
+                              review,
+                            );
                             // The review may scroll while focusing its controls. Bring
                             // the new view back into the same visible working context.
                             requestAnimationFrame(() => {

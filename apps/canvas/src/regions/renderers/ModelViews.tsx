@@ -102,8 +102,12 @@ function modelValue(page: Page, id: string, datasets: DatasetStates) {
   if (p.errors.has(id)) return "Unresolved";
   if (r?.data) return `${readCsv(r.data).rows.length} records`;
   if (Object.hasOwn(datasets, id)) {
-    const { result } = datasets[id];
-    return result ? `${result.records.length} calculated records` : "Blocked";
+    const { result, pending } = datasets[id];
+    return pending
+      ? "Calculating measurements…"
+      : result
+        ? `${result.records.length} calculated records`
+        : "Blocked";
   }
   const q = s && p.solved.values.get(s.name);
   return q ? display(q) : "Unresolved";
@@ -345,9 +349,11 @@ export function ModelObject({
       ? "Interface changed"
       : blocked
         ? "Blocked"
-        : exterior.computation === "current"
-          ? "Evaluated"
-          : "Defined · not evaluated";
+        : exterior.computation === "calculating"
+          ? "Calculating measurements…"
+          : exterior.computation === "current"
+            ? "Evaluated"
+            : "Defined · not evaluated";
   const briefInputs = exteriorPorts(page, model, highlight).slice(
     0,
     system ? 3 : 2,

@@ -259,6 +259,9 @@ try {
   const large = await browser.newPage({
     viewport: { width: 1870, height: 1080 },
   });
+  const workers = [];
+  large.on("worker", (worker) => workers.push(worker.url()));
+  large.on("pageerror", (e) => errors.push(e.message));
   await large.goto(`${baseURL}/?think=1&artifacts=1`);
   await large.getByLabel("Import CSV file").setInputFiles({
     name: "large.csv",
@@ -295,6 +298,7 @@ try {
     name: "Connect dataset to model",
   });
   await expect(largeReview).toContainText("10000 records → P");
+  expect(workers.some((url) => url.includes("dataset.worker"))).toBe(true);
   await largeReview.getByRole("checkbox").check();
   await largeReview
     .getByRole("button", { name: "Connect & calculate" })

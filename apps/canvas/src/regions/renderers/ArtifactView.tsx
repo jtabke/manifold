@@ -3,10 +3,8 @@ import { useValueGesture } from "../interaction/useValueGesture";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Code2, GripVertical, MoreHorizontal, X } from "lucide-react";
 import { display, passes } from "../../notebook/math";
-import {
-  createDatasetStatesSelector,
-  measurementOverlay,
-} from "../datasetModel";
+import { measurementMapping } from "../datasetModel";
+import { useDatasetStates } from "../app/useDatasetStates";
 import type { DataSelection } from "./DatasetViews";
 import type { Page, RegionSession } from "../document";
 import {
@@ -333,16 +331,33 @@ function ArtifactPresentationView({
     }
   }, [current, a]);
   // This is paired evidence, not the fixed-input artifact sweep or an accepted mapping.
-  const selectEvidence = useMemo(createDatasetStatesSelector, []);
-  const evidence = useMemo(() => {
+  const { mapping, error: mappingError } = useMemo(() => {
     try {
       return {
-        result: measurementOverlay(page, a.output, a.input, selectEvidence),
+        mapping:
+          a.renderer === "plot"
+            ? measurementMapping(page, a.output, a.input)
+            : undefined,
       };
     } catch (e) {
       return { error: (e as Error).message };
     }
-  }, [page, a.output, a.input, selectEvidence]);
+  }, [page, a.output, a.input, a.renderer]);
+  const evidenceStates = useDatasetStates(
+    page,
+    mapping ? [mapping.relation] : [],
+  );
+  const paired = mapping && evidenceStates[mapping.relation.id];
+  const evidence = {
+    result: mapping &&
+      paired?.result && {
+        ...paired.result,
+        dataset: mapping.relation.dataset,
+        column: mapping.column,
+        input: mapping.input,
+      },
+    error: mappingError ?? paired?.error,
+  };
   const observed =
     evidence.result?.records.filter(
       (r) =>
@@ -653,29 +668,34 @@ function ArtifactPresentationView({
           {result.error}
         </p>
       )}
-      {a.renderer === "plot" && (evidence.result || evidence.error) && (
-        <div className="er-evidence-legend">
-          <span>━ Modeled response · other inputs fixed</span>
-          <span>
-            ○ Calculated from paired measurements
-            {observed.length > 1000
-              ? ` · ${visibleObserved.length}/${observed.length} points shown`
-              : ""}
-            {evidence.error ? ` · unavailable: ${evidence.error}` : ""}
-          </span>
-          {resolved && evidence.result && (
-            <small>
-              {Object.entries(evidence.result.records[0]?.inputs || {})
-                .filter(([name]) => name !== resolved.x.name)
-                .map(
-                  ([name]) =>
-                    `${name} = ${display(resolved.p.solved.values.get(name)!)}`,
-                )
-                .join(" · ")}
-            </small>
-          )}
-        </div>
-      )}
+      {a.renderer === "plot" &&
+        (evidence.result || evidence.error || paired?.pending) && (
+          <div className="er-evidence-legend">
+            <span>━ Modeled response · other inputs fixed</span>
+            <span>
+              ○ Calculated from paired measurements
+              {observed.length > 1000
+                ? ` · ${visibleObserved.length}/${observed.length} points shown`
+                : ""}
+              {paired?.pending
+                ? " · calculating…"
+                : evidence.error
+                  ? ` · unavailable: ${evidence.error}`
+                  : ""}
+            </span>
+            {resolved && evidence.result && (
+              <small>
+                {Object.entries(evidence.result.records[0]?.inputs || {})
+                  .filter(([name]) => name !== resolved.x.name)
+                  .map(
+                    ([name]) =>
+                      `${name} = ${display(resolved.p.solved.values.get(name)!)}`,
+                  )
+                  .join(" · ")}
+              </small>
+            )}
+          </div>
+        )}
       {result.current && a.renderer === "plot" && (
         <svg
           ref={svg}

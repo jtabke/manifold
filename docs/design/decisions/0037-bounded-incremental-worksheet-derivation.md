@@ -38,6 +38,29 @@ substituted quantities and exploration metadata. Event delegates use latest comm
 scalar fallback data avoids retaining previous Page callbacks. It does not ignore handler changes
 behind a shallow React comparator. Other canvas coordination/rendering remains outside this boundary.
 
+### Row-aligned datasets
+
+A dataset selector keeps one result, diagnostic or pending task per current relation. A changed
+worksheet re-resolves names and applicable constraints, including newly ambiguous or missing
+sources. Equal CSV, mapping, scope, context, bound units and effective definitions reuse the
+previous derivation. Layout and unrelated text edits do not read or evaluate the rows again.
+A real input change compiles the fixed definition/dependency index once with
+`compileRowCalculation()`; each row uses the shared math, units and diagnostic rules.
+
+Larger browser jobs run one at a time on the foundation task scheduler. The worker receives only
+the resolved inputs, not a document; an unsubscribed job is cancelled and a late response cannot
+replace a newer selection. Cloned results are frozen before exposure. Small jobs and the synchronous
+headless API use the same [row evaluator](../../../apps/canvas/src/regions/datasetRows.ts).
+Mapping review, paired evidence and accepted relations select independently. Connect can reuse a
+successful review only after matching it against the owner's current inputs. Pending/error results
+cannot authorize an edit. No job, result or review is persisted or enters Undo.
+
+The [dataset contracts](../../../apps/canvas/tests/check-dataset-model.mjs) cover cold equivalence,
+work counters, cancellation and stale review rejection. The
+[browser workflow](../../../apps/canvas/tests/check-dataset-browser.mjs) covers the real worker,
+blocked results and recovery at 10,000 rows. Off-thread execution trades worker startup and result
+transfer for main-thread responsiveness; it is not a promise of faster wall time.
+
 ## Alternatives and consequences
 
 An unbounded cache keyed by Page can retain history/source payloads and fail mutable-caller tests.

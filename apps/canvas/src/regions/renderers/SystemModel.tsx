@@ -212,9 +212,11 @@ export function SystemModel({
             ? "Preview"
             : blocked
               ? "Unresolved inputs or definitions"
-              : exterior.computation === "current"
-                ? "Evaluated"
-                : "Defined · not evaluated"}
+              : exterior.computation === "calculating"
+                ? "Calculating measurements…"
+                : exterior.computation === "current"
+                  ? "Evaluated"
+                  : "Defined · not evaluated"}
         </span>
         {needsReview && (
           <button

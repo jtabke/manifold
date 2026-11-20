@@ -440,9 +440,11 @@ export function WorksheetLayer({
                 className="er-data-model-result"
                 onClick={() => data.show(dataRelation!.id)}
               >
-                {dataState.error
-                  ? `Dataset blocked · ${dataState.error}`
-                  : `${dataState.result!.records.length} records · calculated`}
+                {dataState.pending
+                  ? "Calculating measurements…"
+                  : dataState.result
+                    ? `${dataState.result.records.length} records · calculated`
+                    : `Dataset blocked · ${dataState.error}`}
               </button>
             )}
             {(kind === "equation" ||

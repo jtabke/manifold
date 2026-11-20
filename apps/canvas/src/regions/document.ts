@@ -54,7 +54,13 @@ import {
 export { positions } from "./pageLayout.ts";
 import type { Document as FoundationDocument } from "@manifold/foundation";
 import { readCsv, csvQuantity, type CsvData } from "./dataSources.ts";
-import { evaluateDataset, type DatasetComputation } from "./datasetModel.ts";
+import {
+  evaluateDataset,
+  matchesDatasetReview,
+  type DatasetComputation,
+  type DatasetState,
+} from "./datasetModel.ts";
+import { checkedDatasetRequest } from "./datasetExecution.ts";
 import {
   validateExternalReference,
   type ExternalReference,
@@ -883,8 +889,18 @@ export class RegionSession {
     this.apply(next, true);
     return id;
   }
-  bindDataset(binding: DatasetComputation, at?: Point): string {
-    evaluateDataset(this.state, binding);
+  bindDataset(
+    binding: DatasetComputation,
+    at?: Point,
+    review?: DatasetState,
+  ): string {
+    if (review) {
+      const checked = checkedDatasetRequest(review);
+      if (!checked || !matchesDatasetReview(this.state, binding, checked))
+        throw Error(
+          "The dataset mapping changed. Review the current calculation before connecting.",
+        );
+    } else evaluateDataset(this.state, binding);
     if ((this.state.dataRelations?.length || 0) >= 16)
       throw Error("This experiment supports up to 16 dataset relationships.");
     const edit = new PageEdit(this.state),

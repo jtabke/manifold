@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import { RegionSession, project } from "../src/regions/document.ts";
 import {
   createDatasetStatesSelector,
+  createDatasetSelector,
   evaluateDataset,
 } from "../src/regions/datasetModel.ts";
 import { evaluationWork, resetEvaluationWork } from "../src/notebook/math.ts";
+import { createDatasetTask } from "../src/regions/datasetExecution.ts";
+import { datasetOutcome } from "../src/regions/datasetRows.ts";
 import { worksheetProjection } from "../src/regions/worksheetProjection.ts";
 import { modelExterior } from "../src/regions/systemExploration.ts";
 const noWork = { parses: 0, expressions: 0, assignments: 0, constraints: 0 };
@@ -214,6 +217,98 @@ for (const text of ["Field notes", "spare := 3 m", "spare := 8 s"]) {
   assert.equal(select(large.state), states, text);
   assert.deepEqual(evaluationWork(), noWork, text);
 }
+// Hold the transport at the same boundary as a busy browser worker. Exercise
+// queued and running cancellation, a late response and the Apply review guard.
+{
+  const originalWorker = globalThis.Worker,
+    workers = [];
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+  class HeldWorker {
+    postMessage(input) {
+      this.input = structuredClone(input);
+      workers.push(this);
+    }
+    terminate() {
+      this.stopped = true;
+    }
+    deliver() {
+      this.onmessage({ data: structuredClone(datasetOutcome(this.input)) });
+    }
+  }
+  globalThis.Worker = HeldWorker;
+  try {
+    const owner = new RegionSession(large.state),
+      select = createDatasetSelector(createDatasetTask),
+      candidate = { ...binding, dataset: many },
+      job = () => select(owner.state, [candidate])[candidate.id];
+    const obsolete = job();
+    assert.deepEqual(obsolete.read(), { pending: true });
+    let reports = 0;
+    const stop = obsolete.subscribe(() => reports++);
+    await tick();
+    assert.equal(workers.length, 1);
+    owner.write(unrelated, "An unrelated update");
+    assert.equal(job(), obsolete); // A busy solve is not restarted for a note.
+    owner.write(limit, "P <= 90 W");
+    const queued = job(),
+      cancelQueued = queued.subscribe(() =>
+        assert.fail("cancelled queued job published"),
+      );
+    await tick();
+    assert.equal(workers.length, 1);
+    cancelQueued();
+    owner.write(limit, "P <= 120 W");
+    const current = job();
+    assert.notEqual(current, obsolete);
+    const stopCurrent = current.subscribe(() => reports++);
+    stop();
+    await tick();
+    assert.equal(workers[0].stopped, true);
+    assert.equal(workers.length, 2);
+    workers[0].deliver(); // Even if a message raced with termination.
+    await tick();
+    assert.equal(reports, 0);
+    assert.equal(current.read().pending, true);
+    assert.throws(
+      () => owner.bindDataset(candidate, undefined, current.read()),
+      /Review the current/,
+    );
+    workers[1].deliver();
+    await tick();
+    assert.equal(reports, 1);
+    assert.equal(workers[1].stopped, true);
+    const review = current.read();
+    againstCold(owner.state, candidate, review);
+    assert.equal(review.result.records[39].pass, true);
+    assert.throws(() => {
+      review.result.records[0].pass = false;
+    }, TypeError);
+    const before = owner.state;
+    for (const bad of [obsolete.read(), { ...review }])
+      assert.throws(
+        () => owner.bindDataset(candidate, undefined, bad),
+        /Review the current/,
+      );
+    assert.equal(owner.state, before);
+    project(owner.state);
+    resetEvaluationWork();
+    const item = owner.bindDataset(candidate, undefined, review);
+    assert.ok(owner.state.dataRelations.find((r) => r.id === item));
+    assert.equal(evaluationWork().assignments, 0); // no synchronous 10,000-row repeat on Apply
+    owner.write(limit, "P <= 99 W");
+    const edited = owner.state;
+    assert.throws(
+      () => owner.bindDataset(candidate, undefined, review),
+      /Review the current/,
+    );
+    assert.equal(owner.state, edited);
+    stopCurrent();
+    owner.dispose();
+  } finally {
+    if (originalWorker === undefined) delete globalThis.Worker;
+    else globalThis.Worker = originalWorker;
+  }
+}
 // A model's vector status reads those same accepted results, not a second row solve.
 const envelope = {
   id: "model-envelope",
@@ -227,6 +322,11 @@ resetEvaluationWork();
 assert.equal(
   modelExterior(large.state, envelope, states).computation,
   "current",
+);
+assert.equal(
+  modelExterior(large.state, envelope, { [manyId]: { pending: true } })
+    .computation,
+  "calculating",
 );
 assert.equal(
   modelExterior(large.state, envelope, { [manyId]: { error: "Blocked" } })

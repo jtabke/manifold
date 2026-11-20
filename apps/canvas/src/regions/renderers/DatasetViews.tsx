@@ -3,12 +3,12 @@ import { GripVertical, X, Link2, Maximize2 } from "lucide-react";
 import { display, references, unitLabel } from "../../notebook/math";
 import { project, type Page, type Point } from "../document";
 import { readCsv } from "../dataSources";
-import {
-  createDatasetStatesSelector,
-  type DataRecord,
-  type DatasetComputation,
-  type DatasetState,
+import type {
+  DataRecord,
+  DatasetComputation,
+  DatasetState,
 } from "../datasetModel";
+import { useDatasetStates } from "../app/useDatasetStates";
 import { sampleDatasetPlot } from "../datasetPlot";
 import {
   recordFeedback,
@@ -137,7 +137,11 @@ export function DatasetReview({
   kind?: DataSelection["kind"];
   at: Point;
   close: () => void;
-  accept: (r: DatasetComputation, placement: "model" | "source") => void;
+  accept: (
+    r: DatasetComputation,
+    placement: "model" | "source",
+    review: DatasetState,
+  ) => void;
 }) {
   const source = page.regions.find((r) => r.id === dataset)!.data!,
     table = readCsv(source),
@@ -189,8 +193,8 @@ export function DatasetReview({
     scope: scope === "all" ? { kind: "all" } : { kind: "records", rows },
     paired: true,
   };
-  const selectPreview = useMemo(createDatasetStatesSelector, []);
-  const { result, error } = selectPreview(page, [relation])[relation.id];
+  const review = useDatasetStates(page, [relation])[relation.id];
+  const { result, error, pending } = review;
   return (
     <aside
       className="er-link-popover er-dataset-review"
@@ -202,9 +206,9 @@ export function DatasetReview({
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === "Escape") close();
-        if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !error && paired) {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && result && paired) {
           e.preventDefault();
-          accept(relation, placement);
+          accept(relation, placement, review);
         }
       }}
     >
@@ -295,7 +299,9 @@ export function DatasetReview({
         />
         These columns describe paired measurements in the same row.
       </label>
-      {error ? (
+      {pending ? (
+        <p role="status">Calculating measurements…</p>
+      ) : error ? (
         <p className="er-link-error" role="status">
           {error}
         </p>
@@ -361,8 +367,8 @@ export function DatasetReview({
       <footer>
         <button onClick={close}>Cancel</button>
         <button
-          disabled={!!error || !paired}
-          onClick={() => accept(relation, placement)}
+          disabled={!result || !paired}
+          onClick={() => accept(relation, placement, review)}
         >
           Connect & calculate
         </button>
@@ -373,7 +379,7 @@ export function DatasetReview({
 export function DatasetResult({
   page,
   relation,
-  state: { result, error },
+  state: { result, error, pending },
   at,
   selected,
   selection,
@@ -542,11 +548,14 @@ export function DatasetResult({
         </span>
       </header>
       <small className="er-data-context">
-        {source?.name} · {records.length} paired{" "}
-        {records.length === 1 ? "record" : "records"} ·{" "}
+        {source?.name} ·{" "}
+        {result &&
+          `${records.length} paired ${records.length === 1 ? "record" : "records"} · `}
         {page.contexts.find((c) => c.id === page.active)?.label}
       </small>
-      {error ? (
+      {pending ? (
+        <p role="status">Calculating measurements…</p>
+      ) : error ? (
         <p role="status" className="er-link-error">
           Blocked · {error}
         </p>

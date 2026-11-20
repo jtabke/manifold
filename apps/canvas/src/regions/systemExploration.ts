@@ -182,11 +182,14 @@ export function modelExterior(
   // scalar definition for its column-bound inputs. Keep those scopes distinct.
   const covered = new Set<string>();
   let dataCurrent = false,
+    dataPending = false,
     dataIncomplete = false;
   for (const relation of page.dataRelations || []) {
     if (!inside.has(relation.id)) continue;
-    if (datasets[relation.id]?.result) {
-      dataCurrent = true;
+    const state = datasets[relation.id];
+    if (state?.result || state?.pending) {
+      if (state.pending) dataPending = true;
+      else dataCurrent = true;
       for (const id of [relation.output, ...ancestors(p, relation.output)])
         covered.add(id);
     } else dataIncomplete = true;
@@ -202,16 +205,18 @@ export function modelExterior(
       dataIncomplete ||
       unresolved.some((id) => p.kinds[id] !== "constraint" && !covered.has(id))
         ? ("incomplete" as const)
-        : dataCurrent ||
-            [...inside].some((id) => {
-              const statement = p.statements.get(id);
-              return (
-                statement?.relation === "=" &&
-                p.solved.values.has(statement.name)
-              );
-            })
-          ? ("current" as const)
-          : ("defined" as const),
+        : dataPending
+          ? ("calculating" as const)
+          : dataCurrent ||
+              [...inside].some((id) => {
+                const statement = p.statements.get(id);
+                return (
+                  statement?.relation === "=" &&
+                  p.solved.values.has(statement.name)
+                );
+              })
+            ? ("current" as const)
+            : ("defined" as const),
   };
 }
 export type Balance = {

@@ -4,10 +4,8 @@ import { ArrowRight, X } from "lucide-react";
 import { ancestors, project, type Page, type Point } from "../document";
 import { display, relationGlyph, same } from "../../notebook/math";
 import { modelContents, modelParent } from "../models";
-import {
-  createDatasetStatesSelector,
-  type DatasetStates,
-} from "../datasetModel";
+import type { DatasetStates } from "../datasetModel";
+import { useDatasetStates } from "../app/useDatasetStates";
 import { type Scrub } from "./Interactions";
 import {
   causalNeighborhood,
@@ -116,11 +114,11 @@ export default function SystemOverview({
   scrub: (id: string) => Scrub | undefined;
 }) {
   const p = useMemo(() => project(page), [page]);
-  const selectPreview = useMemo(createDatasetStatesSelector, []);
-  const datasets = useMemo(
-    () => acceptedDatasets ?? selectPreview(page),
-    [page, acceptedDatasets, selectPreview],
+  const previewDatasets = useDatasetStates(
+    page,
+    acceptedDatasets ? [] : page.dataRelations,
   );
+  const datasets = acceptedDatasets ?? previewDatasets;
   const assessment = useMemo(() => systemAssessment(page), [page]);
   const failureAncestors = new Set(failure ? ancestors(p, failure) : []);
   const balance = useMemo(
