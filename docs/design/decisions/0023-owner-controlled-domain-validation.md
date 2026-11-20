@@ -41,7 +41,13 @@ The accepted candidate and validated candidate have identical object identity. F
 validation preserves resources, Undo, reservations, bindings, active jobs and publication
 counts. Stale and reentrant operations retain existing guard behavior. Applications
 remain responsible for callback purity and cost; full Page validation is still a scan.
-This change does not solve affected-record editing or generalized execution.
+For a live Apply, the owner now supplies an optional [prepared edit](../../../packages/foundation/src/runtime.ts)
+from an already checked root. A single existing worksheet-region revision can reuse its unchanged
+view/membership indexes and skip unrelated domains; the canvas still checks the resulting worksheet,
+sampling plans, all newly retained optimization annotations and the storage budget. Mixed-domain or
+unclassified edits use full validation. Nothing read from a file can supply a validator hint.
+The [differential admission tests](../../../apps/canvas/tests/check-targeted-authoring.mjs) compare
+live results with full admission on freshly reconstructed roots.
 
 ## Validation and review
 

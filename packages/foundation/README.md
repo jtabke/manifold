@@ -117,7 +117,7 @@ This is not an atomic deep snapshot against arbitrary stateful Proxy mutation.
 [Ownership and validation contracts](test/retained-json.test.mjs) cover alias isolation,
 shared nodes, caller-frozen graphs, malformed data, depth limits and canonical bytes.
 
-Applications may supply a trusted, pure, synchronous `validateDocument(candidate)`
+Applications may supply a trusted, pure, synchronous `validateDocument(candidate, edit?)`
 when creating a workspace. Throw to reject application-specific invariants. The owner
 runs it on the exact immutable candidate it will publish, after kernel validation and
 before changing selections, resources, identity reservations, jobs or Undo. It covers
@@ -129,6 +129,13 @@ canvas's [adapter](../../apps/canvas/src/regions/app/canvasDocument.ts) is the p
 [contract tests](test/domain-validation.test.mjs) exercise failure atomicity and exact
 candidate identity. [ADR 0023](../../docs/design/decisions/0023-owner-controlled-domain-validation.md)
 records this boundary. Native formats do not store or install validators.
+
+On Apply from a checked root, both validators receive the same optional `WorkspaceEdit`:
+the previous immutable document, the owner's `changes` (including affected dependents), and
+every `addedRevisions` ID, including intermediate revisions that are no longer heads.
+Use it only where unchanged invariants can be proved; otherwise validate the full candidate.
+Initial admission, Open, recovery, preview and lifecycle transitions have no edit hint.
+After evidence-only publication, the next Apply also checks without a hint.
 
 The public `prepare()` and `keep()` functions build pure candidates; they do not publish
 into a workspace. Schema `validate`, `references` and `assets` functions must be pure.
@@ -407,7 +414,7 @@ aligns admission with local recovery and bounded native handoff.
 
 ## Complete-state application policy (0.16)
 
-An optional trusted synchronous `validateState(candidate)` sees the immutable document, receipt map
+An optional trusted synchronous `validateState(candidate, edit?)` sees the immutable document, receipt map
 and resource port before initial/Open adoption and every authored, preview/Keep/Undo, compaction or
 evidence/resource publication. Throw to reject; return no value. Async hooks reject. The candidate
 has no Save/publication authority. Existing `validateDocument` remains the authored semantic gate.
