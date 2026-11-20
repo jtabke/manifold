@@ -299,11 +299,9 @@ try {
   await largeReview
     .getByRole("button", { name: "Connect & calculate" })
     .click();
-  expect(
-    await large
-      .locator("[data-data-relation-id] circle[data-measurement-row]")
-      .count(),
-  ).toBe(1000);
+  await expect(
+    large.locator("[data-data-relation-id] circle[data-measurement-row]"),
+  ).toHaveCount(1000);
   await large.locator("[data-data-relation-id]").hover();
   await large
     .locator("[data-data-relation-id]")
@@ -312,9 +310,22 @@ try {
   expect(await large.locator("[data-data-relation-id] tbody tr").count()).toBe(
     40,
   );
+  const largeResult = large.locator("[data-data-relation-id]");
+  const changeEquation = async (text) => {
+    await large.locator('[data-kind="equation"] .er-math-line').dblclick();
+    await largeEditor.fill(text);
+    await largeEditor.press("Escape");
+  };
+  await changeEquation("P = force*speed*spare");
+  await expect(largeResult.getByRole("status")).toContainText("Bind spare");
+  await expect(largeResult.locator("[data-derived-value]")).toHaveCount(0);
+  await changeEquation("P = 2*force*speed");
+  await expect(
+    largeResult.locator('[data-calculated-row="0"] [data-derived-value]'),
+  ).toHaveText("120 W");
   await large.close();
   checks.push(
-    "A 10,000-record CSV evaluates all rows as one dataset; both tables and plot rendering stay bounded",
+    "A 10,000-record CSV evaluates all rows as one dataset; plot and table stay bounded, remove invalid results and recover with the current equation",
   );
   expect(errors).toEqual([]);
   console.log(JSON.stringify({ checks, errors }, null, 2));
