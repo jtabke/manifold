@@ -1,8 +1,8 @@
 /** Read-only collection views: freezing a native Map alone does not protect its entries. */
 class ReadMap<K, V> implements ReadonlyMap<K, V> {
   readonly #entries: Map<K, V>;
-  constructor(entries: Iterable<readonly [K, V]>) {
-    this.#entries = new Map(entries);
+  constructor(entries: Map<K, V>) {
+    this.#entries = entries;
     Object.freeze(this);
   }
   get size() {
@@ -34,9 +34,12 @@ class ReadMap<K, V> implements ReadonlyMap<K, V> {
       callback.call(thisArg, value, key, this);
   }
 }
+/** Publish an exclusively owned map. The caller must not retain a mutable alias. */
+export const ownMap = <K, V>(entries: Map<K, V>): ReadonlyMap<K, V> =>
+  new ReadMap(entries);
 export const readMap = <K, V>(
   entries: Iterable<readonly [K, V]>,
-): ReadonlyMap<K, V> => new ReadMap(entries);
+): ReadonlyMap<K, V> => ownMap(new Map(entries));
 export function immutable<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.values(value).forEach(immutable);

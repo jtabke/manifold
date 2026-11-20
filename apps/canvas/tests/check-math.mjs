@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import {
   calculate,
+  compileRowCalculation,
   display,
   parse,
   evaluate,
+  evaluationWork,
+  prepareCalculation,
   quantityLiteral,
+  resetEvaluationWork,
+  solvePrepared,
 } from "../src/notebook/math.ts";
 const regions = (lines) =>
   lines.map((text, i) => ({ id: String(i), text, x: 0, y: 0 }));
@@ -138,3 +143,181 @@ for (const expression of ["2+3", "2*3", "1/3", "2^3", "(2 m)*(3 m)", "a+2"])
     false,
     expression,
   );
+
+const prepare = (lines) =>
+  lines.map((line, i) => {
+    const [text, version, id = String(i)] = Array.isArray(line)
+      ? line
+      : [line, 1];
+    return prepareCalculation(id, text, version);
+  });
+const q = (value, dimension = [0, 0, 0, 0]) => ({ value, dimension });
+// Compare entries (including first-use order, precise diagnostics and affine
+// flags), not ReadMap objects whose backing storage is deliberately private.
+function compareRows(lines, samples) {
+  const rows = prepare(lines),
+    run = compileRowCalculation(rows);
+  for (const overrides of samples) {
+    const expected = solvePrepared(rows, overrides).solved,
+      actual = run(overrides);
+    for (const key of ["statements", "values", "errors", "constraints"])
+      assert.deepEqual(
+        [...actual[key]],
+        [...expected[key]],
+        `${lines}: ${key}`,
+      );
+  }
+}
+compareRows(
+  [
+    "hot < bound",
+    ["hot = ambient + rise", 2],
+    "delta = hot - 20 °C",
+    "rise = 5 K",
+    ["ambient = 25 °C", 3],
+    "bound = 40 °C",
+    "rise >= rise - 5 K",
+  ],
+  [
+    {},
+    { rise: q(12, [0, 0, 0, 1]) },
+    { ambient: q(300, [0, 0, 0, 1]) },
+    { rise: q(2, [0, 1, 0, 0]) },
+    { bound: q(42) },
+    {},
+  ],
+);
+compareRows(
+  [
+    ["toString = reading", 2],
+    "legacy = toString",
+    ["toString <= 5 A", 2],
+    ["angle = asin(x)", 3],
+    ["fraction = sin(angle)", 2],
+    "x = 0.5",
+    ["2 + 3 =", 3],
+  ],
+  [
+    {},
+    { reading: q(3, [0, 0, 0, 0, 1]), x: q(1) },
+    { reading: q(2), x: q(2) },
+    { toString: q(4), x: q(0) },
+    Object.create({ reading: q(1) }),
+    {},
+  ],
+);
+compareRows(
+  ["used = dup + 1", "dup = 1", "dup = 2", "used < cap", "dup >= 2"],
+  [{}, { dup: q(5) }, { dup: q(6), cap: q(8) }, { cap: q(10) }, {}],
+);
+compareRows(["broken := (", "out = missing"], [{}, { missing: q(1) }, {}]);
+compareRows(
+  [["a = 1", 1, "same-id"], ["b = input", 1, "same-id"], "out = a"],
+  [{ input: q(1) }, { input: q(2) }],
+);
+compareRows(
+  ["out = first", "first = second + 1", "second = first + 1", "out <= 3"],
+  [{}, { first: q(1) }, { second: q(10) }, { out: q(0) }, {}, { second: q(0) }],
+);
+compareRows(
+  ["result = 1 / x + later", "x = 0", "result > 0"],
+  [
+    {},
+    { x: q(2) },
+    { x: q(2), later: q(3) },
+    { x: q(0), later: q(3) },
+    { later: q(3), x: q(-2) },
+  ],
+);
+
+// Compile once, then discard access to the source list. Independent assignments
+// and the limit expression are evaluated once, even when declared out of order.
+{
+  const { proxy, revoke } = Proxy.revocable(
+    prepare([
+      "P = force * speed * gain",
+      "P <= cap",
+      "gain = half * 2",
+      "half = 0.5",
+      "cap = 80 W",
+    ]),
+    {},
+  );
+  resetEvaluationWork();
+  const run = compileRowCalculation(proxy);
+  revoke();
+  const speed = q(3, [0, 1, -1, 0]);
+  let first, last;
+  for (let i = 1; i <= 10000; i++) {
+    last = run({ force: q(i, [1, 1, -2, 0]), speed });
+    first ??= last;
+    assert.equal(last.values.get("P").value, 3 * i);
+    assert.equal(last.constraints.get("1").pass, 3 * i <= 80);
+  }
+  assert.equal(last.statements, first.statements);
+  assert.equal(last.values.get("gain"), first.values.get("gain"));
+  assert.equal(
+    last.constraints.get("1").bound,
+    first.constraints.get("1").bound,
+  );
+  assert.deepEqual([...last.values.keys()], ["half", "gain", "P", "cap"]);
+  assert.deepEqual(evaluationWork(), {
+    parses: 0,
+    expressions: 5 * 10000 + 8,
+    assignments: 10000 + 3,
+    constraints: 10000,
+  });
+  // A newly introduced override invalidates an already cached transitive input.
+  const sample = { force: q(8, [1, 1, -2, 0]), speed };
+  assert.equal(
+    run(
+      Object.defineProperty(sample, "half", {
+        value: q(2),
+        configurable: true,
+      }),
+    ).values.get("P").value,
+    96,
+  );
+  delete sample.half;
+  assert.equal(run(sample).values.get("P").value, 24);
+  assert.equal(first.values.get("P").value, 3);
+}
+
+// Aliases and borrowed dimensions must not retain or freeze caller-owned data,
+// even for a shallow-frozen override. Failures never contaminate another row.
+{
+  const run = compileRowCalculation(
+    prepare(["out = reading", "sum = reading + out", "out <= limit"]),
+  );
+  const reading = q(2, [0, 1, 0, 0]),
+    limit = Object.freeze(q(3, [0, 1, 0, 0]));
+  const first = run({ reading, limit });
+  reading.value = 7;
+  limit.dimension[1] = 0;
+  const failed = run({ reading, limit });
+  assert.match(failed.errors.get("2"), /limit has units 1/);
+  reading.dimension[1] = 0;
+  const next = run({ reading, limit });
+  assert.equal(next.errors.size, 0);
+  assert.equal(next.constraints.get("2").pass, false);
+  assert.equal(failed.constraints.has("2"), false);
+  assert.equal(first.errors.size, 0);
+  assert.deepEqual(first.values.get("out"), q(2, [0, 1, 0, 0]));
+  assert.equal(first.values.get("sum").value, 4);
+  assert.deepEqual(first.values.get("sum").dimension, [0, 1, 0, 0]);
+  assert.deepEqual(first.constraints.get("2").bound, q(3, [0, 1, 0, 0]));
+  for (const map of [
+    first.values,
+    first.constraints,
+    first.errors,
+    failed.errors,
+  ]) {
+    assert.equal(map.set, undefined);
+    map.forEach((_v, _k, view) => assert.equal(view, map));
+  }
+  assert.throws(() => (first.constraints.get("2").bound.dimension[1] = 9));
+  assert.throws(() => (first.values.get("out").value = 4));
+}
+console.log(
+  "Compiled row calculations: ordered cold-solver parity, immutable snapshots and one-plan 10,000-row work counts pass.",
+);

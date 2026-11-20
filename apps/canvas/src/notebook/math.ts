@@ -1,4 +1,4 @@
-import { immutable, readMap } from "./immutable.ts";
+import { immutable, ownMap } from "./immutable.ts";
 import {
   scientificBinary,
   scientificCall,
@@ -440,12 +440,7 @@ const equalQuantity = (a?: Quantity, b?: Quantity) =>
     Object.is(a.value, b.value) &&
     a.absolute === b.absolute &&
     same(a.dimension, b.dimension));
-/** One evaluator for cold calculations, incremental projections and sampled overrides. */
-export function solvePrepared(
-  rows: readonly PreparedCalculation[],
-  overrides: Readonly<Record<string, Quantity>> = {},
-  before?: CalculationState,
-): CalculationState {
+function indexPrepared(rows: readonly PreparedCalculation[]) {
   const statements = new Map<string, Statement>(),
     byName = new Map<string, string>(),
     errors = new Map<string, string>(),
@@ -469,6 +464,21 @@ export function solvePrepared(
       users.set(name, list);
     }
   }
+  return {
+    statements: ownMap(statements),
+    byName,
+    errors: ownMap(errors),
+    users,
+  };
+}
+/** One evaluator for cold calculations, incremental projections and sampled overrides. */
+export function solvePrepared(
+  rows: readonly PreparedCalculation[],
+  overrides: Readonly<Record<string, Quantity>> = {},
+  before?: CalculationState,
+): CalculationState {
+  const index = indexPrepared(rows),
+    { statements, byName, errors, users } = index;
   // Error paths and reordered definitions use a full pass to retain deterministic diagnostics.
   const reuse =
     before &&
@@ -510,6 +520,57 @@ export function solvePrepared(
       }
     }
   }
+  const solved = runPrepared(
+    index,
+    overrides,
+    statementValue,
+    reuse ? { solved: before.solved, dirty } : undefined,
+  );
+  for (const ids of users.values()) Object.freeze(ids);
+  return Object.freeze({
+    rows: Object.freeze([...rows]),
+    overrides: immutable(
+      Object.fromEntries(
+        Object.entries(overrides).map(([name, value]) => [
+          name,
+          { ...value, dimension: [...value.dimension] as Dimension },
+        ]),
+      ),
+    ),
+    users: ownMap(users),
+    solved,
+  });
+}
+
+// An expression can return an override itself, or borrow its dimension. Publish
+// the quantity without freezing caller-owned data or leaking a mutable array.
+function statementValue(
+  s: Statement,
+  resolve: (name: string) => Quantity,
+  role: "assignment" | "bound",
+): Quantity {
+  if (role === "assignment") work.assignments++;
+  const q = evaluate(s.expression, resolve, s.mathVersion ?? 1);
+  if (Object.isFrozen(q) && Object.isFrozen(q.dimension)) return q;
+  return Object.freeze({
+    ...q,
+    dimension: Object.isFrozen(q.dimension)
+      ? q.dimension
+      : Object.freeze([...q.dimension] as Dimension),
+  });
+}
+
+function runPrepared(
+  {
+    statements,
+    byName,
+    errors: initialErrors,
+  }: ReturnType<typeof indexPrepared>,
+  overrides: CalculationState["overrides"],
+  valueOf: typeof statementValue,
+  reuse?: { solved: Solved; dirty: ReadonlySet<string> },
+): Solved {
+  let errors: Map<string, string> | undefined;
   const values = new Map<string, Quantity>(),
     constraints = new Map<
       string,
@@ -521,24 +582,19 @@ export function solvePrepared(
     if (values.has(name)) return values.get(name)!;
     const id = byName.get(name);
     if (!id) throw Error(`Define ${name} with a value and units.`);
-    if (errors.has(id)) throw Error(errors.get(id));
+    const knownErrors = errors ?? initialErrors;
+    if (knownErrors.has(id)) throw Error(knownErrors.get(id));
     if (visiting.has(name))
       throw Error(`Circular dependency involving ${name}.`);
-    const cached = reuse && !dirty.has(id) && before.solved.values.get(name);
+    const cached =
+      reuse && !reuse.dirty.has(id) && reuse.solved.values.get(name);
     if (cached) {
       values.set(name, cached);
       return cached;
     }
     visiting.add(name);
     try {
-      work.assignments++;
-      const value = immutable(
-        evaluate(
-          statements.get(id)!.expression,
-          resolve,
-          statements.get(id)!.mathVersion ?? 1,
-        ),
-      );
+      const value = valueOf(statements.get(id)!, resolve, "assignment");
       values.set(name, value);
       return value;
     } finally {
@@ -546,21 +602,19 @@ export function solvePrepared(
     }
   };
   for (const [id, s] of statements) {
-    if (errors.has(id)) continue;
+    if ((errors ?? initialErrors).has(id)) continue;
     try {
       if (s.relation === "=") resolve(s.name);
       else {
         const cached =
-          reuse && !dirty.has(id) && before.solved.constraints.get(id);
+          reuse && !reuse.dirty.has(id) && reuse.solved.constraints.get(id);
         if (cached) {
           constraints.set(id, cached);
           continue;
         }
         work.constraints++;
         const actual = resolve(s.name),
-          bound = immutable(
-            evaluate(s.expression, resolve, s.mathVersion ?? 1),
-          );
+          bound = valueOf(s, resolve, "bound");
         if (!same(actual.dimension, bound.dimension))
           throw Error(
             `The result ${s.name} has units ${unitLabel(actual) || "1"}, but its limit has units ${unitLabel(bound) || "1"}. Check the units of ${s.name} and its inputs.`,
@@ -579,29 +633,66 @@ export function solvePrepared(
         );
       }
     } catch (error) {
-      errors.set(id, (error as Error).message);
+      (errors ??= new Map(initialErrors)).set(id, (error as Error).message);
     }
   }
   return Object.freeze({
-    rows: Object.freeze([...rows]),
-    overrides: immutable(
-      Object.fromEntries(
-        Object.entries(overrides).map(([name, value]) => [
-          name,
-          { ...value, dimension: [...value.dimension] as Dimension },
-        ]),
-      ),
-    ),
-    users: readMap(
-      [...users].map(([name, ids]) => [name, Object.freeze(ids)] as const),
-    ),
-    solved: Object.freeze({
-      statements: readMap(statements),
-      values: readMap(values),
-      errors: readMap(errors),
-      constraints: readMap(constraints),
-    }),
+    statements,
+    values: ownMap(values),
+    errors: errors ? ownMap(errors) : initialErrors,
+    constraints: ownMap(constraints),
   });
+}
+
+/** Compile fixed prepared equations once; return an isolated immutable solve per
+ * measurement. Cache successful row-independent expressions, never row history. */
+export function compileRowCalculation(
+  rows: readonly PreparedCalculation[],
+): (overrides?: Readonly<Record<string, Quantity>>) => Solved {
+  const index = indexPrepared(rows),
+    invariants = new Map<
+      Statement,
+      { dependencies: readonly string[]; value?: Quantity }
+    >();
+  for (const { id, statement: s, dependencies } of rows) {
+    if (!s) continue;
+    // With colliding IDs a name can resolve a different indexed statement.
+    // Keep cold lookup behavior rather than memoizing the wrong dependency.
+    if (index.statements.get(id) !== s)
+      return (overrides = {}) => runPrepared(index, overrides, statementValue);
+    invariants.set(s, {
+      // A changing constraint subject need not invalidate a fixed right-hand bound.
+      dependencies:
+        s.relation === "=" ? dependencies : references(s.expression),
+    });
+  }
+  const valueOf: typeof statementValue = (s, resolve, role) => {
+    const entry = invariants.get(s);
+    if (!entry) return statementValue(s, resolve, role);
+    if (entry.value) {
+      // Preserve cold first-use order in values, including forward references.
+      for (const name of entry.dependencies) resolve(name);
+    } else entry.value = statementValue(s, resolve, role);
+    return entry.value;
+  };
+  return (overrides = {}) => {
+    // An override may introduce a new binding on any row. Consume each name's
+    // reverse edges at most once over the plan's lifetime, not once per record.
+    const varying = Object.getOwnPropertyNames(overrides);
+    for (let i = 0; i < varying.length; i++) {
+      const name = varying[i],
+        readers = index.users.get(name);
+      if (!readers) continue;
+      index.users.delete(name);
+      for (const id of readers) {
+        const s = index.statements.get(id)!;
+        if (!invariants.get(s)?.dependencies.includes(name)) continue;
+        invariants.delete(s);
+        if (s.relation === "=") varying.push(s.name);
+      }
+    }
+    return runPrepared(index, overrides, valueOf);
+  };
 }
 export function calculate(
   regions: readonly Calculation[],
