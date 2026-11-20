@@ -13,7 +13,7 @@ import {
   inspectModel,
   setModelInput,
 } from "./regions/modelCommands.ts";
-import { modelFamilies, type ModelFamily } from "./regions/foundationModels.ts";
+import { modelFamilies, type ModelFamily } from "./regions/modelFamilies.ts";
 import { HeadlessError, headlessOperation } from "./headlessErrors.ts";
 
 export function modelInfo(session: RegionSession, item: string) {

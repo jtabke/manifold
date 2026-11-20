@@ -8,11 +8,10 @@ import {
 } from "./authoredModels.ts";
 import { MODEL_OUTPUT_REQUEST, modelOutputsRequest } from "./modelResults.ts";
 import { canvasSchemas } from "./app/canvasDocument.ts";
+import { modelFamilies, type ModelFamily } from "./modelFamilies.ts";
 import {
-  modelFamilies,
   modelResultMethod,
   MODEL_RENDERER,
-  type ModelFamily,
   type CsvObservation,
 } from "./foundationModels.ts";
 import type { RegionSession, Point } from "./document.ts";

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { json } from "@manifold/foundation";
 import {
   createHeadlessWorkspace,
@@ -12,6 +14,19 @@ import {
   validateWorkspace,
   compareWorkspaces,
 } from "manifold-canvas/agent";
+
+// Importing headless first in this process must not hide registry initialization cycles.
+const canvasPackage = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
+for (const entry of Object.keys(canvasPackage.exports)) {
+  const specifier = canvasPackage.name + entry.slice(1);
+  execFileSync(
+    process.execPath,
+    ["--input-type=module", "-e", `import ${JSON.stringify(specifier)};`],
+    { cwd: new URL("../", import.meta.url) },
+  );
+}
 
 const workspace = createHeadlessWorkspace();
 const owners = [workspace];

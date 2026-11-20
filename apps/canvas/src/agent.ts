@@ -8,7 +8,7 @@ import {
 } from "@manifold/foundation";
 import type { HeadlessWorkspace } from "./headless.ts";
 import { HeadlessError } from "./headlessErrors.ts";
-import { modelFamilies } from "./regions/foundationModels.ts";
+import { modelFamilies } from "./regions/modelFamilies.ts";
 import {
   functionsForVersion,
   scientificConstants,

@@ -4,7 +4,7 @@ import { RegionSession } from "./regions/document.ts";
 import { archive, decodeWorkspace } from "./regions/artifacts.ts";
 import { canvasSchemas } from "./regions/app/canvasDocument.ts";
 import { modelReference } from "./regions/modelCommands.ts";
-import type { ModelFamily } from "./regions/foundationModels.ts";
+import type { ModelFamily } from "./regions/modelFamilies.ts";
 import {
   createHeadlessEdits,
   modelInfo,
@@ -29,7 +29,7 @@ export type {
   Reference,
   Scope,
 } from "@manifold/foundation";
-export type { ModelFamily } from "./regions/foundationModels.ts";
+export type { ModelFamily } from "./regions/modelFamilies.ts";
 export type HeadlessOptions = Readonly<{
   /** Explicit opt-in for sampling. Omission disables the browser's HTTP transport. */
   artifactExecutor?: ArtifactExecutor;

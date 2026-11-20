@@ -19,76 +19,22 @@ import {
   v3SamplingMethod,
 } from "./samplingExecution.ts";
 import { readCsv, numericCell, type CsvData } from "./dataSources.ts";
-const spring = {
-  id: "manifold.spring-force",
-  version: "1",
-  runtime: "manifold-native-models@1",
-};
-const scale = {
-  id: "manifold.force-scale",
-  version: "1",
-  runtime: "manifold-native-models@1",
-};
+import { springMethod, scaleMethod } from "./modelFamilies.ts";
 export const modelAdapter = f.createScalarModels([
   ...equationMethods,
   {
-    requirements: spring,
+    requirements: springMethod,
     inputs: { k: "N/mm", x: "mm" },
     output: "N",
     evaluate: ({ k, x }) => k! * x!,
   },
   {
-    requirements: scale,
+    requirements: scaleMethod,
     inputs: { load: "N", factor: "1" },
     output: "N",
     evaluate: ({ load, factor }) => load! * factor!,
   },
 ]);
-export const modelFamilies = Object.freeze({
-  spring: {
-    label: "Spring",
-    definition: {
-      nodes: {
-        k: { kind: "input", label: "k", unit: "N/mm", default: 10 },
-        x: { kind: "input", label: "x", unit: "mm", default: 2 },
-        force: {
-          kind: "method",
-          label: "F",
-          method: spring,
-          inputs: { k: { node: "k" }, x: { node: "x" } },
-        },
-      },
-      children: {},
-      inputs: {
-        stiffness: { label: "Stiffness", node: "k" },
-        displacement: { label: "Displacement", node: "x" },
-      },
-      outputs: { force: { label: "Force", target: { node: "force" } } },
-    },
-  },
-  scale: {
-    label: "Force scale",
-    definition: {
-      nodes: {
-        load: { kind: "input", label: "F", unit: "N", default: 10 },
-        factor: { kind: "input", label: "gain", unit: "1", default: 2 },
-        force: {
-          kind: "method",
-          label: "F",
-          method: scale,
-          inputs: { load: { node: "load" }, factor: { node: "factor" } },
-        },
-      },
-      children: {},
-      inputs: {
-        load: { label: "Load", node: "load" },
-        factor: { label: "Gain", node: "factor" },
-      },
-      outputs: { force: { label: "Force", target: { node: "force" } } },
-    },
-  },
-} satisfies Record<string, { label: string; definition: f.ModelDefinition }>);
-export type ModelFamily = keyof typeof modelFamilies;
 export const modelResultMethod = Object.freeze({
   id: "manifold.model-result",
   version: "1",
