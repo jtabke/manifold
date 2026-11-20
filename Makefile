@@ -5,7 +5,7 @@ export PYTHON
 OPTIMIZER_PYTHON ?= python3.12
 
 # Optional numerical profile only: CPython 3.12 on Linux x86_64.
-.PHONY: setup-optimizer check-optimizer
+.PHONY: setup-optimizer check-optimizer check-optimizer-browser
 setup-optimizer:
 	$(OPTIMIZER_PYTHON) -c 'import sys,platform; assert platform.python_implementation() == "CPython" and sys.version_info[:2] == (3,12) and platform.system() == "Linux" and platform.machine() == "x86_64", "Optimizer lock requires CPython 3.12/Linux x86_64"'
 	$(OPTIMIZER_PYTHON) -m venv .venv/optimizer
@@ -13,7 +13,10 @@ setup-optimizer:
 
 check-optimizer:
 	$(MAKE) check-python PYTHON=.venv/optimizer/bin/python
-	PYTHON=$(CURDIR)/.venv/optimizer/bin/python node apps/canvas/tests/check-model-optimizations.mjs
+	MANIFOLD_REQUIRE_OPTIMIZER=1 PYTHON=$(CURDIR)/.venv/optimizer/bin/python node apps/canvas/tests/check-model-optimizations.mjs
+
+check-optimizer-browser: build
+	MANIFOLD_REQUIRE_OPTIMIZER=1 PYTHON=$(CURDIR)/.venv/optimizer/bin/python npm --prefix apps/canvas run test:all-browser -- check-model-optimizations-browser
 
 setup:
 	npm ci

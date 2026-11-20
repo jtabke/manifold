@@ -48,9 +48,10 @@ To use an existing Chromium executable instead, set
 both application and foundation browser checks, including `make verify`; no launcher
 preload or Chrome installation is required.
 
-`make verify` runs product checks and both browser suites sequentially. CI runs the
-same target. Set `PYTHON` to choose another Python executable. Documentation checks
-include nonignored working-tree drafts; they do not stage changes.
+`make verify` runs product checks and both browser suites sequentially. The base CI job runs that
+target; the pinned numerical job runs Python tests and optimizer integration/browser workflows.
+Set `PYTHON` to choose another Python executable. Documentation checks include nonignored
+working-tree drafts; they do not stage changes.
 
 ## Implementation boundaries
 

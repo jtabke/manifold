@@ -38,4 +38,4 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: make setup setup-optimizer
       - run: npx --no-install playwright install --with-deps chromium
-      - run: make verify PYTHON=${{ github.workspace }}/.venv/optimizer/bin/python
+      - run: make check-optimizer check-optimizer-browser

@@ -106,16 +106,17 @@ include numerical optimization. Start the development server with the selected r
 ```sh
 make setup-optimizer                  # OPTIMIZER_PYTHON selects your CPython 3.12
 PYTHON="$PWD/.venv/optimizer/bin/python" npm run dev
-make check-optimizer
-make verify PYTHON="$PWD/.venv/optimizer/bin/python"
+make check-optimizer                 # Python tests and real model integration
+make check-optimizer-browser         # Build and run the real Run/Apply workflow
 ```
 
 The target owns `.venv/optimizer` and installs pinned, hash-checked binary wheels from
 [`requirements-optimizer.txt`](../../apps/canvas/requirements-optimizer.txt); never globally.
 Do not use another worktree's environment. Other platforms remain unsupported by this lock.
 Missing/incompatible dependencies leave Open, editing and retained result inspection usable.
-Numerical-only checks explicitly skip outside the supported environment; CI also tests the actual
-numerical profile. The backend [protocol](../../apps/canvas/artifact_optimizer_contract.md) defines limits.
+The default suite tests that missing-runtime behavior. The two `check-optimizer` targets above
+require a working pinned backend; the numerical CI job runs both rather than repeating unrelated
+suites. The backend [protocol](../../apps/canvas/artifact_optimizer_contract.md) defines limits.
 
 ## Documentation ownership
 

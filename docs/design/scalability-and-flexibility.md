@@ -39,25 +39,29 @@ and additional joins when reading a calculation. Structural sharing is not autom
 plain copied maps and whole-archive saves can remain O(N) per edit even when records
 are normalized. Implementing immutable types alone does not solve scale.
 
-## What the current code tells us
+## Historical Page prototype (not the current implementation)
 
-These are source observations, not measured latency or corruption reports:
+The assessment below predates foundation adoption. It describes the original Page prototype,
+not current edit paths, file limits, or measured latency:
 
-- `RegionSession` uses `structuredClone` over Page for edits/history and several
+- `RegionSession` used `structuredClone` over Page for edits/history and several
   `JSON.stringify` comparisons. Repeated edits can copy unchanged regions and CSV text.
-- `project` parses and resolves the effective region set. `semanticKey` visits the
-  effective mathematical definitions, and artifact requests include that key plus
-  active context. Unrelated changes can prevent otherwise valid numerical reuse.
-- `archive` serializes Page and artifacts together. Sources, presentation and receipts
-  share the archive rather than independent physical records. `restore` rejects text
-  longer than 8,000,000 JavaScript characters; this is an existing implementation
-  limit, not a supported capacity target or a byte quota.
-- CSV import caps raw text at 1,000,000 JavaScript characters and 10,000 rows/12 columns.
-  Those are bounded-prototype checks, not proof of large-dataset behavior.
+- `project` parsed and resolved the effective region set. `semanticKey` visited the
+  effective mathematical definitions, and artifact requests included that key plus
+  active context. Unrelated changes could prevent otherwise valid numerical reuse.
+- `archive` serialized Page and artifacts together. Sources, presentation and receipts
+  shared the archive rather than independent physical records. `restore` rejected text
+  longer than 8,000,000 JavaScript characters; this was neither a capacity target nor a byte quota.
+- CSV import capped raw text at 1,000,000 JavaScript characters and 10,000 rows/12 columns.
+  Those were bounded-prototype checks, not proof of large-dataset behavior.
 
-See [document.ts](../../apps/canvas/src/regions/document.ts),
-[artifacts.ts](../../apps/canvas/src/regions/artifacts.ts) and
-[dataSources.ts](../../apps/canvas/src/regions/dataSources.ts).
+Today the [session](../../apps/canvas/src/regions/document.ts) lowers targeted
+[Page edits](../../apps/canvas/src/regions/pageEdits.ts) into immutable foundation records.
+[Worksheet projection](../../apps/canvas/src/regions/worksheetProjection.ts) reuses prepared
+expressions. Local persistence uses [incremental snapshots](../../apps/canvas/src/regions/app/canvasLocalStore.ts),
+not the portable archive as the save unit. For current byte limits see the
+[shared recovery and transport budget](../../apps/canvas/src/regions/app/canvasStorageBudget.ts);
+for measured workloads see the [development workflows](../development/workflows.md).
 
 ## Growth dimensions and expected work
 
@@ -146,9 +150,9 @@ stage referenced records and bytes and advance the root atomically, or report a 
 failure while preserving the prior durable root. Chunk large data outside the UI
 update path. In-memory acceptance and durability remain distinct statuses.
 
-The current single-envelope adapter can support a bounded first slice. Larger
-workspaces require a transactional keyed record/blob adapter, measured for the actual
-browser environment. The logical schema should not depend on a particular database.
+The prototype's single-envelope save was sufficient for a bounded first slice. The current
+browser adapter uses transactional keyed records; larger workloads still need measurements
+in the actual browser environment. The logical schema should not depend on a particular database.
 Multi-tab root conflicts need detection; multi-user merge, authorization and distributed
 identity are separate contracts. Immutable records help transmission and conflict
 inspection, but do not supply a collaboration algorithm.

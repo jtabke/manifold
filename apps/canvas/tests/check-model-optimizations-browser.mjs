@@ -101,6 +101,11 @@ try {
     base + "/api/optimizer/capability",
   );
   if (numerical.status() === 503) {
+    assert.notEqual(
+      process.env.MANIFOLD_REQUIRE_OPTIMIZER,
+      "1",
+      "Pinned numerical checks require a live optimizer",
+    );
     await card
       .getByRole("button", { name: "Run optimization", exact: true })
       .click();

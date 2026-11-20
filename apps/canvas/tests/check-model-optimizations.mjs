@@ -136,6 +136,11 @@ const capability = py(
   null,
 );
 if (!capability) {
+  assert.notEqual(
+    process.env.MANIFOLD_REQUIRE_OPTIMIZER,
+    "1",
+    "Pinned numerical checks require a supported optimizer",
+  );
   console.log(
     "SKIP numerical model-optimization integration: supported CPython 3.12/SciPy environment absent; creation/digest/offline checks passed.",
   );

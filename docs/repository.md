@@ -34,10 +34,11 @@ record architecture choices.
 | `docs/development` | Contributor setup, checks and optional diagnostics. |
 | `docs/design` | Architecture/invariants, labelled proposals and decision rationale. |
 
-The application shell lives in `app/Regions.tsx`. Keep exploration, renderer buffers,
-commands and presentation in their owning modules rather than adding another accepted store.
-An extraction should remove the original implementation and preserve ownership; moving
-lines alone is not simplification.
+The application shell in `app/Regions.tsx` subscribes to the session. Worksheet records render
+in `renderers/WorksheetLayer.tsx`; toolbars, shortcuts and search execute through
+`app/dispatchCanvasCommand.ts`. Neither renderer nor dispatcher owns accepted state or Undo.
+The shell shares one `datasetModel.ts` derivation per relation between worksheet feedback and
+the result card. A mapping preview evaluates its own tentative relation.
 
 `notebook/math.ts` owns dimensional evaluation. `worksheetProjection.ts` owns bounded
 worksheet derivation/caches. `authoredModels.ts`, `modelCommands.ts` and `modelResults.ts`
@@ -79,8 +80,9 @@ make check-foundation-package-browser
 make verify
 ```
 
-CI installs the root lockfile and Playwright-managed Chromium, then runs `make verify` on pushes and pull requests.
-Build/browser phases run sequentially because they share output. Browser scripts use
+CI installs the root lockfile and Playwright-managed Chromium, then runs `make verify` on pushes
+and pull requests. A separate pinned numerical job requires the real optimizer in its local and
+browser workflows. Build/browser phases run sequentially because they share output. Browser scripts use
 private temporary servers. No internal evaluation artifacts are uploaded.
 
 ## Public source versus local research
