@@ -8,6 +8,16 @@ import {
 import { evaluationWork, resetEvaluationWork } from "../src/notebook/math.ts";
 import { worksheetProjection } from "../src/regions/worksheetProjection.ts";
 import { modelExterior } from "../src/regions/systemExploration.ts";
+const noWork = { parses: 0, expressions: 0, assignments: 0, constraints: 0 };
+function againstCold(page, relation, state) {
+  if (state.result)
+    assert.deepEqual(state.result, evaluateDataset(page, relation));
+  else
+    assert.throws(() => evaluateDataset(page, relation), {
+      message: state.error,
+    });
+  return state;
+}
 const s = new RegionSession();
 const add = (t) => {
   const id = s.create();
@@ -145,6 +155,20 @@ assert.equal(
   paired.records,
 );
 assert.equal(evaluationWork().assignments, 0);
+scalar.write(v, "speed := 6 m/s"); // Changed scalar hypothesis, not paired evidence or units.
+project(scalar.state);
+resetEvaluationWork();
+assert.equal(
+  measurementOverlay(scalar.state, output, f, selectEvidence).records,
+  paired.records,
+);
+assert.deepEqual(evaluationWork(), noWork);
+const unpaired = structuredClone(scalar.state);
+unpaired.regions.find((r) => r.id === v).source.row = 1;
+assert.throws(
+  () => measurementOverlay(unpaired, output, f, selectEvidence),
+  /different source rows/,
+);
 const linked = {
   ...binding,
   bindings: [
@@ -181,12 +205,15 @@ resetEvaluationWork();
 large.move(manyId, { x: 900, y: 560 });
 worksheetProjection.clear(); // Layout reuse does not depend on that shared cache staying warm.
 assert.equal(select(large.state), states);
-assert.deepEqual(evaluationWork(), {
-  parses: 0,
-  expressions: 0,
-  assignments: 0,
-  constraints: 0,
-});
+assert.deepEqual(evaluationWork(), noWork);
+const unrelated = large.create();
+for (const text of ["Field notes", "spare := 3 m", "spare := 8 s"]) {
+  assert.ok(large.write(unrelated, text).ok);
+  project(large.state); // Only count the selector, not the changed worksheet.
+  resetEvaluationWork();
+  assert.equal(select(large.state), states, text);
+  assert.deepEqual(evaluationWork(), noWork, text);
+}
 // A model's vector status reads those same accepted results, not a second row solve.
 const envelope = {
   id: "model-envelope",
@@ -209,12 +236,21 @@ assert.equal(
 assert.equal(evaluationWork().assignments, 0);
 assert.throws(() => all.records.pop(), TypeError);
 assert.throws(() => (all.records[0].inputs.force.value = 99), TypeError);
-const smallId = large.bindDataset(binding);
+large.write(unrelated, "otherPower := force*speed");
+const smallId = large.bindDataset({ ...binding, output: unrelated });
 resetEvaluationWork();
 const both = select(large.state);
 assert.equal(both[manyId], states[manyId]);
 assert.equal(both[smallId].result.records[1].value.value, 96);
 assert.equal(evaluationWork().assignments, 2); // Only the added relation was solved.
+large.write(unrelated, "otherPower := 2*force*speed");
+project(large.state);
+resetEvaluationWork();
+const edited = select(large.state);
+assert.equal(edited[manyId], states[manyId]);
+assert.equal(edited[smallId].result.records[1].value.value, 192);
+assert.equal(evaluationWork().assignments, 2);
+assert.equal(evaluationWork().constraints, 0);
 console.log(
   "Clean recovery, invalid bindings, Undo, independent scalar hypotheses, paired evidence and 10,000-row evaluation pass.",
 );
@@ -244,7 +280,7 @@ assert.throws(() => evaluateDataset(ambiguous.state, binding), /ambiguous/);
       dataRelations: [structuredClone(linked)],
     }),
     select = createDatasetStatesSelector(),
-    read = (p = page) => select(p)[linked.id],
+    read = (p = page) => againstCold(p, relation, select(p)[linked.id]),
     source = page.regions.find((r) => r.id === dataset).data,
     force = page.regions.find((r) => r.id === f),
     requirement = page.regions.find((r) => r.id === limit),
@@ -253,17 +289,25 @@ assert.throws(() => evaluateDataset(ambiguous.state, binding), /ambiguous/);
   source.csv = "force [N],speed [m/s]\n20,3\n25,";
   const badRow = read();
   assert.match(badRow.error, /Row 2.*speed/);
+  page.regions.push({ id: "unrelated", text: "spare := 1" });
+  project(page);
   resetEvaluationWork();
-  assert.equal(read({ ...page, layout: {} }), badRow);
-  assert.equal(evaluationWork().assignments, 0); // Don't repeat the successful first row.
+  assert.equal(select(page)[linked.id], badRow);
+  assert.deepEqual(evaluationWork(), noWork); // Don't repeat the successful first row.
   source.csv = "force [N],speed [m/s]\n20,3\n25,4";
   assert.equal(read().result.records[1].value.value, 100);
   source.name = "";
   assert.match(read().error, /named CSV/);
   source.name = "paired.csv";
 
-  force.text = "force := 20 s";
+  const upstream = { id: "instrument", text: "measured := 20 N" };
+  page.regions.push(upstream);
+  force.text = "force := measured";
+  assert.equal(read().result.records[1].value.value, 100);
+  upstream.text = "measured := 20 s"; // Bound definition itself didn't change.
   assert.match(read().error, /units for force/);
+  page.regions.pop(); // Unsolved scalar no longer supplies a unit check.
+  assert.equal(read().result.records[1].value.value, 100);
   force.text = "force := 20 N";
   page.regions.push({ ...force, id: "duplicate-force" });
   assert.match(read().error, /force is ambiguous/);
@@ -294,17 +338,81 @@ assert.throws(() => evaluateDataset(ambiguous.state, binding), /ambiguous/);
     read().result.records.map((r) => r.row),
     [1],
   );
+  const subsetKey = read().result.key;
+  relation.bindings[0] = Object.fromEntries(
+    Object.entries(relation.bindings[0]).reverse(),
+  );
+  assert.notEqual(read().result.key, subsetKey); // Caller field order is visible in the result key.
+  delete relation.scope.rows[0]; // An incomplete mutable selection, then repaired in place.
+  assert.ok(read().error);
+  relation.scope.rows[0] = 0;
+  assert.equal(read().result.records[0].value.value, 60);
   relation.bindings[0].quantity = v;
   assert.match(read().error, /different model input/);
   relation.bindings[0].quantity = f;
+  relation.paired = false;
+  assert.match(read().error, /Confirm/);
+  relation.paired = true;
   const prior = read();
   page.dataRelations.pop();
   assert.deepEqual(select(page), {});
   page.dataRelations.push(relation);
   assert.notEqual(read(), prior); // Removed relations are not retained for Undo.
 }
+// Explicit preview mapping, including a new requirement and its transitive
+// dependencies. A previous closure alone cannot notice names entering scope.
+{
+  const page = structuredClone(s.state),
+    select = createDatasetStatesSelector(),
+    read = () =>
+      againstCold(page, binding, select(page, [binding])[binding.id]),
+    bound = { id: "bound", text: "allowed := threshold" },
+    threshold = { id: "threshold", text: "threshold := 90 W" },
+    extra = { id: "extra-limit", text: "P < allowed" };
+  assert.equal(read().result.requirements.length, 1);
+  page.regions.push(extra, bound);
+  const missing = read();
+  assert.match(missing.error, /Bind threshold/);
+  page.regions.push({ id: "unrelated", text: "Another note" });
+  project(page);
+  resetEvaluationWork();
+  assert.equal(select(page, [binding])[binding.id], missing);
+  assert.deepEqual(evaluationWork(), noWork);
+  page.regions.push(threshold);
+  const before = read().result;
+  assert.equal(before.records[1].conditions[extra.id], false);
+  threshold.mathVersion = 3;
+  assert.notEqual(read().result.key, before.key); // Same text and value, different version.
+  threshold.text = "threshold := 100 W";
+  assert.equal(read().result.records[1].conditions[extra.id], true);
+  page.regions.push({ ...threshold, id: "other-threshold" });
+  assert.match(read().error, /threshold is ambiguous/);
+  page.regions.pop();
+  page.links = { [bound.id]: { threshold: output } };
+  assert.match(read().error, /Linked threshold is unavailable/);
+  page.links[bound.id].threshold = threshold.id;
+  assert.equal(read().result.requirements.length, 2);
+  page.regions.unshift(page.regions.splice(page.regions.indexOf(extra), 1)[0]);
+  assert.deepEqual(
+    read().result.requirements.map((r) => r.id),
+    [extra.id, limit],
+  );
+  threshold.text = "renamed := 100 W";
+  assert.match(read().error, /Linked threshold is unavailable/);
+  extra.text = "renamed < allowed";
+  assert.equal(read().result.requirements.length, 1);
+  extra.text = "P < allowed";
+  // A bad CSV masks the graph error, until the source is repaired.
+  const csv = page.regions.find((r) => r.id === dataset).data;
+  csv.csv = 'force,speed\n"unfinished';
+  assert.match(read().error, /CSV quote/);
+  csv.csv = "force,speed\n20,3";
+  assert.match(read().error, /Linked threshold/);
+  threshold.text = "threshold := 100 W";
+  assert.equal(read().result.records[0].pass, true);
+}
 console.log(
-  "Dataset state reuse, source and model invalidation, diagnostics and recovery pass.",
+  "Dataset state reuse, source and model invalidation, diagnostics and cold recovery pass.",
 );
 
 // Unit fields describe a measurement, not an equation. Both use paths must
@@ -356,6 +464,15 @@ for (const [unit, raw, value, dimension, absolute = false] of [
       assert.equal(!!quantity.absolute, absolute, unit);
     }
     assert.deepEqual(projection.bindings[input] || {}, {}, unit);
+    if (unit === "°C") {
+      const page = structuredClone(session.state),
+        select = createDatasetStatesSelector(),
+        read = () =>
+          againstCold(page, relation, select(page, [relation])[relation.id]);
+      assert.ok(read().result.records[0].value.absolute);
+      page.regions.find((r) => r.id === input).text = `observed := ${raw} K`;
+      assert.match(read().error, /units for observed/); // Same dimension, not absolute.
+    }
     session.bindDataset(relation);
     const decoded = await decodeWorkspace(archive(session.native()));
     const reopened = new RegionSession(decoded.page);

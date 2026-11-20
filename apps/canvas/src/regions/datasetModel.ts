@@ -13,7 +13,12 @@ import {
 import { immutable } from "../notebook/immutable.ts";
 import { project, type Page, type Projection } from "./document.ts";
 import { deeplyFrozen, sameJson } from "./immutableJson.ts";
-import { readCsv, measurementUnit, numericCell } from "./dataSources.ts";
+import {
+  readCsv,
+  measurementUnit,
+  numericCell,
+  type CsvData,
+} from "./dataSources.ts";
 export type DatasetComputation = {
   id: string;
   dataset: string;
@@ -43,19 +48,35 @@ export function evaluateDataset(
   relation: DatasetComputation,
   context = page.active,
 ) {
-  return evaluateRelation(page, relation, context);
+  return evaluateRelation(
+    sourceFor(page, relation),
+    relation,
+    context,
+    modelFor(page, relation, context),
+  );
 }
-function evaluateRelation(
+function sourceFor(page: Page, relation: DatasetComputation) {
+  const data = page.regions.find((r) => r.id === relation.dataset)?.data;
+  // Snapshot the two actual inputs to readCsv, even for mutable caller data.
+  return data && { name: data.name, csv: data.csv };
+}
+function modelFor(
   page: Page,
   relation: DatasetComputation,
   context: string,
   worksheet?: Projection,
 ) {
-  const source = page.regions.find((r) => r.id === relation.dataset)?.data;
-  if (!source) throw Error("The source dataset is unavailable.");
-  const table = readCsv(source),
-    p = worksheet ?? project(page, context),
-    output = p.statements.get(relation.output);
+  try {
+    return resolveModel(page, relation, worksheet ?? project(page, context));
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+/** Re-resolve against the current worksheet, not just IDs found last time:
+ * even a newly ambiguous name or a newly applicable limit matters. Return all
+ * worksheet inputs to row evaluation as data; no CSV reads or reparsing here. */
+function resolveModel(page: Page, relation: DatasetComputation, p: Projection) {
+  const output = p.statements.get(relation.output);
   if (
     !output ||
     output.relation !== "=" ||
@@ -119,6 +140,72 @@ function evaluateRelation(
     ([, s]) => s.relation !== "=" && s.name === output.name,
   );
   for (const [id] of requirements) visit(id);
+  return {
+    output: output.name,
+    symbols,
+    // The scalar value is overridden per row. Its *solved* units, including
+    // absence and absolute temperature, still gate the mapping.
+    boundUnits: symbols.map((symbol) => {
+      const q = p.solved.values.get(symbol);
+      return q && { dimension: q.dimension, absolute: !!q.absolute };
+    }),
+    definitions: page.regions
+      .filter((r) => required.has(r.id))
+      .map(({ id, mathVersion }) => ({ id, text: p.texts[id], mathVersion })),
+    requirements: requirements.map(([id, s]) => ({
+      id,
+      text: s.raw,
+      relation: s.relation as Exclude<Statement["relation"], "=">,
+    })),
+    assumptions: [...required]
+      .filter(
+        (id) =>
+          id !== relation.output && !requirements.some(([rid]) => rid === id),
+      )
+      .map((id) => p.texts[id]),
+  };
+}
+function evaluateRelation(
+  source: CsvData | undefined,
+  relation: DatasetComputation,
+  context: string,
+  model: ReturnType<typeof modelFor>,
+) {
+  // Preserve source/CSV diagnostics ahead of model and row diagnostics.
+  if (!source) throw Error("The source dataset is unavailable.");
+  const table = readCsv(source);
+  if ("error" in model) throw Error(model.error);
+  return {
+    records: evaluateRows(table, relation, model),
+    output: model.output,
+    requirements: model.requirements.map(({ id, text }) => ({ id, text })),
+    assumptions: model.assumptions,
+    key: JSON.stringify([
+      source.csv,
+      model.definitions.map(({ id, text, mathVersion }) => [
+        id,
+        text,
+        ...(mathVersion ? [mathVersion] : []),
+      ]),
+      relation.dataset,
+      relation.output,
+      relation.bindings,
+      relation.scope,
+      context,
+    ]),
+  };
+}
+function evaluateRows(
+  table: ReturnType<typeof readCsv>,
+  relation: DatasetComputation,
+  {
+    symbols,
+    boundUnits,
+    definitions,
+    output,
+    requirements,
+  }: ReturnType<typeof resolveModel>,
+): DataRecord[] {
   const rows =
     relation.scope.kind === "all"
       ? table.rows.map((_, i) => i)
@@ -137,7 +224,7 @@ function evaluateRelation(
         `Specify units for ${table.headers[b.column]} (1 for dimensionless).`,
       );
     const q = measurementUnit(b.unit);
-    const existing = p.solved.values.get(symbols[i]);
+    const existing = boundUnits[i];
     if (
       existing &&
       (!same(q.dimension, existing.dimension) ||
@@ -148,10 +235,9 @@ function evaluateRelation(
       );
     return { one: q, zero: q.absolute ? q.value - 1 : 0 };
   });
-  const definitions = page.regions.filter((r) => required.has(r.id)),
-    prepared = definitions.map((r) =>
-      prepareCalculation(r.id, p.texts[r.id], r.mathVersion ?? 1),
-    );
+  const prepared = definitions.map(({ id, text, mathVersion }) =>
+    prepareCalculation(id, text, mathVersion ?? 1),
+  );
   let previousRow: CalculationState | undefined;
   const records: DataRecord[] = rows.map((row) => {
     const overrides: Record<string, Quantity> = {};
@@ -176,10 +262,10 @@ function evaluateRelation(
     });
     previousRow = solvePrepared(prepared, overrides, previousRow);
     const { solved } = previousRow,
-      value = solved.values.get(output.name);
+      value = solved.values.get(output);
     const error =
       solved.errors.get(relation.output) ||
-      requirements.map(([id]) => solved.errors.get(id)).find(Boolean);
+      requirements.map(({ id }) => solved.errors.get(id)).find(Boolean);
     if (!value || error)
       throw Error(
         `Row ${row + 1}: ${error || "The relationship did not produce a result."}`,
@@ -189,19 +275,16 @@ function evaluateRelation(
       value,
       inputs: overrides,
       limits: Object.fromEntries(
-        requirements.map(([id, s]) => [
+        requirements.map(({ id, relation }) => [
           id,
-          {
-            bound: solved.constraints.get(id)!.bound,
-            relation: s.relation as Exclude<Statement["relation"], "=">,
-          },
+          { bound: solved.constraints.get(id)!.bound, relation },
         ]),
       ),
       conditions: Object.fromEntries(
-        requirements.map(([id]) => [id, !!solved.constraints.get(id)?.pass]),
+        requirements.map(({ id }) => [id, !!solved.constraints.get(id)?.pass]),
       ),
       pass: requirements.length
-        ? requirements.every(([id]) => solved.constraints.get(id)?.pass)
+        ? requirements.every(({ id }) => solved.constraints.get(id)?.pass)
         : undefined,
     };
   });
@@ -214,30 +297,7 @@ function evaluateRelation(
     )
   )
     throw Error("The model's output units vary between records.");
-  return {
-    records,
-    output: output.name,
-    requirements: requirements.map(([id, s]) => ({ id, text: s.raw })),
-    assumptions: [...required]
-      .filter(
-        (id) =>
-          id !== relation.output && !requirements.some(([rid]) => rid === id),
-      )
-      .map((id) => p.texts[id]),
-    key: JSON.stringify([
-      source.csv,
-      definitions.map((r) => [
-        r.id,
-        p.texts[r.id],
-        ...(r.mathVersion ? [r.mathVersion] : []),
-      ]),
-      relation.dataset,
-      relation.output,
-      relation.bindings,
-      relation.scope,
-      context,
-    ]),
-  };
+  return records;
 }
 
 export type DatasetState = Readonly<
@@ -247,13 +307,40 @@ export type DatasetState = Readonly<
 export type DatasetStates = Readonly<Record<string, DatasetState>>;
 const emptyStates: DatasetStates = Object.freeze({});
 
+// The public result key serializes bindings and scope in caller field order.
+// Compare their JSON data exactly without serializing either side on a hit.
+function sameMapping(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length)
+      return false;
+    for (let i = 0; i < a.length; i++)
+      if (
+        Object.hasOwn(a, i) !== Object.hasOwn(b, i) ||
+        !sameMapping(a[i], b[i])
+      )
+        return false;
+    return true;
+  }
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  const left = Object.entries(a),
+    right = Object.entries(b);
+  return (
+    left.length === right.length &&
+    left.every(
+      ([key, value], i) =>
+        key === right[i][0] && sameMapping(value, right[i][1]),
+    )
+  );
+}
+
 /** Disposable derivation for one canvas (or its mapping preview). Keep only the
  * current relations, never a row cache indexed by every past page or mapping. */
 export function createDatasetStatesSelector() {
   type Entry = {
     relation: DatasetComputation;
-    name?: string;
-    csv?: string;
+    source?: CsvData;
+    model: ReturnType<typeof modelFor>;
     state: DatasetState;
   };
   let entries = new Map<string, Entry>(),
@@ -275,7 +362,8 @@ export function createDatasetStatesSelector() {
         : sameJson(frozenInputs, inputs)
           ? worksheet
           : project(page);
-    const reuse = projection === worksheet && context === page.active;
+    const sameWorksheet = !!projection && projection === worksheet,
+      sameContext = context === page.active;
     worksheet = projection;
     context = page.active;
     frozenInputs = projection && deeplyFrozen(page) ? inputs : undefined;
@@ -283,13 +371,17 @@ export function createDatasetStatesSelector() {
     const next = new Map<string, Entry>();
     let changed = relations.length !== entries.size;
     for (const relation of relations) {
-      const source = page.regions.find((r) => r.id === relation.dataset)?.data,
-        prior = reuse && entries.get(relation.id);
+      const source = sourceFor(page, relation),
+        prior = sameContext && entries.get(relation.id),
+        sameRelation = prior && sameMapping(prior.relation, relation),
+        model =
+          sameRelation && sameWorksheet
+            ? prior.model
+            : modelFor(page, relation, page.active, projection);
       if (
-        prior &&
-        prior.csv === source?.csv &&
-        prior.name === source?.name &&
-        sameJson(prior.relation, relation)
+        sameRelation &&
+        sameJson(prior.source, source) &&
+        sameJson(prior.model, model)
       ) {
         next.set(relation.id, prior);
         continue;
@@ -298,15 +390,15 @@ export function createDatasetStatesSelector() {
       let state: DatasetState;
       try {
         state = immutable({
-          result: evaluateRelation(page, relation, page.active, projection),
+          result: evaluateRelation(source, relation, page.active, model),
         });
       } catch (e) {
         state = Object.freeze({ error: (e as Error).message });
       }
       next.set(relation.id, {
         relation: deeplyFrozen(relation) ? relation : structuredClone(relation),
-        name: source?.name,
-        csv: source?.csv,
+        source,
+        model,
         state,
       });
     }
