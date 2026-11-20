@@ -457,7 +457,6 @@ export function resolveCommands(
           { view: artifact.id, keywords: ["plot", "response", "open"] },
         );
       add("quantity.connect", "Connect", "connect", "connect", {
-        toolbar: t.kind === "equation" ? "Connect" : undefined,
         unavailable: missing,
         preview:
           "Open connection choices and review their meaning, units and scope before acceptance.",
@@ -477,13 +476,15 @@ export function resolveCommands(
         "inspect",
         {
           toolbar:
-            t.kind === "quantity"
-              ? "Find uses"
-              : t.kind === "term"
+            t.kind === "equation"
+              ? "Trace"
+              : t.kind === "quantity"
                 ? "Find uses"
-                : ["result", "plot"].includes(t.kind)
-                  ? "Inspect source"
-                  : undefined,
+                : t.kind === "term"
+                  ? "Find uses"
+                  : ["result", "plot"].includes(t.kind)
+                    ? "Inspect source"
+                    : undefined,
           unavailable: missing,
           keywords: ["inspect", "trace", "source", "uses"],
         },
@@ -720,7 +721,7 @@ export function toolbarCommands(commands: CanvasCommand[], kind: CommandKind) {
         ? ["definition.edit", "quantity.vary", "quantity.trace"]
         : kind === "dataset"
           ? ["dataset.inspect", "dataset.connect", "dataset.visualize"]
-          : ["definition.edit", "response.plot", "quantity.connect"];
+          : ["definition.edit", "response.plot", "quantity.trace"];
   return order
     .flatMap((id) =>
       commands.filter((command) => command.id === id && command.toolbarLabel),

@@ -227,7 +227,7 @@ try {
       "Select / Edit",
       "Pen",
       "Shapes",
-      "Drawing label",
+      "Diagram label",
       "More drawing tools",
     ]) {
       const bounds = await tool(name).boundingBox();
@@ -245,7 +245,10 @@ try {
     await chooseDrawingTool(page, "Ellipse");
     await expect(tool("Shapes")).toHaveAttribute("data-active", "true");
     await chooseDrawingTool(page, "Highlighter");
-    await expect(tool("More drawing tools")).toHaveAttribute(
+    await expect(tool("More drawing tools: Highlighter")).toHaveText(
+      "Highlighter",
+    );
+    await expect(tool("More drawing tools: Highlighter")).toHaveAttribute(
       "data-active",
       "true",
     );

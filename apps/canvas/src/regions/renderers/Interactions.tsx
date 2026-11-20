@@ -13,7 +13,8 @@ import React, {
   type ReactNode,
 } from "react";
 import { ArrowRight, GripVertical, X } from "lucide-react";
-import { display, unitLabel, type Quantity } from "../../notebook/math";
+import { worksheetInputUnit } from "../worksheetInputUnit";
+import { display, type Quantity } from "../../notebook/math";
 import {
   ancestors,
   curve,
@@ -80,6 +81,7 @@ function MiniResponse({
     output = p.statements.get(spec.output)!,
     q = p.solved.values.get(input.name),
     value = p.solved.values.get(output.name);
+  const unit = q && worksheetInputUnit(input, q);
   const finite = data.points.flatMap((pt) =>
     [pt.y, pt.limit].filter((v): v is number => v !== undefined),
   );
@@ -143,11 +145,10 @@ function MiniResponse({
           </>
         )}
         <text x={10} y={106}>
-          {short(q?.absolute ? spec.low - 273.15 : spec.low)}
+          {short(unit?.fromBase(spec.low) ?? spec.low)}
         </text>
         <text x={320} y={106} textAnchor="end">
-          {short(q?.absolute ? spec.high - 273.15 : spec.high)}{" "}
-          {q && unitLabel(q)}
+          {short(unit?.fromBase(spec.high) ?? spec.high)} {unit?.label}
         </text>
       </svg>
     </div>
@@ -260,7 +261,8 @@ export function InlineExploration({
   revert: () => void;
 }) {
   const at = useAnchor(anchor, proposal.input);
-  const name = accepted.statements.get(proposal.input)?.name || "?";
+  const input = accepted.statements.get(proposal.input);
+  const previous = input && accepted.solved.values.get(input.name);
   const invalid = [...current.errors].some(
     ([id]) =>
       id === proposal.input || ancestors(current, id).includes(proposal.input),
@@ -269,7 +271,10 @@ export function InlineExploration({
   return (
     <aside className="er-inline-change" style={at} aria-label="Pending value">
       <span title="Accepted value">
-        was {shown(accepted.solved.values.get(name))}
+        was{" "}
+        {previous
+          ? worksheetInputUnit(input, previous).format(previous.value)
+          : "Unresolved"}
       </span>
       <button onClick={revert}>Revert</button>
       <button

@@ -55,7 +55,7 @@ try {
     await expect(toolbar.getByRole("button")).toHaveText([
       "Edit",
       "Plot",
-      "Connect",
+      "Trace",
       "",
     ]);
     const initial = (await saved()).page;

@@ -113,7 +113,23 @@ console.log(
   "Exploration: transient linked values and requirements, atomic alternative/Undo, invalid and stale recovery, finite bounds and affine units pass.",
 );
 
-// Vary writes canonical SI labels back to source. Compound labels must retain
+// Vary preserves authored suffixes, including scaled inputs, in proposals without changing base-unit evaluation.
+for (const [name, unit, base] of [
+  ["voltage", "V", 1],
+  ["distance", "mm", 0.001],
+  ["rate", "kW", 1000],
+]) {
+  const input = add(`${name} := 12 ${unit}`);
+  const next = proposeValue(session.state, input, 14 * base);
+  assert.equal(next.text, `${name} := 14 ${unit}`);
+  assert.equal(
+    project(previewPage(session.state, next)).solved.values.get(name).value,
+    14 * base,
+  );
+  assert.equal(project(session.state).solved.values.get(name).value, 12 * base);
+}
+
+// Compound labels must retain
 // explicit unit meaning, including a symbol also used by a worksheet variable.
 for (const unit of ["A*ohm", "1/(V*A)", "rad/s", "A*s", "min", "V*A", "°C"]) {
   const imported = new RegionSession();

@@ -3,6 +3,7 @@ import { useValueGesture } from "../interaction/useValueGesture";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Code2, GripVertical, MoreHorizontal, X } from "lucide-react";
 import { display, passes } from "../../notebook/math";
+import { worksheetInputUnit } from "../worksheetInputUnit";
 import { measurementMapping } from "../datasetModel";
 import { useDatasetStates } from "../app/useDatasetStates";
 import type { DataSelection } from "./DatasetViews";
@@ -414,7 +415,7 @@ function ArtifactPresentationView({
   const path = (data: readonly (readonly [number, number])[]) =>
     data.map(([x, y], i) => `${i ? "L" : "M"}${px(x)},${py(y)}`).join(" ");
   const fmt = (n: number) => Number(n.toPrecision(5)).toString();
-  const xDisplay = (n: number) => n - (resolved?.xq.absolute ? 273.15 : 0);
+  const xDisplay = (n: number) => resolved?.inputUnit.fromBase(n) ?? n;
   const liveX = live?.xq.value,
     liveY = live && scalarY(live.yq);
   const contextLabel = page.contexts.find((c) => c.id === page.active)?.label;
@@ -908,7 +909,9 @@ function ArtifactPresentationView({
                   aria-valuemin={xDisplay(a.low)}
                   aria-valuemax={xDisplay(a.high)}
                   aria-valuenow={xDisplay(liveX)}
-                  aria-valuetext={live ? display(live.xq) : undefined}
+                  aria-valuetext={
+                    live && resolved?.inputUnit.format(live.xq.value)
+                  }
                   className={`er-design-point ${ownFocus?.target === "point" ? "is-selected" : ""} ${isPreview ? "is-preview" : ""}`}
                   transform={`translate(${px(liveX)} ${py(liveY)})`}
                   onPointerDown={(e) => {
@@ -1192,7 +1195,7 @@ function ArtifactPresentationView({
                           key={id}
                           onClick={() => select("input", undefined, id)}
                         >
-                          {s!.name} = {display(q)}
+                          {s!.name} = {worksheetInputUnit(s, q).format(q.value)}
                         </button>
                       )
                     );
@@ -1209,7 +1212,8 @@ function ArtifactPresentationView({
           {baseline && live ? (
             <>
               <span className="er-baseline-key">
-                {baseLabel} · {display(baseline.xq)} · {display(baseline.yq)}
+                {baseLabel} · {baseline.inputUnit.format(baseline.xq.value)} ·{" "}
+                {display(baseline.yq)}
               </span>
               <span className="er-alternative-key">
                 {contextLabel} · Δ{resolved?.y.name}{" "}

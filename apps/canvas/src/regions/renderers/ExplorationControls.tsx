@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { display, unitLabel } from "../../notebook/math";
+import { display } from "../../notebook/math";
+import { worksheetInputUnit } from "../worksheetInputUnit";
 import { ancestors, type Projection } from "../document";
 import {
   boundedValue,
@@ -36,20 +37,21 @@ export function ExplorationControls({
 }) {
   const name = accepted.statements.get(proposal.input)!.name;
   const original = accepted.solved.values.get(name)!;
-  const offset = original.absolute ? 273.15 : 0;
-  const [value, setValue] = useState(number(proposal.value - offset));
+  const unit = worksheetInputUnit(
+    accepted.statements.get(proposal.input),
+    original,
+  );
+  const shown = number(unit.fromBase(proposal.value));
+  const [value, setValue] = useState(shown);
   const [limits, setLimits] = useState({
-    low: number(range.low - offset),
-    high: number(range.high - offset),
-    step: number(range.step),
+    low: number(unit.fromBase(range.low)),
+    high: number(unit.fromBase(range.high)),
+    step: number(range.step / unit.scale),
   });
   const [error, setError] = useState("");
   const [rangeError, setRangeError] = useState("");
   const at = useAnchor(anchor, proposal.input, 350, 410);
-  useEffect(
-    () => setValue(number(proposal.value - offset)),
-    [proposal.value, offset],
-  );
+  useEffect(() => setValue(shown), [shown]);
   const affected = [...current.statements].filter(
     ([id]) =>
       id !== proposal.input && ancestors(current, id).includes(proposal.input),
@@ -64,9 +66,9 @@ export function ExplorationControls({
       if (Object.values(next).some((v) => !v.trim()))
         throw Error("Complete the exploration range and step.");
       const range = {
-        low: Number(next.low) + offset,
-        high: Number(next.high) + offset,
-        step: Number(next.step),
+        low: unit.toBase(Number(next.low)),
+        high: unit.toBase(Number(next.high)),
+        step: Number(next.step) * unit.scale,
       };
       const value = boundedValue(proposal.value, range);
       changeRange(range);
@@ -78,14 +80,14 @@ export function ExplorationControls({
   };
   const commitValue = () => {
     try {
-      if (value === number(proposal.value - offset)) {
+      if (value === shown) {
         setError("");
         return;
       }
       if (!value.trim()) throw Error("Enter a finite value.");
-      const next = boundedValue(Number(value) + offset, range);
+      const next = boundedValue(unit.toBase(Number(value)), range);
       change(next);
-      setValue(number(next - offset));
+      setValue(number(unit.fromBase(next)));
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -126,17 +128,18 @@ export function ExplorationControls({
             }}
           />
         </label>
-        <span>{unitLabel(original)}</span>
-        <small>was {display(original)}</small>
+        <span>{unit.label}</span>
+        <small>was {unit.format(original.value)}</small>
       </div>
       <input
         aria-label={`Vary ${name}`}
         type="range"
-        min={range.low}
-        max={range.high}
+        min={unit.fromBase(range.low)}
+        max={unit.fromBase(range.high)}
         step="any"
-        value={proposal.value}
-        onChange={(e) => change(Number(e.target.value))}
+        value={unit.fromBase(proposal.value)}
+        aria-valuetext={unit.format(proposal.value)}
+        onChange={(e) => change(unit.toBase(Number(e.target.value)))}
         onKeyDown={(e) => {
           if (
             ["ArrowLeft", "ArrowDown", "ArrowRight", "ArrowUp"].includes(e.key)
@@ -176,8 +179,8 @@ export function ExplorationControls({
         ))}
       </div>
       <small>
-        Exploration range in {unitLabel(original) || "dimensionless units"} ·
-        Shift for finer steps
+        Exploration range in {unit.label || "dimensionless units"} · Shift for
+        finer steps
       </small>
       <div className="er-explore-effects" aria-label="Exploration effects">
         {affected.length ? (

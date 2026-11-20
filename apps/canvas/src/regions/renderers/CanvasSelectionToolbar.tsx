@@ -1,100 +1,99 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
-import type { CanvasRect } from "../selection";
-import { canvasZoom } from "../interaction/canvasViewport";
+import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { touches, type CanvasRect } from "../selection";
+import { canvasScroll, canvasZoom } from "../interaction/canvasViewport";
 
-/** Keep selection actions outside the selected content whenever viewport space permits. */
+/** Float in unused space near the selection; in a crowded viewport reserve a shelf outside the paper. */
 export function CanvasSelectionToolbar({
   bounds,
+  obstacles,
+  canvas,
   zoom,
   children,
   onEscape,
 }: {
   bounds: CanvasRect;
+  obstacles: readonly CanvasRect[];
+  canvas: RefObject<HTMLDivElement | null>;
   zoom: number;
   children: ReactNode;
   onEscape: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const toolbar = ref.current;
-    const paper = toolbar?.closest<HTMLElement>(".er-paper");
-    const canvas = toolbar?.closest<HTMLElement>(".er-canvas");
-    if (!toolbar || !paper || !canvas) return;
+    const toolbar = ref.current,
+      view = canvas.current,
+      host = toolbar?.parentElement;
+    if (!toolbar || !view || !host) return;
     const place = () => {
-      const scale = canvasZoom(canvas, zoom);
-      const viewport = canvas.getBoundingClientRect();
-      const origin = paper.getBoundingClientRect();
-      const margin = 12,
-        gap = 8;
-      toolbar.style.maxWidth = `${Math.max(1, canvas.clientWidth - 2 * margin)}px`;
-      const size = toolbar.getBoundingClientRect();
-      const left = viewport.left + margin,
-        top = viewport.top + margin,
-        right = viewport.left + canvas.clientWidth - margin,
-        bottom = viewport.top + canvas.clientHeight - margin;
-      const selection = {
-        x: origin.left + bounds.x * scale,
-        y: origin.top + bounds.y * scale,
-        width: bounds.width * scale,
-        height: bounds.height * scale,
-      };
-      let x = selection.x,
-        y = selection.y - size.height - gap;
-      if (y < top) {
-        const below = selection.y + selection.height + gap;
-        if (below + size.height <= bottom) y = below;
-        else if (selection.x + selection.width + gap + size.width <= right) {
-          x = selection.x + selection.width + gap;
-          y = selection.y;
-        } else if (selection.x - gap - size.width >= left) {
-          x = selection.x - gap - size.width;
-          y = selection.y;
-        }
-      }
-      x = Math.max(left, Math.min(x, right - size.width));
-      y = Math.max(top, Math.min(y, bottom - size.height));
-      toolbar.style.left = `${(x - origin.left) / scale}px`;
-      toolbar.style.top = `${(y - origin.top) / scale}px`;
+      const scale = canvasZoom(view, zoom),
+        scroll = canvasScroll(view);
+      const margin = 8,
+        gap = 12,
+        width = toolbar.offsetWidth,
+        height = toolbar.offsetHeight;
+      // Measure the whole host, not the shortened viewport when the shelf is docked.
+      const right = host.clientWidth - width - margin,
+        bottom = host.clientHeight - height - margin;
+      const sx = bounds.x * scale - scroll.x,
+        sy = bounds.y * scale - scroll.y;
+      const x = Math.max(margin, Math.min(right, sx));
+      const candidates = [
+        { x, y: sy - height - gap },
+        { x, y: sy + bounds.height * scale + gap },
+        { x: sx + bounds.width * scale + gap, y: sy },
+        { x: sx - width - gap, y: sy },
+      ];
+      const free = candidates.find(({ x, y }) => {
+        if (x < margin || x > right || y < margin || y > bottom) return false;
+        const world = {
+          x: (x + scroll.x - 3) / scale,
+          y: (y + scroll.y - 3) / scale,
+          width: (width + 6) / scale,
+          height: (height + 6) / scale,
+        };
+        return (
+          !touches(world, bounds) &&
+          !obstacles.some((frame) => touches(world, frame))
+        );
+      });
+      toolbar.toggleAttribute("data-docked", !free);
+      toolbar.style.left = free ? `${free.x}px` : "";
+      toolbar.style.top = free ? `${free.y}px` : "";
     };
     place();
     const observer = new ResizeObserver(place);
     observer.observe(toolbar);
-    observer.observe(canvas);
-    canvas.addEventListener("scroll", place);
-    canvas.addEventListener("canvaszoom", place);
+    observer.observe(host);
+    view.addEventListener("scroll", place);
+    view.addEventListener("canvaszoom", place);
     return () => {
       observer.disconnect();
-      canvas.removeEventListener("scroll", place);
-      canvas.removeEventListener("canvaszoom", place);
+      view.removeEventListener("scroll", place);
+      view.removeEventListener("canvaszoom", place);
     };
-  }, [bounds, zoom]);
+  }, [bounds, obstacles, canvas, zoom]);
   return (
     <div
       ref={ref}
+      role="toolbar"
+      aria-label="Canvas selection"
       className="er-selection-tools"
       data-canvas-controls=""
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.preventDefault();
         event.stopPropagation();
-        const details =
-          ref.current?.querySelector<HTMLDetailsElement>("details[open]");
-        if (details) {
-          details.open = false;
-          details.querySelector("summary")?.focus();
+        const more =
+          event.currentTarget.querySelector<HTMLDetailsElement>(
+            "details[open]",
+          );
+        if (more) {
+          more.open = false;
+          more.querySelector("summary")?.focus();
         } else {
           onEscape();
-          ref.current
-            ?.closest<HTMLElement>(".er-canvas")
-            ?.focus({ preventScroll: true });
+          canvas.current?.focus({ preventScroll: true });
         }
-      }}
-      role="toolbar"
-      aria-label="Canvas selection"
-      style={{
-        transform: `scale(calc(1 / var(--canvas-zoom, ${zoom})))`,
-        flexWrap: "wrap",
-        boxSizing: "border-box",
       }}
     >
       {children}

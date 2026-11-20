@@ -94,7 +94,7 @@ const toolbar = toolbarCommands(commands, "equation"),
   search = searchCommands(commands, "plot response", []);
 assert.deepEqual(
   toolbar.map((c) => c.id),
-  ["definition.edit", "response.plot", "quantity.connect"],
+  ["definition.edit", "response.plot", "quantity.trace"],
 );
 assert.deepEqual(
   marking.map((c) => c?.id),

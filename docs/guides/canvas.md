@@ -221,9 +221,8 @@ replace its default allowed origins and `--port` selects the port; stop it with 
 
 ## Commands and keyboard shortcuts
 
-The selection toolbar, the **Canvas actions** ellipsis beside Undo/Redo, right-click and Shift+F10 expose contextual actions.
-Use Ctrl/Cmd+K for command search. Equations offer editing, plotting, connections,
-alternatives and tracing; selections offer organization, grouping and model creation.
+Select an equation for **Edit**, **Plot** and **Trace**; **More** holds Duplicate and Delete. The toolbar avoids neighboring worksheet objects and docks below the canvas when no free space fits.
+Open **Actions** beside Undo/Redo, right-click, or press Shift+F10 for context commands. Editing, exploration, connections and inspection come first. **Plot options…** lists specific inputs and existing plots; **More actions…** holds exports and secondary commands. Number keys run the numbered items; Escape returns from a submenu. Ctrl/Cmd+K searches the full command set.
 Click **?** beside the zoom controls in the tools row for searchable **Keyboard shortcuts**
 reference, or search **help** / **Keyboard shortcuts** with the default Ctrl/⌘+K. Scope notes
 explain where keys apply. Escape closes the reference and restores focus; opening from the
@@ -254,7 +253,7 @@ button always remains available if keys are cleared.
 
 ## Copying images
 
-Select an equation, note, plot or other canvas object, then right-click → **Copy as PNG**.
+Select an equation, note, plot or other canvas object, then right-click → **More actions…** → **Copy as PNG**.
 Shift-click multiple objects to copy their arrangement together. The same command is
 available in Ctrl/Cmd+K command search. Ordinary text Copy is unchanged.
 
@@ -326,7 +325,7 @@ views and recent commands for the current session, along with engineering object
 
 Choose **Vary** on an assigned quantity to explore without changing saved values.
 Drag the value, use arrow keys, or use the contextual slider and value field. Set
-the exploration minimum, maximum and step in the displayed units; Shift makes
+the exploration minimum, maximum and step in the input’s authored units (for example, V or mm); plots use the same units. Shift makes
 smaller steps. The range controls exploration, not a physical requirement. Equations,
 following response plots and authored requirement margins show the proposed state.
 Choose **Accept value**, **Keep as alternative**, or **Cancel**. An alternative keeps
@@ -371,8 +370,8 @@ Search, Ask agent and **Download**. The row beneath groups Undo/Redo and canvas 
 selection/ink/shape tools, and View/Pan/Zoom/Help. **View** contains Reveal,
 named viewpoints and System overview. Scenario controls appear in a separate labelled
 strip when alternatives exist. The compact authoring toolbar keeps **Select**, **Pen**,
-**Shapes** and **Text** prominent. Shape variants live in the Shapes picker; highlighter,
-eraser and lasso are in **More drawing tools**. **Drawing style** appears for drawing
+**Shapes** and **Diagram label** prominent. Shape variants live in the Shapes picker; highlighter,
+eraser and lasso are in **More drawing tools**, which shows the active tool’s name and icon. **Drawing style** appears for drawing
 creation and affects new drawings, not the selected worksheet content. Drawing selection
 actions appear only with selected drawings. Controls wrap on narrow screens without
 hiding the document name. File, View and tool disclosures support Tab, Escape and
@@ -421,7 +420,7 @@ starts computation. Current native captures use V9; older V1–V8 files are supp
 Use the drawing toolbar below the header to sketch beside calculations. **Pen** and
 **More drawing tools → Highlighter** accept mouse or pen input; Pen retains stylus
 pressure where supported. Open **Shapes** for Line, Curve, Spline, Arrow, Rectangle, Ellipse and Visual
-connector. **Text** creates a drawing label, not an equation or worksheet note. Shift snaps line angles or constrains shapes to squares/circles. Drag a
+connector. **Diagram label** creates a drawing label, not an equation or worksheet note. Shift snaps line angles or constrains shapes to squares/circles. Drag a
 **Visual connector** between rectangles/ellipses: it stays attached as they move or
 resize, without creating a computational relationship.
 
@@ -449,8 +448,7 @@ reserved for their editing and inspection actions; use the move handle there.
 Double-click a label to edit it without switching to label creation; Enter
 accepts, Shift+Enter adds a line, and Escape cancels.
 
-The contextual selection toolbar keeps Duplicate, Delete and Group near the selected
-content. Organize, Connect and Make model are behind **More**. Mixed worksheet-region
+For multiple objects, the selection toolbar offers Duplicate, Delete and Group. Organize, Connect and Make model are behind **More**. Mixed worksheet-region
 and drawing duplication uses fresh identities and unique symbol names; internal
 bindings follow the copied definitions. Deletion refuses to break dependencies on
 unselected regions or live data/plot/artifact references. Other representation types

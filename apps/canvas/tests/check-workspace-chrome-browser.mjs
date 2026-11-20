@@ -116,6 +116,30 @@ try {
         .locator(".er-canvas")
         .evaluate((canvas) => canvas === window.__originalCanvas),
     ).toBe(true);
+    if (side === "left" || side === "right") {
+      const rail = page.locator(`.wc-toolbar-${side}`);
+      expect(await rail.evaluate((n) => n.scrollWidth <= n.clientWidth)).toBe(
+        true,
+      );
+      for (const name of [
+        "Pen",
+        "Open canvas actions",
+        "Fit page",
+        "Zoom in",
+        "Keyboard shortcuts",
+      ]) {
+        const control = rail.getByRole("button", { name, exact: true });
+        await control.scrollIntoViewIfNeeded();
+        expect(
+          await control.evaluate((n) => {
+            const b = n.getBoundingClientRect();
+            return n.contains(
+              document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2),
+            );
+          }),
+        ).toBe(true);
+      }
+    }
     if (side === "hidden") await expect(button("Select / Edit")).toBeHidden();
     else await expect(button("Select / Edit")).toBeVisible();
   }

@@ -1,5 +1,6 @@
 /** View-local proposals: existing arithmetic, no writes or evaluation receipts. */
-import { unitLabel, type Quantity } from "../notebook/math.ts";
+import type { Quantity } from "../notebook/math.ts";
+import { worksheetInputUnit } from "./worksheetInputUnit.ts";
 import {
   project,
   semanticKey,
@@ -47,16 +48,13 @@ export function proposeValue(
     !Number.isFinite(value)
   )
     throw Error("Choose a resolved assigned quantity to explore.");
-  const shown = q.absolute ? value - 273.15 : value;
-  const scientific = (s.mathVersion ?? 1) >= 2,
-    unit = unitLabel(q),
-    // A grouped suffix marks every factor as a unit, including names such as
-    // A that are also valid worksheet variables. Historical v1 source stays fixed.
-    suffix = scientific && /[·*/]/.test(unit) ? `(${unit})` : unit;
+  const unit = worksheetInputUnit(s, q),
+    shown = unit.fromBase(value);
+  const scientific = (s.mathVersion ?? 1) >= 2;
   const text =
     value === q.value
       ? p.texts[input]
-      : `${s.name} := ${scientific ? String(shown) : Number(shown.toPrecision(7))} ${suffix}`.trim();
+      : `${s.name} := ${scientific ? String(shown) : Number(shown.toPrecision(7))} ${unit.suffix}`.trim();
   return { input, context: page.active, key: semanticKey(page), text, value };
 }
 /** Layout changes preserve proposals; scenario or semantic changes make them stale. */

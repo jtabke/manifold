@@ -122,6 +122,7 @@ try {
       });
     await page.keyboard.press("Escape");
     await power.click({ button: "right", position: { x: 400, y: 25 } });
+    await item("More actions…").click();
     await item("Try alternative").click();
     expect((await saved()).page.contexts).toHaveLength(2);
     await expect(
@@ -153,6 +154,17 @@ try {
       .click();
     await expect(menu).toBeFocused();
     await expect(contextual).toBeVisible();
+    const triggerBox = await page
+      .getByRole("button", { name: "Open canvas actions", exact: true })
+      .boundingBox();
+    const menuBox = await contextual.boundingBox();
+    expect(menuBox.x).toBeCloseTo(triggerBox.x, 0);
+    expect(menuBox.y).toBeCloseTo(triggerBox.y + triggerBox.height + 5, 0);
+    await item("Plot options…").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(item("Plot against F")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(item("Plot options…")).toBeFocused();
     await page.keyboard.press("Home");
     await expect(item("Edit equation")).toBeFocused();
     await page.keyboard.press("Enter");
@@ -208,18 +220,26 @@ try {
     });
     const selectionLayout = () =>
       page.locator(".er-canvas").evaluate((canvas) => {
-        const viewport = canvas.getBoundingClientRect();
-        const toolbar = canvas
+        const viewport = canvas.parentElement.getBoundingClientRect();
+        const toolbar = canvas.parentElement
           .querySelector(".er-selection-tools")
           .getBoundingClientRect();
         const boxes = [...canvas.querySelectorAll(".er-selection-outline")].map(
           (node) => node.getBoundingClientRect(),
         );
         return {
-          top: Math.min(...boxes.map((box) => box.top)),
-          bottom: Math.max(...boxes.map((box) => box.bottom)),
-          toolbarTop: toolbar.top,
-          toolbarBottom: toolbar.bottom,
+          clear: [
+            ...boxes,
+            ...[...canvas.querySelectorAll(".er-region,.er-artifact")].map(
+              (n) => n.getBoundingClientRect(),
+            ),
+          ].every(
+            (b) =>
+              b.bottom <= toolbar.top ||
+              b.top >= toolbar.bottom ||
+              b.right <= toolbar.left ||
+              b.left >= toolbar.right,
+          ),
           inside:
             toolbar.left >= viewport.left &&
             toolbar.right <= viewport.right &&
@@ -231,10 +251,10 @@ try {
     await expect
       .poll(async () => {
         const layout = await selectionLayout();
-        return layout.inside && layout.toolbarBottom <= layout.top;
+        return layout.inside && layout.clear;
       })
       .toBe(true);
-    // Push the selection to the top edge: the toolbar must flip below it, not cover it.
+    // At the top edge, another row can also occupy the space below. Neither may be covered.
     const originalScroll = await page
       .locator(".er-canvas")
       .evaluate((canvas) => {
@@ -250,7 +270,7 @@ try {
     await expect
       .poll(async () => {
         const layout = await selectionLayout();
-        return layout.inside && layout.toolbarTop >= layout.bottom;
+        return layout.inside && layout.clear;
       })
       .toBe(true);
     await page.locator(".er-canvas").evaluate((canvas, top) => {

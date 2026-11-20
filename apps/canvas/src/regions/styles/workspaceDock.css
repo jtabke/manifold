@@ -60,31 +60,91 @@
 .wc-toolbar-left,
 .wc-toolbar-right {
   flex-shrink: 0;
-  max-width: 108px;
-  overflow: auto;
+  width: 76px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
   border-right: 1px solid var(--canvas-border);
 }
 :is(.wc-toolbar-left, .wc-toolbar-right) .wc-toolbar-host {
   flex-direction: column;
 }
-:is(.wc-toolbar-left, .wc-toolbar-right) .er-authoring-bar {
+:is(.wc-toolbar-left, .wc-toolbar-right)
+  :is(
+    .er-authoring-bar,
+    .drawing-toolbar,
+    .drawing-primary-tools,
+    .drawing-selection-actions,
+    .er-zoom
+  ) {
   flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-authoring-bar {
   padding: 4px;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-history-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--canvas-border);
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-history-tools > button {
+  width: auto;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-history-tools > button:last-child {
+  grid-column: 1 / -1;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .drawing-toolbar-host {
+  flex: none;
+  order: 0;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-view-tools {
+  margin: 0;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-zoom {
+  width: 100%;
 }
 :is(.wc-toolbar-left, .wc-toolbar-right)
   :is(
-    .er-history-tools,
-    .er-view-tools,
-    .drawing-toolbar-host,
-    .drawing-toolbar
+    .drawing-primary-tools > button,
+    .drawing-toolbar .er-command-menu > button,
+    .er-history-tools > button:last-child
   ) {
-  flex-wrap: wrap;
-  justify-content: center;
-  margin: 0;
+  flex-direction: column;
+  width: 100%;
+  height: auto;
+  gap: 1px;
+  padding: 3px 2px;
+  font-size: 10px;
+  line-height: 1.2;
 }
-:is(.wc-toolbar-left, .wc-toolbar-right) .er-history-tools {
-  padding: 0;
+:is(.wc-toolbar-left, .wc-toolbar-right)
+  .drawing-primary-tools
+  > button
+  > span {
+  display: inline;
+  white-space: normal;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-history-tools > button:last-child {
+  flex-direction: row;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right)
+  .er-command-menu
+  > button
+  > svg:last-child,
+:is(.wc-toolbar-left, .wc-toolbar-right) .drawing-hint {
+  display: none;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .drawing-selection-actions {
   border: 0;
+  padding: 0;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right) .drawing-selection-actions button {
+  font-size: 10px;
+  padding: 3px;
 }
 .wc-group {
   z-index: 1;

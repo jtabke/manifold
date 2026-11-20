@@ -49,6 +49,7 @@ import {
   unitLabel,
   same,
 } from "../notebook/math.ts";
+import { worksheetInputUnit } from "./worksheetInputUnit.ts";
 import {
   ancestors,
   effective,
@@ -146,7 +147,17 @@ export function names(page: Page, a: Artifact) {
     yq = p.solved.values.get(y.name);
   if (!xq || !yq || p.errors.has(a.input) || p.errors.has(a.output))
     throw Error("Resolve the source calculation to refresh this artifact.");
-  return { p, x, y, xq, yq, xUnit: unitLabel(xq), yUnit: unitLabel(yq) };
+  const inputUnit = worksheetInputUnit(x, xq);
+  return {
+    p,
+    x,
+    y,
+    xq,
+    yq,
+    inputUnit,
+    xUnit: inputUnit.label,
+    yUnit: unitLabel(yq),
+  };
 }
 export function makeArtifact(
   page: Page,

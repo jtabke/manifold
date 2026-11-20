@@ -15,6 +15,7 @@ export function CanvasCommandMenu({
   children,
   align = "left",
   active = false,
+  activeTool,
   description,
   closeOnAction = true,
 }: {
@@ -23,6 +24,7 @@ export function CanvasCommandMenu({
   children: ReactNode;
   align?: "left" | "right";
   active?: boolean;
+  activeTool?: string;
   description?: string;
   closeOnAction?: boolean;
 }) {
@@ -38,14 +40,25 @@ export function CanvasCommandMenu({
       const anchor = trigger.current?.getBoundingClientRect();
       const bounds = panel.current?.getBoundingClientRect();
       if (!anchor || !bounds) return;
-      const left =
-        align === "right" ? anchor.right - bounds.width : anchor.left;
+      const dock = trigger.current?.closest(".wc-toolbar-slot")?.classList;
+      const side =
+        dock?.contains("wc-toolbar-left") || dock?.contains("wc-toolbar-right");
+      const left = side
+        ? dock?.contains("wc-toolbar-left")
+          ? anchor.right + 6
+          : anchor.left - bounds.width - 6
+        : align === "right"
+          ? anchor.right - bounds.width
+          : anchor.left;
+      const top = side
+        ? anchor.top
+        : anchor.bottom + bounds.height + 8 > window.innerHeight &&
+            anchor.top >= bounds.height + 8
+          ? anchor.top - bounds.height - 8
+          : anchor.bottom + 8;
       setPosition({
         left: Math.max(8, Math.min(left, window.innerWidth - bounds.width - 8)),
-        top: Math.max(
-          8,
-          Math.min(anchor.bottom + 8, window.innerHeight - bounds.height - 8),
-        ),
+        top: Math.max(8, Math.min(top, window.innerHeight - bounds.height - 8)),
       });
     };
     place();
@@ -93,13 +106,13 @@ export function CanvasCommandMenu({
         type="button"
         title={description ?? label}
         data-active={active}
-        aria-label={label}
+        aria-label={active && activeTool ? `${label}: ${activeTool}` : label}
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen(!open)}
       >
         {icon}
-        <span>{label}</span>
+        <span>{(active && activeTool) || label}</span>
         <ChevronDown size={12} aria-hidden="true" />
       </button>
       {open && (

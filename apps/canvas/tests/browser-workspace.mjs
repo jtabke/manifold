@@ -117,7 +117,7 @@ export async function chooseDrawingTool(page, name) {
     ];
     await toolbar
       .getByRole("button", {
-        name: shapes.includes(name) ? "Shapes" : "More drawing tools",
+        name: shapes.includes(name) ? "Shapes" : /^More drawing tools(?:$|:)/,
         exact: true,
       })
       .click();

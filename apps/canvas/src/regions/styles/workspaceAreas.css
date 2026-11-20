@@ -125,6 +125,14 @@
   position: relative;
   border-radius: 0 0 6px 6px;
 }
+.mw-canvas-host {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.mw-canvas-host > .er-canvas {
+  flex: 1;
+}
 .mw-canvas-host,
 .mw-canvas-host > .er-canvas {
   width: 100%;

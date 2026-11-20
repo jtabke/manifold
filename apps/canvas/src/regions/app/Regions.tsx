@@ -41,7 +41,10 @@ import { useCanvasExploration } from "./useCanvasExploration";
 import { CommandPalette } from "../renderers/CommandPalette";
 import { CanvasNavigationControls } from "../renderers/CanvasNavigationControls";
 import { concepts } from "../renderers/paletteConcepts";
-import { presentCommand } from "../renderers/commandPresentation";
+import {
+  presentCommand,
+  compactContextActions,
+} from "../renderers/commandPresentation";
 import { MathLine } from "../renderers/MathLine";
 import {
   RegionEditor,
@@ -76,6 +79,7 @@ import {
   GripVertical,
   FilePlus2,
   Download,
+  ChevronDown,
   Sparkles,
   Layers,
   LayoutGrid,
@@ -114,6 +118,7 @@ import {
   commandSubject,
   resolveCommands,
   markingCommands,
+  toolbarCommands,
   searchCommands,
   requestedPlotCommand,
   workspaceCommands as resolveWorkspaceCommands,
@@ -2849,6 +2854,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     target?: string,
     mode: "pie" | "context" = "context",
     held = false,
+    anchor?: DOMRect,
   ) => {
     if (editing) {
       skipBlur.current = true;
@@ -2873,7 +2879,15 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setLinkMenu(undefined);
     setTerm(undefined);
     setOverlay("none");
-    setActionMenu({ x, y, target, held, mode, world: canvasPoint(x, y) });
+    setActionMenu({
+      x,
+      y,
+      target,
+      held,
+      mode,
+      world: canvasPoint(x, y),
+      anchor,
+    });
   };
   const commandContextFor = (
     id?: string,
@@ -3048,6 +3062,41 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setMessage((error as Error).message);
     }
   };
+  const quickContext =
+    selectionBounds &&
+    !editing &&
+    !marquee &&
+    !spatial.moving() &&
+    canvasSelection.length === 1 &&
+    page.regions.some((r) => r.id === canvasSelection[0])
+      ? commandContextFor(canvasSelection[0])
+      : undefined;
+  const quickCommands = quickContext
+    ? toolbarCommands(
+        resolveCommands(quickContext, dispatchCommand),
+        quickContext.target.kind,
+      )
+    : [];
+  const selectionEdits = (
+    <>
+      <button
+        title={selectionReason || "Duplicate selected objects · Ctrl/Cmd+D"}
+        disabled={!!selectionReason}
+        onClick={duplicateSelected}
+      >
+        Duplicate
+      </button>
+      <button
+        title={
+          selectionReason || "Delete selected objects · Undo restores them"
+        }
+        disabled={!!selectionReason}
+        onClick={deleteSelected}
+      >
+        Delete
+      </button>
+    </>
+  );
   const selectedContext = palette
     ? commandContextFor(
         selectedPlot?.output || selected || selectedId,
@@ -3160,6 +3209,18 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         ) && !menuCommands.some((item) => item.id === command.id),
     ),
   ].map((command) => presentCommand(command, executeCommand));
+  const listActions = [
+    ...actionMenuItems,
+    {
+      id: "ask-agent",
+      key: "ask-agent",
+      label: "Ask agent",
+      icon: <MessageSquare />,
+      run: () => {
+        if (actionMenu) openAssistant(actionMenu);
+      },
+    },
+  ];
   const primaryMenuItems = markingCommands(menuCommands).map(
     (command, index) =>
       command
@@ -3245,16 +3306,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   ? primaryMenuItems
                   : [
                       ...overlapActions,
-                      ...actionMenuItems,
-                      {
-                        id: "ask-agent",
-                        key: "ask-agent",
-                        label: "Ask agent",
-                        icon: <MessageSquare />,
-                        run: () => {
-                          openAssistant(actionMenu);
-                        },
-                      },
+                      ...(menuContext?.target.kind === "canvas"
+                        ? listActions
+                        : compactContextActions(listActions)),
                     ]
             }
             close={() => setActionMenu(undefined)}
@@ -3462,7 +3516,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               onClick={() => paletteOpen("search")}
             >
               <Search size={15} />
-              <kbd>{shortcutPreferences.bindings["search.open"][0] || "—"}</kbd>
+              <kbd>
+                {shortcutPreferences.bindings["search.open"][0]?.replace(
+                  "Mod",
+                  /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl",
+                ) || "—"}
+              </kbd>
             </button>
             <button
               ref={assistantButton}
@@ -3655,6 +3714,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 </button>
                 <button
                   aria-label="Open canvas actions"
+                  className="er-canvas-actions-trigger"
+                  aria-haspopup="menu"
+                  aria-expanded={!!actionMenu?.anchor}
                   title="Context actions · Right-click or Shift+F10"
                   onClick={(e) => {
                     const rect = canvas.current?.getBoundingClientRect();
@@ -3678,11 +3740,15 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         at.x,
                         at.y,
                         (hit && actionTarget(hit)) || selected,
+                        "context",
+                        false,
+                        e.currentTarget.getBoundingClientRect(),
                       );
                     }
                   }}
                 >
-                  <MoreHorizontal size={16} />
+                  <span>Actions</span>
+                  <ChevronDown size={13} />
                 </button>
               </div>
               <div
@@ -5012,131 +5078,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         style={{ left: 0, top: 0, borderWidth: 1 / zoom }}
                       />
                     )}
-                    {selectionBounds &&
-                      !editing &&
-                      !marquee &&
-                      !spatial.moving() && (
-                        <CanvasSelectionToolbar
-                          bounds={selectionBounds}
-                          zoom={zoom}
-                          onEscape={() => {
-                            setCanvasSelection([]);
-                            setSelected(undefined);
-                          }}
-                        >
-                          {canvasSelection.length > 1 && (
-                            <button
-                              aria-label="Move selected objects"
-                              title="Drag selection · Alt bypasses alignment"
-                              onPointerDown={(e) => {
-                                if (e.button !== 0 || !canvasSelection.length)
-                                  return;
-                                e.preventDefault();
-                                e.stopPropagation();
-                                e.currentTarget.setPointerCapture(e.pointerId);
-                                spatial.start(
-                                  canvasSelection[0],
-                                  e,
-                                  false,
-                                  canvasSelection,
-                                );
-                              }}
-                            >
-                              <GripVertical size={15} />
-                            </button>
-                          )}
-                          <span aria-live="polite">
-                            {selectedFrames.length} selected
-                          </span>
-                          <button
-                            title={
-                              selectionReason ||
-                              "Duplicate selected objects · Ctrl/Cmd+D"
-                            }
-                            disabled={!!selectionReason}
-                            onClick={duplicateSelected}
-                          >
-                            Duplicate
-                          </button>
-                          <button
-                            title={
-                              selectionReason ||
-                              "Delete selected objects · Undo restores them"
-                            }
-                            disabled={!!selectionReason}
-                            onClick={deleteSelected}
-                          >
-                            Delete
-                          </button>
-                          <button
-                            disabled={selectedFrames.length < 2}
-                            onClick={groupSelection}
-                          >
-                            Group
-                          </button>
-                          <details className="er-selection-more">
-                            <summary>More</summary>
-                            <div className="er-selection-more-actions">
-                              <button
-                                disabled={selectedFrames.length < 2}
-                                onClick={organizeSelection}
-                              >
-                                <LayoutGrid size={14} /> Organize
-                              </button>
-                              <button
-                                disabled={
-                                  !canvasSelection.some((id) =>
-                                    accepted.statements.has(id),
-                                  )
-                                }
-                                onClick={() =>
-                                  pickConnection(
-                                    undefined,
-                                    canvasSelection.length === 2
-                                      ? canvasSelection.find(
-                                          (id) =>
-                                            id !==
-                                            canvasSelection.find(
-                                              (id) =>
-                                                accepted.statements.get(id)
-                                                  ?.relation === "=" &&
-                                                !accepted.errors.has(id),
-                                            ),
-                                        )
-                                      : undefined,
-                                  )
-                                }
-                              >
-                                <Link2 size={13} />
-                                Connect
-                              </button>
-                              <button
-                                disabled={selectedFrames.some(
-                                  (f) => f.kind === "drawing",
-                                )}
-                                title={
-                                  selectedFrames.some(
-                                    (f) => f.kind === "drawing",
-                                  )
-                                    ? "Engineering models use worksheet objects, not decorative drawings."
-                                    : undefined
-                                }
-                                onClick={() =>
-                                  prepareModel(selectedFrames.map((f) => f.id))
-                                }
-                              >
-                                Make model
-                              </button>
-                            </div>
-                          </details>
-                          <button
-                            aria-label="Clear canvas selection"
-                            onClick={() => setCanvasSelection([])}
-                          >
-                            <X size={14} />
-                          </button>
-                        </CanvasSelectionToolbar>
-                      )}
+
                     {overlay === "dependencies" && !trials.expand && (
                       <svg
                         className="er-dependencies"
@@ -5896,6 +5838,123 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 </div>
               </div>
             </div>
+            {selectionBounds && !editing && !marquee && !spatial.moving() && (
+              <CanvasSelectionToolbar
+                bounds={selectionBounds}
+                obstacles={spatial.frames.filter(
+                  (f) => !hiddenObjects.has(f.id) && !spatial.closed.has(f.id),
+                )}
+                canvas={canvas}
+                zoom={zoom}
+                onEscape={() => {
+                  setCanvasSelection([]);
+                  setSelected(undefined);
+                }}
+              >
+                {canvasSelection.length > 1 && (
+                  <button
+                    aria-label="Move selected objects"
+                    title="Drag selection · Alt bypasses alignment"
+                    onPointerDown={(e) => {
+                      if (e.button !== 0 || !canvasSelection.length) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      canvas.current?.setPointerCapture(e.pointerId);
+                      spatial.start(
+                        canvasSelection[0],
+                        e,
+                        false,
+                        canvasSelection,
+                      );
+                    }}
+                  >
+                    <GripVertical size={15} />
+                  </button>
+                )}
+                <span aria-live="polite">
+                  {quickContext
+                    ? quickContext.target.symbol ||
+                      accepted.statements.get(quickContext.target.id || "")
+                        ?.name ||
+                      commandSubject(quickContext)
+                    : `${selectedFrames.length} selected`}
+                </span>
+                {quickContext
+                  ? quickCommands.map((command) => (
+                      <button
+                        key={command.key}
+                        data-command-id={command.id}
+                        disabled={!!command.unavailable}
+                        title={command.unavailable || command.preview}
+                        onClick={() => executeCommand(command)}
+                      >
+                        {command.toolbarLabel}
+                      </button>
+                    ))
+                  : selectionEdits}
+                {selectedFrames.length > 1 && (
+                  <button onClick={groupSelection}>Group</button>
+                )}
+                <details className="er-selection-more">
+                  <summary>More</summary>
+                  <div className="er-selection-more-actions">
+                    {quickContext && selectionEdits}
+                    {selectedFrames.length > 1 && (
+                      <button onClick={organizeSelection}>
+                        <LayoutGrid size={14} /> Organize
+                      </button>
+                    )}
+                    <button
+                      disabled={
+                        !canvasSelection.some((id) =>
+                          accepted.statements.has(id),
+                        )
+                      }
+                      onClick={() =>
+                        pickConnection(
+                          undefined,
+                          canvasSelection.length === 2
+                            ? canvasSelection.find(
+                                (id) =>
+                                  id !==
+                                  canvasSelection.find(
+                                    (id) =>
+                                      accepted.statements.get(id)?.relation ===
+                                        "=" && !accepted.errors.has(id),
+                                  ),
+                              )
+                            : undefined,
+                        )
+                      }
+                    >
+                      <Link2 size={13} />
+                      Connect
+                    </button>
+                    <button
+                      disabled={selectedFrames.some(
+                        (f) => f.kind === "drawing",
+                      )}
+                      title={
+                        selectedFrames.some((f) => f.kind === "drawing")
+                          ? "Engineering models use worksheet objects, not decorative drawings."
+                          : undefined
+                      }
+                      onClick={() =>
+                        prepareModel(selectedFrames.map((f) => f.id))
+                      }
+                    >
+                      Make model
+                    </button>
+                  </div>
+                </details>
+                <button
+                  aria-label="Clear canvas selection"
+                  onClick={() => setCanvasSelection([])}
+                >
+                  <X size={14} />
+                </button>
+              </CanvasSelectionToolbar>
+            )}
           </WorkspaceAreas>
         </WorkspaceDock>
         {spatial.error && (

@@ -447,11 +447,11 @@ try {
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".drawing-selection")).toBeVisible();
   await toolbar
-    .getByRole("button", { name: "Drawing label", exact: true })
+    .getByRole("button", { name: "Diagram label", exact: true })
     .focus();
   await page.keyboard.press("Enter");
   await expect(
-    toolbar.getByRole("button", { name: "Drawing label", exact: true }),
+    toolbar.getByRole("button", { name: "Diagram label", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await page.mouse.click(box.x + 500, box.y + 350);
   await expect(
@@ -632,7 +632,7 @@ try {
     "local recovery preserves geometry and attachments",
   );
   // Export accepts the pending ordinary label through the shared edit-buffer port.
-  await tool("Drawing label");
+  await tool("Diagram label");
   await page.mouse.click(box.x + 800, box.y + 600);
   await page
     .getByRole("textbox", { name: "Drawing label text" })

@@ -118,7 +118,7 @@ const tools = [
   ["arrow", "Arrow", MoveUpRight],
   ["rectangle", "Rectangle", Square],
   ["ellipse", "Ellipse", Circle],
-  ["text", "Drawing label", Type],
+  ["text", "Diagram label", Type],
   ["connector", "Visual connector", Workflow],
   ["area", "Scaled drawing area", Ruler],
 ] as const;
@@ -875,10 +875,18 @@ function useDrawingCanvas(
             : tool === "pen"
               ? "Draw, then hold still to preview a line, circle or rectangle."
               : tool === "select"
-                ? "Drag selected objects to move · Double-click to edit · Shift-click adds · Escape clears"
+                ? "Click blank canvas to write · Drag selected objects to move · Double-click to edit · Shift-click adds · Escape clears"
                 : tool === "connector"
                   ? "Drag between shapes · visual only"
-                  : "Space-drag to pan · Shift constrains shapes · Esc to Select / Edit",
+                  : tool === "eraser"
+                    ? "Drag over drawings to erase · Esc to select"
+                    : tool === "highlighter"
+                      ? "Drag to highlight · Esc to select"
+                      : tool === "lasso"
+                        ? "Draw around the marks to select · Esc to select"
+                        : tool === "text"
+                          ? "Click to place a diagram label · Use Select to write equations and notes"
+                          : "Space-drag to pan · Shift constrains shapes · Esc to Select / Edit",
   };
 }
 type Controller = ReturnType<typeof useDrawingCanvas>;
@@ -909,6 +917,7 @@ function DrawingToolbar({
   const activeShape = shapeTools.find(([tool]) => tool === d.tool);
   const activeExtra = extraTools.find(([tool]) => tool === d.tool);
   const ShapeIcon = activeShape?.[2] ?? Shapes;
+  const ExtraIcon = (!hand && activeExtra?.[2]) || MoreHorizontal;
   const styleVisible =
     !hand && !["select", "lasso", "eraser", "area"].includes(d.tool);
   const guidance = hand
@@ -960,11 +969,12 @@ function DrawingToolbar({
         >
           {shapeTools.map((entry) => button(entry))}
         </CanvasCommandMenu>
-        {button(tools.find(([tool]) => tool === "text")!, "Text")}
+        {button(tools.find(([tool]) => tool === "text")!)}
         <div className="drawing-icon-menu">
           <CanvasCommandMenu
             label="More drawing tools"
-            icon={<MoreHorizontal size={17} />}
+            icon={<ExtraIcon size={17} />}
+            activeTool={activeExtra?.[1]}
             active={!hand && !!activeExtra}
             description={
               activeExtra && !hand

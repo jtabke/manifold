@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { display, type Statement } from "../../notebook/math";
 import { ancestors, project, type Page, type RegionSession } from "../document";
+import { worksheetInputUnit } from "../worksheetInputUnit";
 import { names, prepare, type Artifact } from "../artifacts";
 import { useComputations } from "../app/artifactRuntime";
 import type { ArtifactRuntime } from "../artifactComputations";
@@ -281,7 +282,13 @@ function Relationships({
       <button key={source} onClick={() => select(source)}>
         <b>{s?.name || "Note"}</b>
         <span>{p.texts[source]}</span>
-        {q && !p.errors.has(source) && <strong>{display(q)}</strong>}
+        {q && !p.errors.has(source) && (
+          <strong>
+            {p.kinds[source] === "quantity"
+              ? worksheetInputUnit(s, q).format(q.value)
+              : display(q)}
+          </strong>
+        )}
       </button>
     );
   };
@@ -352,7 +359,9 @@ function ComputedEditor(
       ? [
           [
             a.input,
-            resolved ? `${resolved.x.name} · ${display(resolved.xq)}` : "Input",
+            resolved
+              ? `${resolved.x.name} · ${resolved.inputUnit.format(resolved.xq.value)}`
+              : "Input",
           ],
           ...Object.entries(generated.bindings).map(([, id]) => [
             id,
@@ -489,7 +498,7 @@ function ComputedEditor(
           <tbody>
             {runtime.receipt!.points.map(([x, y], i) => (
               <tr key={i} onClick={() => select(a.input)}>
-                <td>{fmt(x - (resolved.xq.absolute ? 273.15 : 0))}</td>
+                <td>{fmt(resolved.inputUnit.fromBase(x))}</td>
                 <td>{fmt(y)}</td>
               </tr>
             ))}
@@ -644,10 +653,10 @@ function Response({
           </g>
         )}
         <text x="60" y="300">
-          {fmt(a.low - (resolved.xq.absolute ? 273.15 : 0))}
+          {fmt(resolved.inputUnit.fromBase(a.low))}
         </text>
         <text x="540" y="300" textAnchor="end">
-          {fmt(a.high - (resolved.xq.absolute ? 273.15 : 0))}
+          {fmt(resolved.inputUnit.fromBase(a.high))}
         </text>
         <g
           className={selected === a.input ? "mw-axis is-linked" : "mw-axis"}
@@ -672,9 +681,10 @@ function Response({
             role="slider"
             tabIndex={0}
             aria-label="Vary workspace input"
-            aria-valuemin={a.low}
-            aria-valuemax={a.high}
-            aria-valuenow={x}
+            aria-valuemin={resolved.inputUnit.fromBase(a.low)}
+            aria-valuemax={resolved.inputUnit.fromBase(a.high)}
+            aria-valuenow={resolved.inputUnit.fromBase(x)}
+            aria-valuetext={resolved.inputUnit.format(x)}
             aria-disabled={!editable}
             transform={`translate(${px(x)},${py(y)})`}
             className="mw-point"
@@ -738,7 +748,7 @@ function Response({
       </svg>
       <div className="mw-response-value">
         <button onClick={() => props.select(a.input)}>
-          {resolved.x.name} = {display(live.xq)}
+          {resolved.x.name} = {resolved.inputUnit.format(live.xq.value)}
         </button>
         {!editable && (
           <button onClick={() => props.session.switchContext(bound.active)}>

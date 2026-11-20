@@ -1,6 +1,7 @@
 import { isDialogEvent } from "../interaction/modalInput";
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { GripVertical, MoreHorizontal } from "lucide-react";
+import { worksheetInputUnit } from "../worksheetInputUnit";
 import { display, unitLabel } from "../../notebook/math";
 import {
   RegionSession,
@@ -83,6 +84,7 @@ export function CurveRegion({
   const output = p.statements.get(plot.output),
     input = p.statements.get(plot.input),
     q = input && p.solved.values.get(input.name);
+  const inputUnit = q && worksheetInputUnit(input, q);
   const acceptedInput =
     input && project(session.state).solved.values.get(input.name);
   const values = series.flatMap((s) =>
@@ -281,7 +283,7 @@ export function CurveRegion({
           })}
           {[plot.low, (plot.low + plot.high) / 2, plot.high].map((value) => (
             <text key={value} x={x(value)} y={bottom + 22} textAnchor="middle">
-              {format(q?.absolute ? value - 273.15 : value, 3)}
+              {format(inputUnit?.fromBase(value) ?? value, 3)}
             </text>
           ))}
           {series.map((s) => (
@@ -334,8 +336,8 @@ export function CurveRegion({
                   r={7}
                 >
                   <title>
-                    {input?.name} = {format(guide)} · {output.name} ={" "}
-                    {display(result)} · drag horizontally
+                    {input?.name} = {inputUnit?.format(guide) ?? format(guide)}{" "}
+                    · {output.name} = {display(result)} · drag horizontally
                   </title>
                 </circle>
               );
@@ -356,7 +358,7 @@ export function CurveRegion({
               : ""}
           </text>
           <text x={(left + right) / 2} y={height - 13} textAnchor="middle">
-            {input?.name} {q ? `(${unitLabel(q) || "1"})` : ""}
+            {input?.name} {inputUnit ? `(${inputUnit.label || "1"})` : ""}
           </text>
         </svg>
       ) : (
@@ -369,7 +371,7 @@ export function CurveRegion({
         {input?.name}{" "}
         {!quiet &&
           guide !== undefined &&
-          `= ${format(q?.absolute ? guide - 273.15 : guide, 4)}`}{" "}
+          `= ${format(inputUnit?.fromBase(guide) ?? guide, 4)}`}{" "}
         {compare && comparisonContext && (
           <span>
             Original <i />{" "}

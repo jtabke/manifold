@@ -179,6 +179,12 @@
   width: 32px;
   padding: 5px;
 }
+.er-history-tools > .er-canvas-actions-trigger {
+  width: auto;
+  gap: 3px;
+  padding-inline: 7px;
+  font-size: 12px;
+}
 .drawing-toolbar-host {
   flex: 1 1 320px;
   min-width: 0;
@@ -303,7 +309,10 @@
 .er-selection-tools {
   position: absolute;
   z-index: 32;
-  transform-origin: 0 0;
+  width: max-content;
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -314,6 +323,16 @@
   box-shadow: 0 4px 18px var(--canvas-shadow, #33234512);
   white-space: nowrap;
   font-size: 13px;
+}
+.er-selection-tools[data-docked] {
+  position: static;
+  align-self: center;
+  flex: none;
+  margin: 4px 0;
+}
+.er-canvas.is-relationship-focused + .er-selection-tools,
+.er-canvas:has(.drawing-surface.is-drawing) + .er-selection-tools {
+  display: none;
 }
 .er-selection-more > summary {
   cursor: pointer;
@@ -344,7 +363,18 @@
 }
 .er-selection-tools > span {
   color: var(--canvas-muted, #746b7d);
-  margin-right: 6px;
+  max-width: 10ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 500px) {
+  .er-selection-tools {
+    gap: 2px;
+    padding: 4px;
+  }
+  .er-selection-tools > span {
+    max-width: 7ch;
+  }
 }
 .er-selection-tools button {
   display: flex;
@@ -352,7 +382,7 @@
   gap: 6px;
   padding: 6px 8px;
 }
-.er-selection-tools button:first-of-type {
+.er-selection-tools > span + button[data-command-id] {
   background: var(--canvas-accent-tint, #f1ebf8);
   color: var(--canvas-accent, #654985);
   border-radius: 5px;

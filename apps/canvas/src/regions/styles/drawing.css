@@ -47,6 +47,9 @@
 .drawing-icon-menu .er-command-menu > button > span {
   display: none;
 }
+.drawing-primary-tools .drawing-icon-menu button[data-active="true"] > span {
+  display: inline;
+}
 .drawing-icon-menu .er-command-menu > button > svg:last-child {
   display: none;
 }
