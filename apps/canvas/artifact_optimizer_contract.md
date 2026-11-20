@@ -7,6 +7,9 @@ server admission/cancellation for the existing `server.py` routes, not history o
 Source math versions are **not** this contract version. Unit normalization, provenance, currency,
 receipts and explicit undoable Apply remain foundation/application responsibilities.
 
+The same host also accepts the separate transient worksheet design protocol described below.
+The reusable-model request, method version and stored receipts are unchanged.
+
 ## Reproducible optional runtime
 
 Supported wheel profile: CPython **3.12**, Linux x86_64 with manylinux2014 support.
@@ -31,7 +34,38 @@ import SciPy/NumPy. The worker lazily imports dependencies. Missing libraries gi
 `backend_mismatch`, never a solver fallback. Identity probing raises
 `BackendUnavailable` on dependency/startup/timeout failure.
 
-## Callable API and strict request schema
+## Worksheet design protocol
+
+`manifold-worksheet-design/1` shares the supported backend identity, routes, subprocess isolation,
+cancellation, closed operations, constant, graph, request/response byte and wall-time guards.
+It is not the stored reusable-model optimizer format.
+
+- Exact request fields: `version, program, program_sha256, backend, mode, bounds, start, limits`.
+  Mode is `minimize` or `maximize`. One or two closed intervals and their finite starting
+  coordinates are in the varied input units. The worksheet captures the current point clamped
+  to these intervals. Each axis has strictly increasing endpoints within ±1e12.
+- The program is `{nodes, output, requirements}`. In addition to `x`, `y` is allowed for a
+  second axis. Each of at most 16 requirements is `{left, right, relation}`: two node indices
+  and exactly one of `<=, >=, <, >`. Reachability is from the goal **and both sides** of every
+  limit. Hash using `program_digest(program, DESIGN_VERSION)`; worksheet source and report-only
+  values do not go over the wire.
+- SLSQP searches normalized axes. Limits are 1–500 distinct evaluated designs, 1–200 solver
+  iterations and 1–5000 ms; objective and all requirements share each cached point.
+  Starting point and corners are tested. An invalid numerical domain stops the run. Numerical
+  convergence does not relax an inequality: only a separately checked feasible point is
+  eligible. Open inequalities need not attain an optimum. This is not a global or infeasibility proof.
+- Exact response fields: `version, program_sha256, backend, mode, bounds, algorithm, code,
+  success, candidate, evaluations, iterations`; algorithm is `scipy.optimize.minimize:SLSQP`.
+  A successful candidate is `{x: [coordinates…], output: number}`; failure has no candidate.
+  `no_feasible_candidate` and `not_converged` distinguish failing to find a feasible design
+  from failing to converge despite finding one. No target or residual fields.
+- On explicit Run the session schedules the captured computation. The application writes the
+  exact proposed literals to a disposable worksheet projection and independently verifies the
+  objective, ranges, inequalities and reported values. It never sends the worksheet itself to
+  the solver. No settings, job or receipt are persisted by Run. Apply/Keep require the same
+  worksheet document and publish one ordinary undoable edit.
+
+## Callable API and strict request schema (reusable model)
 
 - `backend_identity(timeout=5) -> dict`: fixed subprocess probe. The trusted host
   configures/probes the approved environment and freezes its returned identity in

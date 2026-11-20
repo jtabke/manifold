@@ -1,0 +1,135 @@
+.worksheet-optimization {
+  box-sizing: border-box;
+  width: min(550px, calc(100vw - 24px));
+  max-height: min(90dvh, 860px);
+  --pad: clamp(12px, 3vw, 22px);
+  padding: 0 var(--pad) var(--pad);
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  color: var(--canvas-text);
+  background: var(--canvas-surface);
+  border: 1px solid var(--canvas-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px var(--canvas-shadow);
+  font: inherit;
+}
+.worksheet-optimization::backdrop {
+  background: #09080da8;
+}
+.worksheet-optimization header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 0 8px;
+  background: var(--canvas-surface);
+  border-bottom: 1px solid var(--canvas-border);
+}
+.worksheet-optimization h2 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+.worksheet-optimization fieldset {
+  min-width: 0;
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 8px;
+}
+.worksheet-optimization legend {
+  padding: 0 4px;
+  font-weight: 650;
+}
+.worksheet-optimization label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+}
+.worksheet-optimization label:has(input[type="checkbox"]) {
+  min-height: 28px;
+}
+.worksheet-optimization input:not([type="checkbox"]),
+.worksheet-optimization select {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 4px;
+  background: var(--canvas-bg);
+  font: inherit;
+}
+.worksheet-optimization small {
+  display: block;
+  color: var(--canvas-muted);
+}
+.worksheet-optimization .design-bounds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.worksheet-optimization .design-bounds label {
+  display: grid;
+  gap: 4px;
+}
+.worksheet-optimization .design-bounds input {
+  width: 100%;
+}
+.worksheet-optimization button {
+  min-height: 34px;
+  border: 1px solid var(--canvas-border);
+}
+.worksheet-optimization button.design-primary {
+  background: var(--canvas-accent-strong);
+  color: var(--canvas-on-accent);
+}
+.worksheet-optimization button:disabled {
+  opacity: 0.65;
+}
+.worksheet-optimization .design-result {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--canvas-border);
+}
+.worksheet-optimization .design-result p {
+  color: var(--canvas-muted);
+  margin: 4px 0 8px;
+}
+.worksheet-optimization h3,
+.worksheet-optimization h4 {
+  margin: 6px 0;
+}
+.worksheet-optimization table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.worksheet-optimization th,
+.worksheet-optimization td {
+  padding: 6px 4px;
+  text-align: right;
+  border-bottom: 1px solid var(--canvas-border);
+}
+.worksheet-optimization thead th {
+  font-size: 0.85em;
+  color: var(--canvas-muted);
+}
+.worksheet-optimization th:first-child {
+  text-align: left;
+}
+.worksheet-optimization td:last-child {
+  font-weight: 550;
+}
+.worksheet-optimization .design-adopt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.worksheet-optimization [role="alert"] {
+  color: var(--canvas-danger);
+}

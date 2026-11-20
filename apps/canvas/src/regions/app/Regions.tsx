@@ -35,6 +35,8 @@ import {
   selectionEditReason,
 } from "../selectionOperations";
 import { dispatchCanvasCommand } from "./dispatchCanvasCommand";
+import { executeWorksheetDesign } from "../worksheetOptimization";
+import { WorksheetOptimizationDialog } from "../renderers/WorksheetOptimizationDialog";
 import { WorksheetLayer } from "../renderers/WorksheetLayer";
 import type { ModelSource } from "../authoredModels";
 import { useCanvasExploration } from "./useCanvasExploration";
@@ -250,6 +252,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     source: ModelSource;
     at: Point;
   }>();
+  const [designGoal, setDesignGoal] = useState<string>();
   const [referenceEditor, setReferenceEditor] = useState<string>();
   const [session] = useState(() => {
     const session = new RegionSession(
@@ -259,6 +262,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       saved.data?.artifacts || [],
       false,
       saved.data?.recovery,
+      { worksheetOptimizer: executeWorksheetDesign },
     );
     saved.store?.acknowledgeRecovery(session);
     return session;
@@ -3011,6 +3015,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       reveal: revealCommandObject,
       select: setSelected,
       worksheet: {
+        optimize: (id) => {
+          if (editing)
+            setMessage("Finish editing before optimizing the worksheet.");
+          else setDesignGoal(id);
+        },
         edit: begin,
         vary: (id) => {
           setSelected(id);
@@ -3354,6 +3363,15 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             }
             close={() => setActionMenu(undefined)}
             search={() => paletteOpen("search")}
+          />
+        )}
+        {designGoal && (
+          <WorksheetOptimizationDialog
+            session={session}
+            buffers={editBuffers}
+            goal={designGoal}
+            close={() => setDesignGoal(undefined)}
+            notify={setMessage}
           />
         )}
         {authoringModel && (

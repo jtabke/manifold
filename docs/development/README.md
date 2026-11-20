@@ -106,7 +106,7 @@ include numerical optimization. Start the development server with the selected r
 ```sh
 make setup-optimizer                  # OPTIMIZER_PYTHON selects your CPython 3.12
 PYTHON="$PWD/.venv/optimizer/bin/python" npm run dev
-make check-optimizer                 # Python tests and real model integration
+make check-optimizer                 # Python tests, model and constrained worksheet integration
 make check-optimizer-browser         # Build and run the real Run/Apply workflow
 ```
 

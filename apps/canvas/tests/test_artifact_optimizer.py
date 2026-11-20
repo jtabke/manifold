@@ -67,7 +67,76 @@ def request(program=None, mode="minimize", backend=None, **changes):
     return body
 
 
+def design_request(relation=">=", backend=None):
+    # Minimize x subject to x >= y. Distinct goal and requirement roots.
+    program = {
+        "nodes": [{"op": "x"}, {"op": "y"}],
+        "output": 0,
+        "requirements": [{"left": 0, "right": 1, "relation": relation}],
+    }
+    return {
+        "version": optimizer.DESIGN_VERSION,
+        "mode": "minimize",
+        "bounds": [[0, 10], [3, 6]],
+        "start": [8, 4],
+        "program": program,
+        "program_sha256": optimizer.program_digest(program, optimizer.DESIGN_VERSION),
+        "backend": backend or request()["backend"],
+        "limits": request()["limits"],
+    }
+
+
 class ValidationTests(unittest.TestCase):
+    def test_worksheet_design_admission_and_checked_result(self):
+        body = design_request()
+        optimizer.validate(body)
+        for invalid in (
+            {**body, "target": 3},
+            {**body, "mode": "target"},
+            {**body, "start": [12, 4]},
+            {**body, "bounds": [[0, 10]], "start": [3]},
+            {
+                **body,
+                "program": {
+                    **body["program"],
+                    "requirements": [{"left": 0, "right": 1, "relation": "="}],
+                },
+            },
+            {
+                **body,
+                "program": {
+                    **body["program"],
+                    "requirements": [{"left": 0, "right": 2, "relation": ">="}],
+                },
+            },
+            {**body, "limits": {**body["limits"], "evaluations": 501}},
+        ):
+            with (
+                self.subTest(invalid=invalid),
+                self.assertRaises(optimizer.InvalidRequest),
+            ):
+                optimizer.validate(invalid)
+        for relation, x, objective in (
+            (">", 3, 3),
+            (">=", 2, 2),
+            (">=", 4, 3),
+            (">=", 11, 11),
+        ):
+            strict = design_request(relation)
+            forged = optimizer._result(
+                strict,
+                "converged",
+                body["backend"],
+                {"x": [x, 3], "output": objective},
+                2,
+                1,
+            )
+            with (
+                self.subTest(forged=forged),
+                self.assertRaises(optimizer.InvalidRequest),
+            ):
+                optimizer._decode_result(json.dumps(forged), strict)
+
     def test_import_is_lazy(self):
         script = f"import sys; sys.path.insert(0, {str(Path(optimizer.__file__).parent)!r}); import artifact_optimizer; assert 'scipy' not in sys.modules; assert 'numpy' not in sys.modules"
         subprocess.run([sys.executable, "-I", "-c", script], check=True)
@@ -378,6 +447,24 @@ class SolverTests(unittest.TestCase):
         self.assertEqual(result["program_sha256"], body["program_sha256"])
         self.assertLess(len(json.dumps(result)), optimizer.MAX_OUTPUT_BYTES)
         return result
+
+    def test_worksheet_variable_rhs_and_strict_feasibility(self):
+        for relation in (">=", ">"):
+            body = design_request(relation, self.backend)
+            result = optimizer.solve(body)
+            self.assertEqual(result["code"], "converged")
+            x, y = result["candidate"]["x"]
+            self.assertGreaterEqual(x, y)
+            if relation == ">":
+                self.assertGreater(x, y)
+            self.assertAlmostEqual(x, 3, places=5)
+            self.assertAlmostEqual(y, 3, places=5)
+        body["limits"]["evaluations"] = 1
+        result = optimizer.solve(body)
+        self.assertEqual(
+            (result["code"], result["evaluations"], result["candidate"]),
+            ("evaluation_limit", 1, None),
+        )
 
     def test_analytic_minimum_and_maximum(self):
         result = self.solve()

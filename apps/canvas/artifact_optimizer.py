@@ -15,6 +15,7 @@ import sys
 import time
 
 VERSION = "manifold-numeric-optimizer/1"
+DESIGN_VERSION = "manifold-worksheet-design/1"
 MAX_REQUEST_BYTES = 65536
 MAX_OUTPUT_BYTES = 16384
 MAX_NODES = 256
@@ -224,14 +225,28 @@ BINARY = {
 }
 
 
-def validate_program(program):
+def validate_program(program, *, design=False, axes=2):
     """Validate a topologically ordered, fully reachable numeric DAG."""
     _bounded_json(program)
-    _fields(program, {"nodes", "output"})
+    _fields(
+        program, {"nodes", "output", "requirements"} if design else {"nodes", "output"}
+    )
     nodes = program["nodes"]
     if type(nodes) is not list or not 1 <= len(nodes) <= MAX_NODES:
         raise InvalidRequest("Use 1–256 nodes")
     _integer(program["output"], 0, len(nodes) - 1)
+    starts = [program["output"]]
+    if design:
+        requirements = program["requirements"]
+        if type(requirements) is not list or len(requirements) > 16:
+            raise InvalidRequest("Use at most 16 scalar requirements")
+        for r in requirements:
+            _fields(r, {"left", "right", "relation"})
+            if r["relation"] not in ("<=", ">=", "<", ">"):
+                raise InvalidRequest("Expected a worksheet inequality")
+            for key in ("left", "right"):
+                _integer(r[key], 0, len(nodes) - 1)
+                starts.append(r[key])
     depths = []
     for i, node in enumerate(nodes):
         if type(node) is not dict or type(node.get("op")) is not str:
@@ -241,7 +256,7 @@ def validate_program(program):
             _fields(node, {"op", "value"})
             _number(node["value"])
             depth = 1
-        elif op == "x":
+        elif op == "x" or (design and axes == 2 and op == "y"):
             _fields(node, {"op"})
             depth = 1
         else:
@@ -269,7 +284,7 @@ def validate_program(program):
             raise InvalidRequest("DAG exceeds depth 32")
         depths.append(depth)
     reached = set()
-    pending = [program["output"]]
+    pending = starts
     while pending:
         ref = pending.pop()
         if ref not in reached:
@@ -279,10 +294,11 @@ def validate_program(program):
         raise InvalidRequest("Every node must contribute to the output")
 
 
-def program_digest(program):
+def program_digest(program, version=VERSION):
     """Versioned numeric digest; constants use big-endian IEEE-754 hex bytes."""
-    validate_program(program)
+    validate_program(program, design=version == DESIGN_VERSION)
     normalized = {
+        **program,
         "nodes": [
             {"op": "const", "value": struct.pack(">d", float(node["value"])).hex()}
             if node["op"] == "const"
@@ -291,7 +307,7 @@ def program_digest(program):
         ],
         "output": program["output"],
     }
-    capture = {"version": VERSION, "program": normalized}
+    capture = {"version": version, "program": normalized}
     return hashlib.sha256(_json(capture).encode("utf-8")).hexdigest()
 
 
@@ -315,6 +331,44 @@ def _digest_shape(value):
 def validate(body):
     """Strict validation without importing NumPy or SciPy."""
     _bounded_json(body)
+    if type(body) is dict and body.get("version") == DESIGN_VERSION:
+        _fields(
+            body,
+            {
+                "version",
+                "program",
+                "program_sha256",
+                "backend",
+                "mode",
+                "bounds",
+                "start",
+                "limits",
+            },
+        )
+        if body["mode"] not in ("minimize", "maximize"):
+            raise InvalidRequest("Expected minimize or maximize")
+        bounds, start = body["bounds"], body["start"]
+        if (
+            type(bounds) is not list
+            or not 1 <= len(bounds) <= 2
+            or type(start) is not list
+            or len(start) != len(bounds)
+        ):
+            raise InvalidRequest("Use one or two design variables")
+        for pair, x in zip(bounds, start):
+            if type(pair) is not list or len(pair) != 2:
+                raise InvalidRequest("Expected two closed bounds per input")
+            low, high = map(_number, pair)
+            if low >= high or not low <= _number(x) <= high:
+                raise InvalidRequest("Invalid range or starting point")
+        validate_program(body["program"], design=True, axes=len(bounds))
+        _digest_shape(body["program_sha256"])
+        _identity_shape(body["backend"])
+        limits = body["limits"]
+        _fields(limits, {"evaluations", "iterations", "wall_ms"})
+        for key, cap in (("evaluations", 500), ("iterations", 200), ("wall_ms", 5000)):
+            _integer(limits[key], 1, cap)
+        return
     _fields(
         body,
         {
@@ -389,6 +443,20 @@ def _supported(identity):
 def _result(
     body, code, backend=None, candidate=None, evaluations=None, iterations=None
 ):
+    if body["version"] == DESIGN_VERSION:
+        return {
+            "version": DESIGN_VERSION,
+            "program_sha256": body["program_sha256"],
+            "backend": backend,
+            "mode": body["mode"],
+            "bounds": body["bounds"],
+            "algorithm": "scipy.optimize.minimize:SLSQP",
+            "code": code,
+            "success": code == "converged",
+            "candidate": candidate,
+            "evaluations": evaluations,
+            "iterations": iterations,
+        }
     return {
         "version": VERSION,
         "program_sha256": body["program_sha256"],
@@ -421,7 +489,13 @@ def _decode_result(stdout, body):
     if (
         type(result) is not dict
         or type(result.get("code")) is not str
-        or result["code"] not in CODES
+        or (
+            result["code"] not in CODES
+            and not (
+                body["version"] == DESIGN_VERSION
+                and result["code"] in ("no_feasible_candidate", "not_converged")
+            )
+        )
     ):
         raise InvalidRequest("Invalid worker outcome")
     expected = _result(body, result["code"])
@@ -442,6 +516,26 @@ def _decode_result(stdout, body):
         if result[name] is not None:
             _integer(result[name], 0, maximum)
     candidate = result["candidate"]
+    if body["version"] == DESIGN_VERSION:
+        if result["success"]:
+            _fields(candidate, {"x", "output"})
+            xs = candidate["x"]
+            if (
+                type(xs) is not list
+                or len(xs) != len(body["bounds"])
+                or not all(
+                    lo <= _number(x) <= hi for x, (lo, hi) in zip(xs, body["bounds"])
+                )
+            ):
+                raise InvalidRequest("Candidate outside captured design bounds")
+            value, margins = _design_point(body["program"], xs)
+            if value != _number(
+                candidate["output"], sys.float_info.max
+            ) or not _feasible(body["program"], margins):
+                raise InvalidRequest("Unverified design candidate")
+        elif candidate is not None:
+            raise InvalidRequest("Failed runs must not offer a design candidate")
+        return result
     if candidate is not None:
         _fields(candidate, {"x", "output", "residual"})
         x = _number(candidate["x"])
@@ -461,7 +555,7 @@ def _decode_result(stdout, body):
     return result
 
 
-def _evaluate(program, x):
+def _values(program, x, y=None):
     values = []
     for node in program["nodes"]:
         op = node["op"]
@@ -469,6 +563,8 @@ def _evaluate(program, x):
             value = float(node["value"])
         elif op == "x":
             value = x
+        elif op == "y":
+            value = y
         else:
             args = [values[ref] for ref in node["args"]]
             if op in UNARY:
@@ -481,12 +577,41 @@ def _evaluate(program, x):
         if not math.isfinite(value):
             raise ValueError("Nonfinite scalar")
         values.append(value)
-    return values[program["output"]]
+    return values
+
+
+def _evaluate(program, x):
+    return _values(program, x)[program["output"]]
+
+
+def _design_point(program, xs, scales=None):
+    values = _values(program, *xs)
+    if scales is not None:
+        # Scale unlike quantities using their magnitudes at the starting design.
+        scales.extend(
+            max(abs(values[r["left"]]), abs(values[r["right"]]), 1e-15)
+            for r in program["requirements"]
+        )
+    margins = [
+        (values[r["right"]] - values[r["left"]])
+        * (1 if r["relation"].startswith("<") else -1)
+        for r in program["requirements"]
+    ]
+    if not all(map(math.isfinite, margins)):
+        raise ValueError("Nonfinite requirement margin")
+    return values[program["output"]], margins
+
+
+def _feasible(program, margins):
+    return all(
+        v >= 0 if "=" in r["relation"] else v > 0
+        for v, r in zip(margins, program["requirements"])
+    )
 
 
 def _execute(body):
     validate(body)
-    if program_digest(body["program"]) != body["program_sha256"]:
+    if program_digest(body["program"], body["version"]) != body["program_sha256"]:
         return _result(body, "program_mismatch", evaluations=0, iterations=0)
     try:
         identity, optimize = _load_backend()
@@ -496,6 +621,8 @@ def _execute(body):
         return _result(
             body, "backend_mismatch", backend=identity, evaluations=0, iterations=0
         )
+    if body["version"] == DESIGN_VERSION:
+        return _solve_design(body, identity, optimize)
     deadline = time.monotonic() + body["limits"]["wall_ms"] / 1000
     evaluations = 0
     iterations = 0
@@ -609,6 +736,97 @@ def _execute(body):
     return _result(body, code, identity, candidate, evaluations, iterations)
 
 
+def _solve_design(body, identity, optimize):
+    """Normalized local search. Numerical convergence never relaxes an authored inequality."""
+    from itertools import product
+
+    program, bounds, limits = body["program"], body["bounds"], body["limits"]
+    deadline = time.monotonic() + limits["wall_ms"] / 1000
+    cache, scales = {}, []
+    evaluations = 0
+    sign = 1 if body["mode"] == "minimize" else -1
+    best = None
+    iterations = 0
+
+    def point(z):
+        nonlocal best, evaluations
+        if time.monotonic() >= deadline:
+            raise _Stop("deadline")
+        xs = tuple(
+            max(lo, min(hi, lo + float(u) * (hi - lo)))
+            for u, (lo, hi) in zip(z, bounds)
+        )
+        if xs not in cache:
+            if evaluations >= limits["evaluations"]:
+                raise _Stop("evaluation_limit")
+            evaluations += 1
+            try:
+                value, margins = _design_point(program, xs, None if cache else scales)
+            except (ValueError, ArithmeticError) as exc:
+                raise _Stop("domain_error") from exc
+            cache[xs] = value, margins
+            if _feasible(program, margins) and (
+                best is None or sign * value < sign * best["output"]
+            ):
+                best = {"x": list(xs), "output": value}
+        return cache[xs]
+
+    try:
+        start = [(x - lo) / (hi - lo) for x, (lo, hi) in zip(body["start"], bounds)]
+        current, _ = point(start)
+        for corner in product((0.0, 1.0), repeat=len(bounds)):
+            point(corner)
+        scale = max(abs(current), *(abs(v) for v, _ in cache.values()), 1e-15)
+        constraints = []
+        if scales:
+            constraints.append(
+                {
+                    "type": "ineq",
+                    "fun": lambda z: [v / s for v, s in zip(point(z)[1], scales)],
+                }
+            )
+        result = optimize.minimize(
+            lambda z: sign * point(z)[0] / scale,
+            start,
+            method="SLSQP",
+            bounds=[(0.0, 1.0)] * len(bounds),
+            constraints=constraints,
+            options={"ftol": 1e-11, "maxiter": limits["iterations"]},
+        )
+        iterations = int(result.nit)
+        _, margins = point(result.x)
+        if result.success and not _feasible(program, margins) and best is not None:
+            # A solver tolerance is not permission to violate a limit. Approach the
+            # numerical answer from a verified feasible point; test every candidate.
+            inside = [(x - lo) / (hi - lo) for x, (lo, hi) in zip(best["x"], bounds)]
+            outside = list(result.x)
+            for _ in range(36):
+                mid = [(a + b) / 2 for a, b in zip(inside, outside)]
+                if _feasible(program, point(mid)[1]):
+                    inside = mid
+                else:
+                    outside = mid
+        code = (
+            "converged"
+            if result.success and best is not None
+            else "iteration_limit"
+            if result.status == 9
+            else "no_feasible_candidate"
+            if best is None
+            else "not_converged"
+        )
+    except _Stop as exc:
+        code = exc.code
+    return _result(
+        body,
+        code,
+        identity,
+        best if code == "converged" else None,
+        evaluations,
+        iterations,
+    )
+
+
 def _spawn(kind):
     return subprocess.Popen(
         [sys.executable, "-I", str(Path(__file__).resolve()), kind],
@@ -655,7 +873,7 @@ def solve(body, *, cancelled=None):
     payload = _bounded_json(body).encode("utf-8")
     # Decode our bounded capture so later caller mutations cannot affect admission.
     body = json.loads(payload)
-    if program_digest(body["program"]) != body["program_sha256"]:
+    if program_digest(body["program"], body["version"]) != body["program_sha256"]:
         return _result(body, "program_mismatch", evaluations=0, iterations=0)
     if cancelled is not None and cancelled():
         return _result(body, "cancelled", evaluations=0, iterations=0)

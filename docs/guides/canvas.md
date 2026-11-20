@@ -606,6 +606,32 @@ must be published or cancelled before file transitions. Native files preserve so
 and checked results; Open starts no jobs. See [ADR 0035](../design/decisions/0035-authorable-scalar-models-and-general-outputs.md)
 for the design rationale.
 
+## Optimize a worksheet equation
+
+Select a resolved named equation and choose **Actions → Optimize…**. No model publication
+is needed. For example, to find the lightest simply supported shelf rail for a fixed load:
+
+1. **Goal:** select the `mass` equation and choose **Minimize**.
+2. **Vary:** choose the assigned `thickness`, with a minimum and maximum you consider
+   meaningful (for example, 5–20 mm). Bare numbers use the displayed unit; compatible
+   explicit units are accepted. **Add second input** can vary `width` too. Other assigned inputs
+   stay fixed. Suggested ranges are not engineering limits.
+3. **Subject to:** check the worksheet inequalities to enforce, such as `deflection ≤ 2 mm`
+   and `stress ≤ allowable`. Write the inequality on the sheet first if it does not exist.
+   A requirement may depend on the varied inputs on either side. Only checked limits apply.
+4. **Also report:** add `cost` to see what the lighter design would cost. This does not
+   minimize cost or impose a cost limit.
+5. **Run** previews current and proposed values, including the quantities being constrained.
+   A positive requirement margin is room to spare; **At limit** identifies a near-binding
+   requirement, not permission to exceed it. A tighter sag limit can mean a thicker rail.
+
+This is a bounded local search using the [optional SciPy runtime](../development/README.md#optional-numerical-runtime),
+not a proof of a global optimum or of physical safety. **No feasible candidate found** means
+this search did not find one, not that none exists. No result changes the worksheet by itself.
+**Apply** changes the varied inputs together; **Keep as alternative** activates a new scenario
+and leaves its parent untouched. Either is one Undo. Closing discards the review. Run again
+after changing settings; reopen the review if the worksheet changed.
+
 ## Optimize a reusable model
 
 Choose **Optimize model** on a self-contained authored-model instance. Explicitly upgrade its

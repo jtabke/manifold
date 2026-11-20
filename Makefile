@@ -13,10 +13,10 @@ setup-optimizer:
 
 check-optimizer:
 	$(MAKE) check-python PYTHON=.venv/optimizer/bin/python
-	MANIFOLD_REQUIRE_OPTIMIZER=1 PYTHON=$(CURDIR)/.venv/optimizer/bin/python node apps/canvas/tests/check-model-optimizations.mjs
+	MANIFOLD_REQUIRE_OPTIMIZER=1 PYTHON=$(CURDIR)/.venv/optimizer/bin/python npm --prefix apps/canvas test -- check-model-optimizations check-worksheet-optimization
 
 check-optimizer-browser: build
-	MANIFOLD_REQUIRE_OPTIMIZER=1 PYTHON=$(CURDIR)/.venv/optimizer/bin/python npm --prefix apps/canvas run test:all-browser -- check-model-optimizations-browser
+	MANIFOLD_REQUIRE_OPTIMIZER=1 PYTHON=$(CURDIR)/.venv/optimizer/bin/python npm --prefix apps/canvas run test:all-browser -- check-model-optimizations-browser check-worksheet-optimization-browser
 
 setup:
 	npm ci

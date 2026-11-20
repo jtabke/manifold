@@ -48,6 +48,7 @@ type CommandPorts = {
     vary: (id: string) => void;
     trace: (id: string, at?: Point) => void;
     compare: (id?: string) => void;
+    optimize: (id: string) => void;
     reviewLink: (
       source: string,
       target: string,
@@ -238,6 +239,9 @@ export function dispatchCanvasCommand(
     }
     case "quantity.trace":
       if (id) worksheet.trace(id, o.menu?.world);
+      return;
+    case "worksheet.optimize":
+      if (id) worksheet.optimize(id);
       return;
     case "context.compare":
       worksheet.compare(id);

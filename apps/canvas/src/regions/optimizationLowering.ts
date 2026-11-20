@@ -6,13 +6,9 @@ import type { AnalysisInput } from "./modelAnalysis.ts";
 export const OPTIMIZER_VERSION = "manifold-numeric-optimizer/1";
 export type NumericNode = { op: string; args?: number[]; value?: number };
 export type NumericProgram = { nodes: NumericNode[]; output: number };
-export function lowerOptimization(input: AnalysisInput): NumericProgram {
+export function numericDag() {
   const depths: number[] = [];
-  const nodes: NumericNode[] = [],
-    cache = new Map<
-      string,
-      { index: number; value: number; unit: string; variable: boolean }
-    >();
+  const nodes: NumericNode[] = [];
   const put = (node: NumericNode) => {
     f.assert(nodes.length < 256, "Optimization DAG exceeds 256 nodes");
     // JSON transports cannot preserve -0; normalize deliberately before hashing.
@@ -32,6 +28,14 @@ export function lowerOptimization(input: AnalysisInput): NumericProgram {
     nodes.push(node);
     return nodes.length - 1;
   };
+  return { nodes, put };
+}
+export function lowerOptimization(input: AnalysisInput): NumericProgram {
+  const { nodes, put } = numericDag(),
+    cache = new Map<
+      string,
+      { index: number; value: number; unit: string; variable: boolean }
+    >();
   const canonical = (value: number, unit: string) => {
     const q = scientificQuantity(value, unit);
     return { value: q.value, unit: canonicalUnit(q.dimension) };
@@ -204,7 +208,10 @@ export function lowerOptimization(input: AnalysisInput): NumericProgram {
 }
 
 /** SHA-256 over the protocol's binary64-normalized canonical JSON, no decimal ambiguity. */
-export function programDigest(program: NumericProgram): string {
+export function programDigest(
+  program: NumericProgram,
+  version = OPTIMIZER_VERSION,
+): string {
   const normalized = {
     ...program,
     nodes: program.nodes.map((node) => {
@@ -221,7 +228,7 @@ export function programDigest(program: NumericProgram): string {
   };
   const bytes = new TextEncoder().encode(
     f.canonical({
-      version: OPTIMIZER_VERSION,
+      version,
       program: normalized,
     } as unknown as f.Json),
   );

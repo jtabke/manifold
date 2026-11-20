@@ -164,7 +164,9 @@ export function optimizationRequest(
   });
   if (body.backend !== null) backendIdentity(body.backend);
 }
-export async function optimizationCapability(): Promise<Backend> {
+export async function optimizationCapability(
+  signal?: AbortSignal,
+): Promise<Backend> {
   const unavailable = () => {
     throw Error(
       "Runtime unavailable. Start the optional supported numerical server, then Run again; settings remain editable.",
@@ -172,6 +174,7 @@ export async function optimizationCapability(): Promise<Backend> {
   };
   const response = await fetch("/api/optimizer/capability", {
     cache: "no-store",
+    signal,
   }).catch(unavailable);
   const body = await response.json().catch(unavailable);
   f.assert(
@@ -182,6 +185,43 @@ export async function optimizationCapability(): Promise<Backend> {
   );
   backendIdentity(body.backend);
   return body.backend;
+}
+/** Both optimizer protocols use the same bounded, cancellable numerical host. */
+export async function requestOptimization(
+  request: object,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const token = crypto.randomUUID();
+  const cancel = () => {
+    void fetch("/api/optimizer/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+      keepalive: true,
+    }).catch(() => {});
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    f.assert(!signal.aborted, "Optimization cancelled");
+    const response = await fetch("/api/optimizer/optimize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, request }),
+      signal,
+    });
+    const text = await response.text();
+    f.assert(text.length <= 16384, "Oversized numerical response");
+    const output: unknown = JSON.parse(text);
+    f.assert(
+      response.ok,
+      f.object(output) && typeof output.error === "string"
+        ? output.error
+        : "Numerical transport unavailable",
+    );
+    return output;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
 }
 export function createModelOptimizations(
   analyses: ReturnType<typeof import("./modelAnalysis.ts").createModelAnalyses>,
@@ -472,37 +512,10 @@ export function createModelOptimizations(
       "Optimization method unavailable",
     );
     validateInput(snapshot.input.body);
-    const token = crypto.randomUUID();
-    const cancel = () => {
-      void fetch("/api/optimizer/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-        keepalive: true,
-      }).catch(() => {});
-    };
-    signal.addEventListener("abort", cancel, { once: true });
-    try {
-      f.assert(!signal.aborted, "Optimization cancelled");
-      const response = await fetch("/api/optimizer/optimize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, request: snapshot.input.body.request }),
-        signal,
-      });
-      const text = await response.text();
-      f.assert(text.length <= 16384, "Oversized numerical response");
-      const output: unknown = JSON.parse(text);
-      f.assert(
-        response.ok,
-        f.object(output) && typeof output.error === "string"
-          ? output.error
-          : "Numerical transport unavailable",
-      );
-      return validateOutput(snapshot.input.body, output);
-    } finally {
-      signal.removeEventListener("abort", cancel);
-    }
+    return validateOutput(
+      snapshot.input.body,
+      await requestOptimization(snapshot.input.body.request, signal),
+    );
   };
   const legacySchema: f.Schema = {
     ...schema,

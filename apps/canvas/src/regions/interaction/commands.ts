@@ -44,6 +44,7 @@ type SimpleOperation =
   | "mathematics.enable-v3"
   | "quantity.vary"
   | "quantity.trace"
+  | "worksheet.optimize"
   | "context.compare"
   | "dataset.inspect"
   | "dataset.connect"
@@ -467,6 +468,24 @@ export function resolveCommands(
           undefined,
           { view: artifact.id, keywords: ["plot", "response", "open"] },
         );
+      if (
+        (t.kind === "equation" || t.kind === "result") &&
+        definition &&
+        definition.relation === "=" &&
+        !definition.anonymous &&
+        t.id &&
+        p.kinds[t.id] === "equation"
+      )
+        add("worksheet.optimize", "Optimize…", "optimize", undefined, {
+          unavailable: c.previewActive
+            ? "Accept or revert the current preview first."
+            : !resolved || !first
+              ? "Resolve a named equation with an assigned input first."
+              : undefined,
+          keywords: ["minimize", "maximize", "constraints", "design"],
+          preview:
+            "Vary bounded inputs subject to worksheet inequalities. Review the candidate before applying it.",
+        });
       add("quantity.connect", "Connect", "connect", "connect", {
         toolbar: t.kind === "equation" ? "Connect" : undefined,
         unavailable: missing,

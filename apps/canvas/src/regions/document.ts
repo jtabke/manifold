@@ -73,6 +73,14 @@ import {
   type NestedModel,
   type ModelAppearancePatch,
 } from "./models.ts";
+import {
+  captureDesign,
+  reviewDesign,
+  type DesignExecutor,
+  type DesignReview,
+  type DesignSpec,
+} from "./worksheetOptimization.ts";
+
 export type Point = { x: number; y: number };
 export type Region = {
   id: string;
@@ -297,6 +305,58 @@ export class RegionSession {
   }
   private readonly taskScheduler: ReturnType<typeof createTaskScheduler>;
   private readonly ownsScheduler: boolean;
+  private readonly designExecutor?: DesignExecutor;
+  private designJob?: { cancel: () => void };
+  private designReviews = new WeakMap<DesignReview, FoundationDocument>();
+  /** A worksheet design is a disposable computation, never an edit or a saved model. */
+  optimizeWorksheet(spec: DesignSpec) {
+    const execute = this.designExecutor;
+    if (this.closed || this.staging || !execute)
+      throw Error("Worksheet optimization is unavailable in this host.");
+    if (this.foundation.preview())
+      throw Error("Finish the current preview before optimizing.");
+    const page = this.state,
+      expected = this.document,
+      captured = captureDesign(page, spec);
+    this.designReviews = new WeakMap();
+    this.designJob?.cancel();
+    const job = this.taskScheduler.submit(async (signal) => {
+      const candidate = await execute(captured, signal);
+      signal.throwIfAborted();
+      if (
+        this.closed ||
+        this.document !== expected ||
+        this.foundation.preview()
+      )
+        throw Error(
+          "Worksheet changed. Run again before applying a candidate.",
+        );
+      const review = reviewDesign(page, captured, candidate);
+      this.designReviews.set(review, expected);
+      return review;
+    });
+    this.designJob = job;
+    void job.completion.then(() => {
+      if (this.designJob === job) this.designJob = undefined;
+    });
+    return job;
+  }
+  adoptWorksheetDesign(review: DesignReview, alternative: boolean) {
+    if (
+      this.closed ||
+      this.designReviews.get(review) !== this.document ||
+      this.foundation.preview()
+    )
+      throw Error("Worksheet changed. Run again before applying a candidate.");
+    this.atomic((staged) => {
+      if (alternative) staged.branch();
+      for (const { id, text } of review.writes) {
+        const result = staged.write(id, text);
+        if (!result.ok) throw Error(result.error);
+      }
+    });
+    this.designReviews.delete(review);
+  }
   readonly samplingAvailable: boolean;
   get executionDiagnostics() {
     return this.taskScheduler.diagnostics();
@@ -321,6 +381,7 @@ export class RegionSession {
   }
   dispose() {
     if (this.closed) return;
+    this.designJob?.cancel();
     this.documentOwner.dispose();
     this.closed = true;
     this.computationOwner?.dispose();
@@ -579,12 +640,14 @@ export class RegionSession {
     staging = false,
     recovery?: CanvasRecovery,
     execution: {
+      worksheetOptimizer?: DesignExecutor;
       artifactExecutor?: ArtifactExecutor | null;
       scheduler?: ReturnType<typeof createTaskScheduler>;
     } = {},
   ) {
     this.taskScheduler = execution.scheduler ?? createTaskScheduler();
     this.ownsScheduler = !execution.scheduler;
+    this.designExecutor = execution.worksheetOptimizer;
     this.samplingAvailable = execution.artifactExecutor !== null;
     this.retainedRegions = retainedRegions;
     if (initial instanceof SessionDraft) {
