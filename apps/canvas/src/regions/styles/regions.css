@@ -1434,6 +1434,7 @@
 }
 .er-inline-change {
   position: fixed;
+  overflow-y: auto;
   z-index: 45;
   display: flex;
   align-items: center;

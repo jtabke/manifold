@@ -200,32 +200,70 @@ export function RelationshipExpansion({
     </section>
   );
 }
-export function useAnchor(
-  anchor?: Element,
-  input?: string,
-  width = 280,
-  height = 60,
-) {
-  const [at, setAt] = useState({ left: 20, top: 80 });
+/** Keep the real scrub target reachable when the preview opens near a viewport edge. */
+export function useAnchor(anchor?: Element, input?: string) {
+  const ref = useRef<HTMLElement>(null);
+  const [at, setAt] = useState<{
+    left: number;
+    top: number;
+    maxHeight?: number;
+  }>({ left: 20, top: 80 });
   const place = () => {
     const target = anchor?.isConnected
       ? anchor
       : input
         ? document.querySelector(`[data-region-id="${input}"] .er-number`)
         : undefined;
-    if (!target) return;
+    const panel = ref.current;
+    if (!target || !panel) return;
     const annotated =
       target.closest("[data-source-id]")?.parentElement?.parentElement;
     const r = (annotated || target).getBoundingClientRect();
+    const row = (
+      annotated ||
+      target.closest("math") ||
+      target
+    ).getBoundingClientRect();
+    const margin = 12,
+      gap = 10,
+      topEdge = 70,
+      bottom = window.innerHeight - margin,
+      right = window.innerWidth - margin;
+    const width = panel.offsetWidth;
+    // Use the content height even when a previous placement had to scroll.
+    const height = Math.min(
+      bottom - topEdge,
+      panel.scrollHeight + panel.offsetHeight - panel.clientHeight,
+    );
+    const below = bottom - r.bottom - gap,
+      above = r.top - gap - topEdge;
+    let left = r.left,
+      top = r.bottom + gap,
+      maxHeight: number | undefined;
+    if (below < height) {
+      if (
+        row.right + gap + width <= right ||
+        row.left - gap - width >= margin
+      ) {
+        left =
+          row.right + gap + width <= right
+            ? row.right + gap
+            : row.left - gap - width;
+        top = Math.min(r.top, bottom - height);
+      } else if (above >= height || above > below) {
+        maxHeight = above < height ? Math.max(1, above) : undefined;
+        top = r.top - gap - (maxHeight ?? height);
+      } else maxHeight = Math.max(1, below);
+    }
     const next = {
-      left: Math.max(12, Math.min(window.innerWidth - width - 12, r.left)),
-      top: Math.max(
-        70,
-        Math.min(window.innerHeight - height - 12, r.bottom + 10),
-      ),
+      left: Math.max(margin, Math.min(right - width, left)),
+      top: Math.max(topEdge, Math.min(bottom - (maxHeight ?? height), top)),
+      maxHeight,
     };
     setAt((previous) =>
-      previous.left === next.left && previous.top === next.top
+      previous.left === next.left &&
+      previous.top === next.top &&
+      previous.maxHeight === next.maxHeight
         ? previous
         : next,
     );
@@ -241,7 +279,7 @@ export function useAnchor(
       window.removeEventListener("scroll", place, true);
     };
   }, [anchor, input]);
-  return at;
+  return { ref, style: at };
 }
 export function InlineExploration({
   proposal,
@@ -269,7 +307,7 @@ export function InlineExploration({
   );
   if (busy) return null;
   return (
-    <aside className="er-inline-change" style={at} aria-label="Pending value">
+    <aside className="er-inline-change" {...at} aria-label="Pending value">
       <span title="Accepted value">
         was{" "}
         {previous
@@ -303,7 +341,7 @@ export function InlineRecovery({
   return (
     <aside
       className="er-inline-change er-inline-recovery"
-      style={at}
+      {...at}
       aria-label="Previous value"
     >
       <span>was {shown(previous)}</span>

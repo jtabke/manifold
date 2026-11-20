@@ -66,10 +66,10 @@ try {
     .click();
   const controls = page.getByLabel("Explore x", { exact: true }),
     value = controls.getByLabel("Exploration value x", { exact: true });
-  await controls
-    .getByLabel("Exploration maximum", { exact: true })
-    .fill("0.003");
-  await value.fill("0.002");
+  await expect(value).toHaveValue("1");
+  await expect(controls).toContainText("was 1 mm");
+  await controls.getByLabel("Exploration maximum", { exact: true }).fill("3");
+  await value.fill("2");
   await value.press("Enter");
   await expect(page.locator('[data-result-for="F"]')).toContainText("20 N");
   await controls

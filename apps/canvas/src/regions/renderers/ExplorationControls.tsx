@@ -50,7 +50,7 @@ export function ExplorationControls({
   });
   const [error, setError] = useState("");
   const [rangeError, setRangeError] = useState("");
-  const at = useAnchor(anchor, proposal.input, 350, 410);
+  const at = useAnchor(anchor, proposal.input);
   useEffect(() => setValue(shown), [shown]);
   const affected = [...current.statements].filter(
     ([id]) =>
@@ -96,7 +96,7 @@ export function ExplorationControls({
   return (
     <aside
       className="er-exploration-controls"
-      style={at}
+      {...at}
       aria-label={`Explore ${name}`}
       onKeyDown={(e) => {
         if (e.key === "Escape") {

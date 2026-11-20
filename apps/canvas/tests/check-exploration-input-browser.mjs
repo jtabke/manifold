@@ -113,10 +113,10 @@ try {
           });
           await page.mouse.move(at.x, at.y);
           await page.mouse.down();
+          await expect(control).toHaveAttribute("data-test-pointer", /^\d+$/);
           const pointer = Number(
             await control.getAttribute("data-test-pointer"),
           );
-          assert.ok(Number.isFinite(pointer));
           return { ...at, pointer };
         };
         const foreign = async (type, at) =>
