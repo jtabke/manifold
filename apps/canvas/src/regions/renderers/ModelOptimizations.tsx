@@ -12,7 +12,6 @@ import {
 import {
   computeOptimizationResponse,
   undoOptimizationApply,
-  optimizationViews,
   reviewOptimizationRuntime,
   applyOptimizationCandidate,
   keepModelOptimization,
@@ -23,22 +22,23 @@ import { optimizationConvert } from "../optimizationQuantities";
 import type { AnalysisOutput, ResponseRequest } from "../modelAnalysis";
 import "../styles/modelAnalyses.css";
 const format = (n: number) => Number(n.toPrecision(10)).toString();
-export { ModelOptimizationEditor } from "./OptimizationEditor";
 import { ModelOptimizationEditor } from "./OptimizationEditor";
 export function ModelOptimizations({
+  views,
   session,
   positions,
   beforeAction,
   move,
   buffers,
 }: {
+  views: readonly f.View[];
   session: RegionSession;
   positions: Record<string, Point>;
   beforeAction: () => boolean;
   move: (id: string, event: PointerEvent) => void;
   buffers: EditBuffers;
 }) {
-  return optimizationViews(session.document).map((view) => (
+  return views.map((view) => (
     <OptimizationCard
       key={view.id}
       {...{ session, view, beforeAction, move, buffers }}

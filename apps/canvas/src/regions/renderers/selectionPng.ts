@@ -1,5 +1,4 @@
-import { toCanvas } from "html-to-image";
-import { canvasImageStyles } from "./canvasImageStyles";
+import { renderCanvasImage } from "./canvasImageStyles";
 import { canvasZoom } from "../interaction/canvasViewport";
 import type { CommandTarget } from "../interaction/commands";
 
@@ -95,8 +94,7 @@ export async function selectionPng(
             : 1),
     );
   for (const { node, bounds: b } of ordered) {
-    const image = await toCanvas(node, {
-      fontEmbedCSS: await canvasImageStyles(node),
+    const image = await renderCanvasImage(node, {
       width: Math.ceil(b.width / zoom),
       height: Math.ceil(b.height / zoom),
       pixelRatio: ratio,

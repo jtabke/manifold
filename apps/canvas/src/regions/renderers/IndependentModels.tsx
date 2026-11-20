@@ -4,7 +4,7 @@ import { useEditBuffer } from "../app/useEditBuffer";
 import * as f from "@manifold/foundation";
 import { AUTHORED_MODEL, type AuthoredModel } from "../authoredModels";
 import { ModelAnalysisEditor } from "./ModelAnalyses";
-import { ModelOptimizationEditor } from "./ModelOptimizations";
+import { ModelOptimizationEditor } from "./OptimizationEditor";
 import { ModelDefinitionEditor } from "./ModelDefinitionEditor";
 import type { RegionSession, Point } from "../document.ts";
 import { canvasSchemas } from "../app/canvasDocument.ts";
@@ -17,7 +17,6 @@ import {
   inspectModel,
   modelReference,
   modelRequest,
-  modelViews,
   setModelInput,
   previewModelInput,
   keepModelPreview,
@@ -27,6 +26,7 @@ import {
 } from "../modelCommands.ts";
 import "../styles/independentModels.css";
 export function IndependentModels({
+  views,
   session,
   positions,
   beforeAction,
@@ -34,6 +34,7 @@ export function IndependentModels({
   editBuffers,
   askAgent,
 }: {
+  views: readonly f.View[];
   session: RegionSession;
   askAgent?: (id: string, at: Point) => void;
   positions: Record<string, Point>;
@@ -41,11 +42,12 @@ export function IndependentModels({
   move: (id: string, event: PointerEvent) => void;
   editBuffers: EditBuffers;
 }) {
-  return modelViews(session.document).map((view) => (
+  return views.map((view) => (
     <ModelCard
       key={view.id}
       session={session}
       view={view}
+      views={views}
       at={positions[view.id] || view}
       beforeAction={beforeAction}
       move={move}
@@ -57,6 +59,7 @@ export function IndependentModels({
 function ModelCard({
   session,
   view,
+  views,
   at,
   beforeAction,
   move,
@@ -66,6 +69,7 @@ function ModelCard({
   session: RegionSession;
   askAgent?: (id: string, at: Point) => void;
   view: f.View;
+  views: readonly f.View[];
   at: Point;
   beforeAction: () => boolean;
   move: (id: string, event: PointerEvent) => void;
@@ -264,7 +268,7 @@ function ModelCard({
                       <option value="">
                         Choose a public port or CSV source
                       </option>
-                      {modelViews(document)
+                      {views
                         .filter(
                           (v) =>
                             !v.alternative && v.reference.item !== instance,

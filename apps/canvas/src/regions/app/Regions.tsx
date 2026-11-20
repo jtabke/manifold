@@ -33,8 +33,8 @@ import {
   deleteSelection,
   selectionEditReason,
 } from "../selectionOperations";
-import { ModelDefinitionEditor } from "../renderers/ModelDefinitionEditor";
-import { parse } from "../../notebook/math";
+import { dispatchCanvasCommand } from "./dispatchCanvasCommand";
+import { WorksheetLayer } from "../renderers/WorksheetLayer";
 import type { ModelSource } from "../authoredModels";
 import { useCanvasExploration } from "./useCanvasExploration";
 import { CommandPalette } from "../renderers/CommandPalette";
@@ -46,8 +46,6 @@ import {
   RegionEditor,
   type RegionEditorDraft,
 } from "../renderers/RegionEditor";
-import { RegionCommandMenu } from "../renderers/RegionCommandMenu";
-import { ReferencedNote } from "../renderers/ReferencedNote";
 import { CurveRegion } from "../renderers/CurveRegion";
 import {
   canvasScroll as viewportScroll,
@@ -59,6 +57,8 @@ import {
 } from "../interaction/canvasViewport";
 import {
   createElement,
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -67,18 +67,14 @@ import {
   useState,
 } from "react";
 import CalculationHistory from "../renderers/CalculationHistory";
-import { ModelAnalyses } from "../renderers/ModelAnalyses";
-import { ModelOptimizations } from "../renderers/ModelOptimizations";
 import { optimizationViews } from "../modelOptimizationCommands";
 import { analysisViews } from "../modelAnalysisCommands";
-import { IndependentModels } from "../renderers/IndependentModels";
-import { insertModel, modelViews } from "../modelCommands";
+import { modelViews } from "../modelCommands";
 import CanvasCleanupDialog from "../renderers/CanvasCleanupDialog";
 import {
   ArrowUpRight,
   Bookmark,
   ArrowLeft,
-  Check,
   GripVertical,
   FilePlus2,
   Download,
@@ -89,17 +85,11 @@ import {
   MoreHorizontal,
   MessageSquare,
   FileInput,
-  Plus,
   Search,
   Undo2,
   X,
 } from "lucide-react";
-import {
-  display,
-  same,
-  references,
-  quantityLiteral,
-} from "../../notebook/math";
+import { display, same } from "../../notebook/math";
 import {
   RegionSession,
   ancestors,
@@ -117,7 +107,6 @@ import {
   SpatialComparison,
 } from "../renderers/Interactions";
 import "../styles/regions.css";
-import { exportSelectionPng } from "../renderers/selectionPng";
 import {
   CanvasActionMenu,
   type ActionMenuLocation,
@@ -127,7 +116,6 @@ import {
   commandSubject,
   resolveCommands,
   markingCommands,
-  toolbarCommands,
   searchCommands,
   requestedPlotCommand,
   workspaceCommands as resolveWorkspaceCommands,
@@ -145,15 +133,12 @@ import {
 import { type InitialWorkspace } from "./canvasBootstrap";
 import { ArtifactComputationProvider } from "./artifactRuntime";
 import { REGION_STEP, regionAdvance, freeRegionPosition } from "../pageLayout";
-import { DataRegion } from "../renderers/DataRegion";
 import {
   DatasetReview,
   DatasetResult,
-  RecordFeedback,
   type DataSelection,
 } from "../renderers/DatasetViews";
-import { evaluateDataset } from "../datasetModel";
-import { matchesMeasurementText } from "../dataSources";
+import { createDatasetStatesSelector } from "../datasetModel";
 import { placeDataResult } from "../dataFeedback";
 import { DataRelationshipOverlay } from "../renderers/DataRelationshipOverlay";
 import { useRelationshipNavigation } from "../interaction/useRelationshipNavigation";
@@ -168,10 +153,7 @@ import {
 } from "../renderers/SystemInvestigation";
 import { placeInvestigation } from "../systemPresentation";
 import { SystemOverview } from "../renderers/SystemOverview";
-import {
-  ExternalReferenceView,
-  ExternalReferenceEditor,
-} from "../renderers/ExternalReferenceView";
+import { ExternalReferenceEditor } from "../renderers/ExternalReferenceView";
 import {
   quantityTitle,
   findBalance,
@@ -218,20 +200,12 @@ import {
 } from "../artifacts";
 
 const label = (name: string) => (name === "T_inf" ? "T∞" : name);
-const measurementCaption = (
-  text: string,
-  name: string,
-  source: { raw: string; unit: string },
-) => {
-  try {
-    return matchesMeasurementText(text, name, source.raw, source.unit)
-      ? "Imported measurement"
-      : "Edited assumption";
-  } catch {
-    // Older files may retain a units field accepted before strict unit validation.
-    return "Source units need review";
-  }
-};
+const ModelPanels = lazy(() => import("../renderers/ModelPanels"));
+const ModelDefinitionEditor = lazy(() =>
+  import("../renderers/ModelDefinitionEditor").then((m) => ({
+    default: m.ModelDefinitionEditor,
+  })),
+);
 
 export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const renders = useRef(0);
@@ -340,13 +314,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     () => analysisViews(acceptedDocument),
     [acceptedDocument],
   );
+  const optimizationFrames = useMemo(
+    () => optimizationViews(acceptedDocument),
+    [acceptedDocument],
+  );
   const modelFrames = useMemo(
-    () => [
-      ...independentViews,
-      ...analysisFrames,
-      ...optimizationViews(acceptedDocument),
-    ],
-    [acceptedDocument, independentViews, analysisFrames],
+    () => [...independentViews, ...analysisFrames, ...optimizationFrames],
+    [independentViews, analysisFrames, optimizationFrames],
   );
   const extraFrames = useMemo(
     () => [
@@ -387,23 +361,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     if (artifactMode && !saved.blocked && !session.isSaved) void saveLocal();
   }, [artifactMode, acceptedDocument, artifacts, saved]);
   const accepted = useMemo(() => project(page), [page]);
-  const datasetStates = useMemo<
-    Record<
-      string,
-      { result?: ReturnType<typeof evaluateDataset>; error?: string }
-    >
-  >(
-    () =>
-      Object.fromEntries(
-        (page.dataRelations || []).map((r) => {
-          try {
-            return [r.id, { result: evaluateDataset(page, r) }];
-          } catch (e) {
-            return [r.id, { error: (e as Error).message }];
-          }
-        }),
-      ),
-    [page],
+  const selectDatasetStates = useMemo(createDatasetStatesSelector, []);
+  const datasetStates = useMemo(
+    () => selectDatasetStates(page),
+    [page, selectDatasetStates],
   );
   const trial = params.get("trial");
   const quiet = trial !== "baseline";
@@ -3040,368 +3001,119 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       { block: "nearest", inline: "nearest" },
     );
   };
-  const dispatchCommand = (command: CommandRequest) => {
-    const { target } = command;
-    const id = target.id;
-    switch (command.operation) {
-      case "selection.copy-png":
-      case "selection.save-png":
-        if (canvas.current) {
-          setMessage("Rendering transparent PNG…");
-          void exportSelectionPng(
-            canvas.current,
-            target,
-            zoom,
-            command.operation === "selection.copy-png",
-          ).then(setMessage, (error: unknown) =>
-            setMessage(
-              `PNG export failed: ${error instanceof Error ? error.message : String(error)}`,
-            ),
-          );
-        }
-        break;
-      case "mathematics.enable":
-        if (target.id) {
-          session.enableScientificMath(target.id);
-          setMessage(
-            "Scientific math v2 enabled. Undo restores its earlier rules.",
-          );
-        }
-        break;
-      case "mathematics.enable-v3":
-        if (target.id) {
-          session.enableScientificMathV3(target.id);
-          setMessage(
-            "Scientific math enabled for this equation. Undo restores its earlier rules.",
-          );
-        }
-        break;
-      case "definition.edit":
-        if (id)
-          begin(
-            id,
-            accepted.kinds[id] === "quantity"
-              ? sourceSpans(accepted.texts[id] || "")[0]
-              : undefined,
-          );
-        break;
-      case "quantity.vary": {
-        if (!id) break;
-        setSelected(id);
-        setSelectionDetail(undefined);
-        revealCommandObject(id);
-        startVariation(id);
-        const invocationFocus = document.activeElement;
-        requestAnimationFrame(() => {
-          // Do not steal focus if the engineer has already entered a control.
-          if (
-            document.activeElement !== invocationFocus &&
-            document.activeElement !== document.body
-          )
-            return;
-          canvas.current
-            ?.querySelector<HTMLElement>(
-              `[data-region-id="${id}"] .er-scrubbable`,
-            )
-            ?.focus();
-        });
-        setMessage(
-          "Explore without changing the baseline. Accept the value, keep an alternative, or cancel.",
-        );
-        break;
-      }
-      case "response.plot": {
-        const { output, input, request } = command;
-        if (artifactMode) createArtifact(request, output, undefined, input);
-        else {
-          const plot = session.addPlot(output, input);
-          setSelected(plot);
-        }
-        break;
-      }
-      case "response.open": {
-        const { view } = command;
-        spatial.setScene((scene) => ({
-          ...scene,
-          closed: (scene.closed || []).filter((id) => id !== view),
-        }));
-        requestAnimationFrame(() => revealCommandObject(view));
-        break;
-      }
-      case "quantity.connect": {
-        const { connection, symbol } = command;
-        if (connection)
-          setLinkMenu({
-            source:
-              connection.kind === "constrain"
-                ? connection.target
-                : connection.source,
-            mode: "review",
-            at: {
-              x: (viewportScroll(canvas.current).x + 160) / zoom,
-              y: (viewportScroll(canvas.current).y + 120) / zoom,
-            },
-            target: {
-              region:
-                connection.kind === "constrain"
-                  ? connection.source
-                  : connection.target,
-              symbol,
-            },
-          });
-        else if (target.kind === "selection")
-          pickConnection(
-            undefined,
-            target.ids?.find(
-              (candidate) =>
-                candidate !==
-                target.ids?.find(
-                  (source) =>
-                    accepted.statements.get(source)?.relation === "=" &&
-                    !accepted.errors.has(source),
-                ),
-            ),
-          );
-        else if (id)
-          accepted.statements.get(id)?.relation === "="
-            ? pickConnection(id)
-            : pickConnection(undefined, id);
-        break;
-      }
-      case "quantity.trace":
-        if (id) inspectConnections(id, actionMenu?.world);
-        break;
-      case "context.compare":
-        branchFor(id);
-        break;
-      case "definition.code": {
-        const { output, input } = command;
-        const existing = artifacts.find(
-          (a) => a.output === output && a.input === input,
-        );
-        const artifact =
-          existing?.id || createArtifact(undefined, output, undefined, input);
-        if (artifact) spatial.openTool("python", output, artifact);
-        break;
-      }
-      case "dataset.inspect":
-        if (id) {
-          setCollapsedData((ids) =>
-            ids.filter((candidate) => candidate !== id),
-          );
-          chooseData({ dataset: id, rows: [], columns: [], kind: "series" });
+  const finishCommandEdit = () => {
+    if (editing && !commit()) return false;
+    setEditing(undefined);
+    return true;
+  };
+  const beforeModelAction = () => {
+    if (!finishCommandEdit()) return false;
+    revertExploration();
+    return true;
+  };
+  const toggleDataset = (id: string) =>
+    setCollapsedData((ids) =>
+      ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id],
+    );
+  const revealWorksheetObject = (id: string) =>
+    revealCanvasElement(
+      canvas.current?.querySelector(
+        `[data-region-id="${id}"],[data-data-relation-id="${id}"]`,
+      ),
+      { block: "nearest", inline: "nearest" },
+    );
+  const dispatchCommand = (command: CommandRequest) =>
+    dispatchCanvasCommand(command, {
+      session,
+      accepted,
+      canvas,
+      zoom,
+      menu: actionMenu,
+      writingPoint,
+      message: setMessage,
+      reveal: revealCommandObject,
+      select: setSelected,
+      worksheet: {
+        edit: begin,
+        vary: (id) => {
+          setSelected(id);
+          setSelectionDetail(undefined);
           revealCommandObject(id);
-        }
-        break;
-      case "dataset.connect":
-        if (id)
-          openDataReview(
-            id,
-            dataSelection?.columns || [],
-            dataSelection?.rows || [],
-            undefined,
-            actionMenu?.world,
-          );
-        break;
-      case "dataset.visualize": {
-        const { view } = command;
-        if (id) {
-          chooseData({
-            dataset: id,
-            relation: view,
-            view,
-            rows: [],
-            columns: [],
-            kind: "series",
-          });
-          revealCommandObject(view);
-        }
-        break;
-      }
-      case "dataset.collapse":
-        if (id)
-          setCollapsedData((ids) =>
-            ids.includes(id)
-              ? ids.filter((candidate) => candidate !== id)
-              : [...ids, id],
-          );
-        break;
-      case "model.enter":
-        if (id) hierarchy.go(id);
-        break;
-      case "model.detail":
-        if (id) hierarchy.setDetail((d) => ({ ...d, [id]: "detail" }));
-        break;
-      case "selection.organize":
-        organizeSelection();
-        break;
-      case "selection.group":
-        groupSelection();
-        break;
-      case "selection.model":
-        prepareModel(target.ids || []);
-        break;
-      case "canvas.write":
-        fresh(
-          actionMenu
-            ? {
-                x: actionMenu.world.x,
-                y: actionMenu.world.y + (actionMenu.target ? 110 : 0),
-              }
-            : writingPoint(),
-        );
-        break;
-      case "canvas.fit":
-        fit();
-        break;
-      case "canvas.new":
-        void newCanvas();
-        break;
-      case "model.author": {
-        if (editing && !commit()) break;
-        setEditing(undefined);
-        revertExploration();
-        const rows = session.state.regions
-          .filter(
-            (r) => !canvasSelection.length || canvasSelection.includes(r.id),
-          )
-          .flatMap((r) => {
-            try {
-              const text = project(session.state).texts[r.id] || r.text;
-              const statement = parse(text, undefined, r.mathVersion ?? 1);
-              if (
-                statement.relation !== "=" ||
-                (session.state.links?.[r.id] &&
-                  Object.keys(session.state.links[r.id]).length)
-              )
-                return [];
-              return [
-                {
-                  id: r.id,
-                  text,
-                  ...(r.mathVersion ? { mathVersion: r.mathVersion } : {}),
-                },
-              ];
-            } catch {
-              return [];
-            }
-          });
-        const inputs = rows
-          .filter((r) =>
-            quantityLiteral(
-              parse(r.text, undefined, r.mathVersion ?? 1).expression,
-            ),
-          )
-          .map((r) => r.id);
-        setAuthoringModel({
-          source: {
-            rows: rows.length
-              ? rows
-              : [
-                  {
-                    id: "equation-" + crypto.randomUUID(),
-                    text: "",
-                    mathVersion: 3,
-                  },
-                ],
-            inputs,
-            outputs: rows
-              .filter((r) => !inputs.includes(r.id))
-              .map((r) => r.id),
-          },
-          at: writingPoint(),
-        });
-        break;
-      }
-      case "model.spring":
-      case "model.scale": {
-        if (editing && !commit()) break;
-        setEditing(undefined);
-        revertExploration();
-        const desired = actionMenu?.world || writingPoint(),
-          at = independentViews.some(
-            (v) =>
-              Math.abs(v.x - desired.x) < 430 &&
-              Math.abs(v.y - desired.y) < 500,
-          )
-            ? {
-                x: Math.max(...independentViews.map((v) => v.x)) + 450,
-                y: desired.y,
-              }
-            : desired;
-        const instance = insertModel(
-          session,
-          command.operation === "model.spring" ? "spring" : "scale",
-          at,
-        );
-        requestAnimationFrame(() => revealCommandObject(instance + ":view"));
-        break;
-      }
-      case "data.import":
-        csvFile.current?.click();
-        break;
-      case "reference.add":
-        setReferenceEditor("new");
-        break;
-      case "canvas.undo":
-        undo();
-        break;
-      case "help.shortcuts":
-        openShortcuts();
-        break;
-      case "search.open":
-        paletteOpen("search");
-        break;
-      case "overlay.dependencies":
-        setOverlay("dependencies");
-        break;
-      case "overlay.requirements":
-        setOverlay("requirements");
-        break;
-      case "canvas.stack":
-        session.stack();
-        break;
-      case "canvas.evaluate":
-        session.evaluate();
-        break;
-      case "history.open":
-        if (editing && !commit()) break;
-        setEditing(undefined);
-        setHistory(true);
-        break;
-      case "workspace.open":
-        workspaceFile.current?.click();
-        break;
-      case "workspace.export":
-        void exportArtifacts();
-        break;
-      case "workspace.cleanup":
-        if (editing && !commit()) break;
-        setEditing(undefined);
-        setCleanupOpen(true);
-        break;
-      case "system.explore":
-        openSystem();
-        break;
-      case "marking.open": {
-        const rect = canvas.current?.getBoundingClientRect();
-        if (rect) {
-          const at = actionPointer.current || {
+          startVariation(id);
+        },
+        trace: inspectConnections,
+        compare: branchFor,
+        reviewLink: (source, region, symbol, at) =>
+          setLinkMenu({
+            source,
+            mode: "review",
+            at,
+            target: { region, symbol },
+          }),
+        pickLink: pickConnection,
+        write: fresh,
+      },
+      plots: {
+        artifactsEnabled: artifactMode,
+        create: (output, input, request) =>
+          createArtifact(request, output, undefined, input),
+        reopen: (view) =>
+          spatial.setScene((scene) => ({
+            ...scene,
+            closed: (scene.closed || []).filter((id) => id !== view),
+          })),
+        code: (output, artifact) =>
+          spatial.openTool("python", output, artifact),
+      },
+      datasets: {
+        selection: dataSelection,
+        choose: chooseData,
+        expand: (id) => setCollapsedData((ids) => ids.filter((v) => v !== id)),
+        collapse: toggleDataset,
+        review: (id, columns, rows, at) =>
+          openDataReview(id, columns, rows, undefined, at),
+      },
+      models: {
+        beforeCreate: beforeModelAction,
+        selected: canvasSelection,
+        views: independentViews,
+        author: (source, at) => setAuthoringModel({ source, at }),
+        enter: hierarchy.go,
+        detail: (id) => hierarchy.setDetail((d) => ({ ...d, [id]: "detail" })),
+        group: prepareModel,
+      },
+      shell: {
+        "selection.organize": organizeSelection,
+        "selection.group": groupSelection,
+        "canvas.fit": fit,
+        "canvas.new": newCanvas,
+        "data.import": () => csvFile.current?.click(),
+        "reference.add": () => setReferenceEditor("new"),
+        "canvas.undo": undo,
+        "help.shortcuts": openShortcuts,
+        "search.open": () => paletteOpen("search"),
+        "overlay.dependencies": () => setOverlay("dependencies"),
+        "overlay.requirements": () => setOverlay("requirements"),
+        "history.open": () => {
+          if (finishCommandEdit()) setHistory(true);
+        },
+        "workspace.open": () => workspaceFile.current?.click(),
+        "workspace.export": () => void exportArtifacts(),
+        "workspace.cleanup": () => {
+          if (finishCommandEdit()) setCleanupOpen(true);
+        },
+        "system.explore": openSystem,
+        "marking.open": () => {
+          const rect = canvas.current?.getBoundingClientRect();
+          if (!rect) return;
+          const point = actionPointer.current || {
             x: rect.left + rect.width / 2,
             y: rect.top + rect.height / 2,
           };
-          openActionMenu(at.x, at.y, selected, "pie");
-        }
-        break;
-      }
-      default: {
-        const unsupported: never = command;
-        throw Error(
-          `This command has no supported operation in the current workspace: ${String(unsupported)}`,
-        );
-      }
-    }
-  };
+          openActionMenu(point.x, point.y, selected, "pie");
+        },
+      },
+    });
   const executeCommand = (command: CanvasCommand) => {
     if (command.unavailable) {
       setMessage(command.unavailable);
@@ -3421,11 +3133,6 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setMessage((error as Error).message);
     }
   };
-  const contextCommandsFor = (
-    id?: string,
-    detail = selectionDetail,
-    ids: string[] = [],
-  ) => resolveCommands(commandContextFor(id, detail, ids), dispatchCommand);
   const selectedContext = palette
     ? commandContextFor(
         selectedPlot?.output || selected || selectedId,
@@ -3601,21 +3308,25 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           />
         )}
         {authoringModel && (
-          <ModelDefinitionEditor
-            session={session}
-            buffers={editBuffers}
-            initial={{
-              label: "Engineering model",
-              source: authoringModel.source,
-            }}
-            at={authoringModel.at}
-            close={() => setAuthoringModel(undefined)}
-            published={(id) => {
-              setAuthoringModel(undefined);
-              if (id)
-                requestAnimationFrame(() => revealCommandObject(id + ":view"));
-            }}
-          />
+          <Suspense fallback={<span role="status">Opening model editor…</span>}>
+            <ModelDefinitionEditor
+              session={session}
+              buffers={editBuffers}
+              initial={{
+                label: "Engineering model",
+                source: authoringModel.source,
+              }}
+              at={authoringModel.at}
+              close={() => setAuthoringModel(undefined)}
+              published={(id) => {
+                setAuthoringModel(undefined);
+                if (id)
+                  requestAnimationFrame(() =>
+                    revealCommandObject(id + ":view"),
+                  );
+              }}
+            />
+          </Suspense>
         )}
         {referenceEditor && (
           <ExternalReferenceEditor
@@ -5659,6 +5370,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       <DatasetResult
                         key={relation.id}
                         relation={relation}
+                        state={datasetStates[relation.id]}
                         hidden={
                           spatial.hidden.has(relation.id) ||
                           !!(
@@ -5703,702 +5415,190 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         }
                       />
                     ))}
-                    {page.regions.map((region) => {
-                      const id = region.id,
-                        at = places[id],
-                        s = p.statements.get(id),
-                        dataRelation = (page.dataRelations || []).find(
-                          (r) =>
-                            r.output === id ||
-                            (s?.relation !== "=" &&
-                              p.statements.get(r.output)?.name === s?.name),
+                    <WorksheetLayer
+                      page={page}
+                      projection={p}
+                      original={original}
+                      sources={accepted.sources}
+                      version={acceptedDocument}
+                      places={places}
+                      visible={(id) =>
+                        !spatial.hidden.has(id) &&
+                        !(
+                          relationshipNav.focus?.mode === "arrange" &&
+                          !relationshipNav.focus.ids.includes(id)
+                        )
+                      }
+                      attention={{
+                        selected,
+                        active: selectedId,
+                        expanded: expansionId,
+                        focusedInput,
+                        overlay,
+                        related,
+                        quiet,
+                        compare,
+                        previewInput: exploration?.input,
+                        inspected:
+                          linkMenu?.mode === "inspect"
+                            ? [
+                                linkMenu.source,
+                                ...connectionNodes.map((node) => node.id),
+                              ]
+                            : [],
+                        directEdit: quiet && !variation,
+                        scrubHint: trials.scrub,
+                        maxWidth: (viewportWidth - 24) / zoom,
+                      }}
+                      math={{
+                        scrubFor,
+                        highlight:
+                          linkedName ||
+                          (systemOpen && systemInput
+                            ? p.statements.get(systemInput)?.name
+                            : undefined),
+                        expressionTarget:
+                          artifactFocus?.target === "expression"
+                            ? linkedArtifact?.output
+                            : undefined,
+                        resultTarget:
+                          artifactFocus?.target === "context"
+                            ? linkedArtifact?.output
+                            : undefined,
+                        requirementTarget:
+                          artifactFocus?.target === "requirement"
+                            ? linkedRequirement
+                            : undefined,
+                      }}
+                      editor={{
+                        id: editing,
+                        begin,
+                        editReference: setReferenceEditor,
+                        render: (id) => (
+                          <RegionEditor
+                            key={`${id}:${writing.revision}`}
+                            id={id}
+                            buffer={writing}
+                            page={page}
+                            accepted={accepted}
+                            editor={editor}
+                            skipBlur={skipBlur}
+                            commit={commit}
+                            paletteOpen={paletteOpen}
+                          />
                         ),
-                        dataState = dataRelation
-                          ? datasetStates[dataRelation.id]
-                          : undefined,
-                        error =
-                          dataState?.result &&
-                          p.errors.get(id)?.startsWith("Define ")
-                            ? undefined
-                            : p.errors.get(id),
-                        q = s && p.solved.values.get(s.name),
-                        condition = p.solved.constraints.get(id),
-                        other = s && original?.solved.values.get(s.name),
-                        kind = p.kinds[id],
-                        effectiveText = p.texts[id];
-                      return (
-                        <section
-                          key={id}
-                          data-region-id={id}
-                          data-kind={kind}
-                          data-interaction={
-                            editing === id
-                              ? "editing"
-                              : selected === id
-                                ? "selected"
-                                : "idle"
+                        defineMissing: (name) => {
+                          const next = session.create(
+                            undefined,
+                            hierarchy.scope,
+                          );
+                          session.write(next, `${name} := `);
+                          begin(next);
+                        },
+                      }}
+                      actions={{
+                        select: (id, shift, clearDetail) => {
+                          if (!shift) setCanvasSelection([id]);
+                          setSelected(id);
+                          setAreaSelection(id);
+                          if (clearDetail) {
+                            setTerm(undefined);
+                            setSelectionDetail(undefined);
                           }
-                          className={`er-region ${editing === id ? "is-editing" : ""} ${activeData?.view === id ? "is-navigation-target" : ""} ${dataRelatedIds.has(id) || dataDrag?.target === id ? "is-data-connected" : ""} ${linkMenu?.mode === "inspect" && (linkMenu.source === id || connectionNodes.some((node) => node.id === id)) ? "is-connected" : ""} ${expansionId === id ? "is-investigating" : ""} ${exploration && (id === exploration.input || ancestors(p, id).includes(exploration.input)) ? "er-preview-region" : ""} ${selected === id ? "is-selected" : ""} ${overlay === "dependencies" && selectedId && !related.has(id) ? "is-dimmed" : ""} ${overlay === "requirements" && kind === "constraint" ? "er-condition-focus" : ""} ${page.active !== "original" && contexts.find((c) => c.id === page.active)?.overrides[id] ? "er-overridden" : ""}`}
-                          style={{
-                            left: at.x,
-                            top: at.y,
-                            display:
-                              spatial.hidden.has(id) ||
-                              (relationshipNav.focus?.mode === "arrange" &&
-                                !relationshipNav.focus.ids.includes(id))
-                                ? "none"
-                                : undefined,
-                          }}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            if (!e.shiftKey) setCanvasSelection([id]);
+                        },
+                        inspectConnections,
+                        closeRelationship: () => {
+                          setTerm(undefined);
+                          setOverlay("none");
+                        },
+                        inspectSymbol: (source) => {
+                          if (!hierarchy.visible(source)) {
+                            setModelTrace(source);
+                            return true;
+                          }
+                          setDataSelection(undefined);
+                          setAreaSelection(source);
+                        },
+                        chooseTerm,
+                        inspectResult: (id, name) => {
+                          setSelectionDetail({ owner: id, kind: "result" });
+                          const a = artifacts.find((a) => a.output === id);
+                          if (a) {
+                            setArtifactFocus({ id: a.id, target: "context" });
                             setSelected(id);
-                            setAreaSelection(id);
+                            setTerm(undefined);
+                          } else chooseTerm(id, name);
+                        },
+                        navigateLink,
+                        revealSource: revealWorksheetObject,
+                      }}
+                      commands={{
+                        enabled: !variation && !palette,
+                        contextFor: commandContextFor,
+                        dispatch: dispatchCommand,
+                        execute: executeCommand,
+                        more: openActionMenu,
+                      }}
+                      data={{
+                        states: datasetStates,
+                        selection: activeData,
+                        relatedIds: dataRelatedIds,
+                        symbols: dataSymbols,
+                        hover: dataDrag?.target,
+                        selectedQuantity: areaSelection || selectedId,
+                        collapsed: collapsedData,
+                        toggle: toggleDataset,
+                        choose: chooseData,
+                        review: openDataReview,
+                        show: (id) => {
+                          setSelected(id);
+                          revealWorksheetObject(id);
+                        },
+                        selectQuantity: (id) => {
+                          setDataSelection(undefined);
+                          setSelected(id);
+                          setAreaSelection(id);
+                          revealWorksheetObject(id);
+                        },
+                        define: (dataset, row, column, name, unit, at) => {
+                          const frames = readCanvasFrames();
+                          const spot = {
+                            x: at.x,
+                            y:
+                              (frames.find((f) => f.id === dataset)?.height ||
+                                250) +
+                              at.y +
+                              45,
+                          };
+                          for (const f of frames)
                             if (
-                              !(e.target as Element).closest(
-                                "button,[role=button],math",
-                              )
-                            ) {
-                              setTerm(undefined);
-                              setSelectionDetail(undefined);
-                            }
-                          }}
-                        >
-                          <button
-                            className="er-grip"
-                            aria-label={`Move ${s?.name || "region"}`}
-                            onPointerDown={(e) => {
-                              if (e.button !== 0) return;
-                              e.stopPropagation();
-                              e.currentTarget.setPointerCapture(e.pointerId);
-                            }}
-                          >
-                            <GripVertical size={16} />
-                          </button>
-                          {s && editing !== id && (
-                            <button
-                              className="er-link-handle"
-                              data-link-source={id}
-                              aria-label={`Link ${s.relation === "=" ? s.name : `requirement ${s.name}`}`}
-                              title="Drag to connect · click for connections"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                inspectConnections(id);
-                              }}
-                            >
-                              <Link2 size={15} />
-                            </button>
-                          )}
-                          {selected === id &&
-                            editing !== id &&
-                            effectiveText &&
-                            !variation &&
-                            !palette && (
-                              <RegionCommandMenu
-                                key={JSON.stringify(
-                                  commandContextFor(id).target,
-                                )}
-                              >
-                                {() => (
-                                  <div
-                                    className={
-                                      quiet
-                                        ? "er-object-actions"
-                                        : "er-region-actions"
-                                    }
-                                    style={{
-                                      maxWidth: (viewportWidth - 24) / zoom,
-                                    }}
-                                    role="toolbar"
-                                    aria-label={`${commandSubject(commandContextFor(id))} actions`}
-                                    data-selection-kind={
-                                      commandContextFor(id).target.kind
-                                    }
-                                  >
-                                    <span className="er-command-selection">
-                                      {commandSubject(commandContextFor(id))}
-                                    </span>
-                                    {toolbarCommands(
-                                      contextCommandsFor(id),
-                                      commandContextFor(id).target.kind,
-                                    ).map((command) => (
-                                      <button
-                                        key={command.key}
-                                        data-command-id={command.id}
-                                        data-command-key={command.key}
-                                        disabled={!!command.unavailable}
-                                        title={
-                                          command.unavailable || command.preview
-                                        }
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          executeCommand(command);
-                                        }}
-                                      >
-                                        {command.toolbarLabel}
-                                      </button>
-                                    ))}
-                                    <button
-                                      aria-label="More region actions"
-                                      title="All actions"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        const rect =
-                                          event.currentTarget.getBoundingClientRect();
-                                        openActionMenu(
-                                          rect.left,
-                                          rect.bottom,
-                                          id,
-                                        );
-                                      }}
-                                    >
-                                      <MoreHorizontal size={17} />
-                                    </button>
-                                  </div>
-                                )}
-                              </RegionCommandMenu>
-                            )}
-                          {expansionId === id && !focusedInput && (
-                            <button
-                              className="er-investigation-close"
-                              aria-label="Close relationship"
-                              onClick={() => {
-                                setTerm(undefined);
-                                setOverlay("none");
-                              }}
-                            >
-                              <X size={14} />
-                            </button>
-                          )}
-                          {editing === id ? (
-                            <RegionEditor
-                              key={`${id}:${writing.revision}`}
-                              id={id}
-                              buffer={writing}
-                              page={page}
-                              accepted={accepted}
-                              editor={editor}
-                              skipBlur={skipBlur}
-                              commit={commit}
-                              paletteOpen={paletteOpen}
-                            />
-                          ) : region.data ? (
-                            <DataRegion
-                              data={region.data}
-                              navigating={!!activeData?.relation}
-                              dataset={region.id}
-                              trace={
-                                (page.dataRelations || []).some(
-                                  (r) => r.dataset === region.id,
-                                )
-                                  ? () => {
-                                      const relation = page.dataRelations!.find(
-                                        (r) => r.dataset === region.id,
-                                      )!;
-                                      setSelected(relation.output);
-                                      revealCanvasElement(
-                                        canvas.current?.querySelector(
-                                          `[data-region-id="${relation.output}"]`,
-                                        ),
-                                        {
-                                          block: "nearest",
-                                          inline: "nearest",
-                                        },
-                                      );
-                                    }
-                                  : undefined
-                              }
-                              collapsed={collapsedData.includes(region.id)}
-                              toggleCollapsed={() =>
-                                setCollapsedData((ids) =>
-                                  ids.includes(region.id)
-                                    ? ids.filter((id) => id !== region.id)
-                                    : [...ids, region.id],
-                                )
-                              }
-                              selection={activeData}
-                              choose={(rows, columns, kind) =>
-                                chooseData({
-                                  dataset: region.id,
-                                  rows,
-                                  columns,
-                                  kind,
-                                })
-                              }
-                              connect={(columns, rows) =>
-                                openDataReview(region.id, columns, rows)
-                              }
-                              selected={areaSelection || selectedId}
-                              bound={page.regions
-                                .filter((r) => r.source?.dataset === id)
-                                .map((r) => ({
-                                  row: r.source!.row,
-                                  column: r.source!.column,
-                                  id: r.id,
-                                  name: p.statements.get(r.id)?.name || r.id,
-                                }))}
-                              select={(id) => {
-                                setDataSelection(undefined);
-                                setSelected(id);
-                                setAreaSelection(id);
-                                revealCanvasElement(
-                                  canvas.current?.querySelector(
-                                    `[data-region-id="${id}"]`,
-                                  ),
-                                  {
-                                    block: "nearest",
-                                    inline: "nearest",
-                                  },
-                                );
-                              }}
-                              define={(row, column, name, unit) => {
-                                const spot = {
-                                  x: at.x,
-                                  y:
-                                    (readCanvasFrames().find(
-                                      (f) => f.id === region.id,
-                                    )?.height || 250) +
-                                    at.y +
-                                    45,
-                                };
-                                for (const f of readCanvasFrames())
-                                  if (
-                                    f.id !== region.id &&
-                                    spot.x < f.x + f.width &&
-                                    spot.x + 500 > f.x &&
-                                    spot.y < f.y + f.height &&
-                                    spot.y + 80 > f.y
-                                  )
-                                    spot.y = f.y + f.height + 25;
-                                const id = session.quantityFromCell(
-                                  region.id,
-                                  row,
-                                  column,
-                                  name,
-                                  unit,
-                                  spot,
-                                );
-                                setSelected(id);
-                                setAreaSelection(id);
-                              }}
-                            />
-                          ) : region.external ? (
-                            <ExternalReferenceView
-                              name={region.label || effectiveText}
-                              reference={region.external}
-                              edit={() => setReferenceEditor(id)}
-                            />
-                          ) : s ? (
-                            <div
-                              className="er-math-line"
-                              onDoubleClick={() => begin(id)}
-                            >
-                              <MathLine
-                                statement={s}
-                                text={effectiveText}
-                                inputVersion={session.document}
-                                directEdit={quiet && !variation}
-                                selectOnClick
-                                inspectSymbols={(page.dataRelations || []).some(
-                                  (r) => r.output === id,
-                                )}
-                                linkSources={accepted.sources}
-                                onSymbol={(name) => {
-                                  const r = (page.dataRelations || []).find(
-                                    (r) => r.output === id,
-                                  );
-                                  if (r) {
-                                    const binding = r.bindings.find(
-                                      (b) =>
-                                        (b.quantity
-                                          ? p.statements.get(b.quantity)?.name
-                                          : b.symbol) === name,
-                                    );
-                                    if (binding) {
-                                      chooseData({
-                                        dataset: r.dataset,
-                                        view: id,
-                                        rows: [],
-                                        columns: [binding.column],
-                                        kind: "series",
-                                      });
-                                      return true;
-                                    }
-                                    if (name === s.name) {
-                                      chooseData({
-                                        dataset: r.dataset,
-                                        view: id,
-                                        rows: activeData?.rows || [],
-                                        columns: [],
-                                        kind: activeData?.rows.length
-                                          ? "record"
-                                          : "series",
-                                      });
-                                      return true;
-                                    }
-                                  }
-                                  const source = accepted.sources[name]?.[0];
-                                  if (source) {
-                                    if (!hierarchy.visible(source)) {
-                                      setModelTrace(source);
-                                      return true;
-                                    }
-                                    setDataSelection(undefined);
-                                    setAreaSelection(source);
-                                  }
-                                }}
-                                choose={(name) => chooseTerm(id, name)}
-                                scrub={scrubFor(id)}
-                                resolved={
-                                  expansionId === id && kind === "equation"
-                                    ? p
-                                    : undefined
-                                }
-                                scrubSource={scrubFor}
-                                edit={(span) => begin(id, span)}
-                                highlight={
-                                  linkedName ||
-                                  (systemOpen && systemInput
-                                    ? p.statements.get(systemInput)?.name
-                                    : undefined)
-                                }
-                                highlights={dataSymbols}
-                                highlightExpression={
-                                  artifactFocus?.target === "expression" &&
-                                  linkedArtifact?.output === id
-                                }
-                              />
-                              {dataState && kind === "equation" && (
-                                <button
-                                  className="er-data-model-result"
-                                  onClick={() => {
-                                    setSelected(dataRelation!.id);
-                                    revealCanvasElement(
-                                      canvas.current?.querySelector(
-                                        `[data-data-relation-id="${dataRelation!.id}"]`,
-                                      ),
-                                      {
-                                        block: "nearest",
-                                        inline: "nearest",
-                                      },
-                                    );
-                                  }}
-                                >
-                                  {dataState.error
-                                    ? `Dataset blocked · ${dataState.error}`
-                                    : `${dataState.result!.records.length} records · calculated`}
-                                </button>
-                              )}
-                              {(kind === "equation" ||
-                                (kind === "quantity" &&
-                                  s &&
-                                  !quantityLiteral(s.expression))) &&
-                                q &&
-                                !error && (
-                                  <button
-                                    className={`er-result ${artifactFocus?.target === "context" && linkedArtifact?.output === id ? "is-linked" : ""}`}
-                                    data-result-for={s.name}
-                                    aria-label={`Inspect result ${s.anonymous ? "expression" : s.name}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectionDetail({
-                                        owner: id,
-                                        kind: "result",
-                                      });
-                                      const a = artifacts.find(
-                                        (a) => a.output === id,
-                                      );
-                                      if (a) {
-                                        setArtifactFocus({
-                                          id: a.id,
-                                          target: "context",
-                                        });
-                                        setSelected(id);
-                                        setTerm(undefined);
-                                      } else chooseTerm(id, s.name);
-                                    }}
-                                  >
-                                    {exploration &&
-                                      ancestors(p, id).includes(
-                                        exploration.input,
-                                      ) && (
-                                        <small className="er-result-preview">
-                                          Preview
-                                        </small>
-                                      )}
-                                    = {display(q)}
-                                  </button>
-                                )}
-                              {kind === "constraint" &&
-                                dataState?.result &&
-                                !condition && (
-                                  <span className="er-data-requirement-status">
-                                    {
-                                      dataState.result.records.filter(
-                                        (r) => r.conditions[id],
-                                      ).length
-                                    }
-                                    /{dataState.result.records.length} records
-                                    within limit
-                                  </span>
-                                )}
-                              {condition && !error && (
-                                <span
-                                  className={`er-condition ${condition.pass ? "is-pass" : "is-fail"} ${artifactFocus?.target === "requirement" && linkedRequirement === id ? "is-linked" : ""}`}
-                                  role="status"
-                                  title="This authored mathematical condition only; not physical validation"
-                                >
-                                  {condition.pass ? (
-                                    <Check size={14} />
-                                  ) : (
-                                    <X size={14} />
-                                  )}{" "}
-                                  {exploration &&
-                                  ancestors(p, id).includes(exploration.input)
-                                    ? "Preview · "
-                                    : ""}
-                                  {condition.pass
-                                    ? "Satisfied"
-                                    : "Not satisfied"}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <div
-                              className={`er-note ${kind === "draft" ? "er-draft" : ""}`}
-                              role="button"
-                              tabIndex={0}
-                              aria-label={
-                                effectiveText
-                                  ? `Edit thought: ${effectiveText}`
-                                  : "Write here"
-                              }
-                              onDoubleClick={() => begin(id)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  begin(id);
-                                }
-                              }}
-                            >
-                              {effectiveText ? (
-                                <ReferencedNote
-                                  text={effectiveText}
-                                  links={page.links?.[id] || {}}
-                                  labels={Object.fromEntries(
-                                    page.regions.map((r) => [
-                                      r.id,
-                                      r.data?.name ||
-                                        p.statements.get(r.id)?.name ||
-                                        "Unavailable reference",
-                                    ]),
-                                  )}
-                                  open={navigateLink}
-                                />
-                              ) : (
-                                <span>Continue writing…</span>
-                              )}
-                            </div>
-                          )}
-                          {trials.scrub &&
-                            kind === "quantity" &&
-                            !editing &&
-                            !quiet && (
-                              <small className="er-value-hint">
-                                ↔ Drag value to explore · click to type
-                              </small>
-                            )}
-                          {kind === "equation" &&
-                            dataRelation &&
-                            dataState?.result &&
-                            activeData?.dataset === dataRelation.dataset &&
-                            activeData.detail === "calculation" &&
-                            activeData.view === id &&
-                            editing !== id && (
-                              <RecordFeedback
-                                page={page}
-                                relation={dataRelation}
-                                records={dataState.result.records}
-                                selection={activeData}
-                                clear={() => {
-                                  setDataSelection(undefined);
-                                  setAreaSelection(undefined);
-                                  setSelected(undefined);
-                                }}
-                                follow={(row) => {
-                                  relationshipNav.follow(dataRelation, {
-                                    kind: "source",
-                                    row,
-                                  });
-                                }}
-                              />
-                            )}
-                          {kind === "constraint" &&
-                            dataRelation &&
-                            dataState?.result &&
-                            activeData?.detail === "requirement" &&
-                            activeData.view === id && (
-                              <RecordFeedback
-                                page={page}
-                                relation={dataRelation}
-                                records={dataState.result.records}
-                                selection={activeData}
-                                requirement={id}
-                                clear={() => {
-                                  setDataSelection(undefined);
-                                  setAreaSelection(undefined);
-                                  setSelected(undefined);
-                                }}
-                                follow={(row) =>
-                                  relationshipNav.follow(dataRelation, {
-                                    kind: "source",
-                                    row,
-                                  })
-                                }
-                              />
-                            )}
-                          {error && editing !== id && (
-                            <details
-                              className="er-region-error"
-                              key={error}
-                              onClick={(e) => e.stopPropagation()}
-                              onBlur={(e) => {
-                                if (!e.currentTarget.contains(e.relatedTarget))
-                                  e.currentTarget.open = false;
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Escape") {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  e.currentTarget.open = false;
-                                  e.currentTarget
-                                    .querySelector("summary")
-                                    ?.focus();
-                                }
-                              }}
-                              onToggle={(e) => {
-                                if (e.currentTarget.open)
-                                  revealCanvasElement(
-                                    e.currentTarget.querySelector(
-                                      ".er-region-error-details",
-                                    ),
-                                    { block: "nearest", inline: "nearest" },
-                                  );
-                              }}
-                            >
-                              <summary aria-label={error} title={error}>
-                                !
-                              </summary>
-                              <div
-                                className="er-region-error-details"
-                                role="status"
-                                style={{
-                                  maxWidth: (viewportWidth - 24) / zoom,
-                                }}
-                              >
-                                {error}
-                                {s &&
-                                  references(s.expression)
-                                    .filter((name) => !p.sources[name])
-                                    .slice(0, 1)
-                                    .map((name) => (
-                                      <button
-                                        key={name}
-                                        onClick={() => {
-                                          const next = session.create(
-                                            undefined,
-                                            hierarchy.scope,
-                                          );
-                                          session.write(next, `${name} := `);
-                                          begin(next);
-                                        }}
-                                      >
-                                        Define {name} here <Plus size={11} />
-                                      </button>
-                                    ))}
-                              </div>
-                            </details>
-                          )}
-                          {kind === "note" &&
-                            !region.data &&
-                            effectiveText &&
-                            editing !== id &&
-                            selected === id && (
-                              <small className="er-informal">
-                                Informal thought · not executable
-                              </small>
-                            )}
-                          {!quiet &&
-                            compare &&
-                            page.active !== "original" &&
-                            other &&
-                            s &&
-                            kind === "equation" &&
-                            !error && (
-                              <small className="er-comparison">
-                                Original {display(other)}{" "}
-                                <span>
-                                  →{" "}
-                                  {
-                                    contexts.find((c) => c.id === page.active)
-                                      ?.label
-                                  }{" "}
-                                  {display(q)}
-                                </span>
-                              </small>
-                            )}
-                          {!quiet &&
-                            compare &&
-                            page.active !== "original" &&
-                            condition && (
-                              <small className="er-comparison">
-                                Original{" "}
-                                {original?.solved.constraints.get(id)?.pass
-                                  ? "satisfied"
-                                  : "not satisfied"}{" "}
-                                <span>
-                                  ·{" "}
-                                  {
-                                    contexts.find((c) => c.id === page.active)
-                                      ?.label
-                                  }{" "}
-                                  {condition.pass
-                                    ? "satisfied"
-                                    : "not satisfied"}
-                                </span>
-                              </small>
-                            )}
-                          {region.source && selected === id && (
-                            <button
-                              className="er-source-caption"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                revealCanvasElement(
-                                  canvas.current?.querySelector(
-                                    `[data-region-id="${region.source!.dataset}"]`,
-                                  ),
-                                  {
-                                    block: "nearest",
-                                    inline: "nearest",
-                                  },
-                                );
-                              }}
-                            >
-                              {page.regions.find(
-                                (r) => r.id === region.source!.dataset,
-                              )?.data?.name || "Source unavailable"}{" "}
-                              · row {region.source.row + 1} ·{" "}
-                              {measurementCaption(
-                                effectiveText,
-                                s?.name || "q",
-                                region.source,
-                              )}
-                            </button>
-                          )}
-                        </section>
-                      );
-                    })}
+                              f.id !== dataset &&
+                              spot.x < f.x + f.width &&
+                              spot.x + 500 > f.x &&
+                              spot.y < f.y + f.height &&
+                              spot.y + 80 > f.y
+                            )
+                              spot.y = f.y + f.height + 25;
+                          const id = session.quantityFromCell(
+                            dataset,
+                            row,
+                            column,
+                            name,
+                            unit,
+                            spot,
+                          );
+                          setSelected(id);
+                          setAreaSelection(id);
+                        },
+                        clear: () => {
+                          setDataSelection(undefined);
+                          setAreaSelection(undefined);
+                          setSelected(undefined);
+                        },
+                        follow: (r, row) =>
+                          relationshipNav.follow(r, { kind: "source", row }),
+                      }}
+                    />
                     {page.plots
                       .filter((plot) => hierarchy.visible(plot.id))
                       .map((plot) => (
@@ -6445,48 +5645,26 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                           setInput={setInput}
                         />
                       ))}
-                    <ModelOptimizations
-                      session={session}
-                      buffers={editBuffers}
-                      positions={spatial.preview}
-                      move={(id, event) => spatial.start(id, event, true)}
-                      beforeAction={() => {
-                        if (editing && !commit()) return false;
-                        setEditing(undefined);
-                        revertExploration();
-                        return true;
-                      }}
-                    />
-                    <ModelAnalyses
-                      session={session}
-                      buffers={editBuffers}
-                      positions={spatial.preview}
-                      move={(id, event) => spatial.start(id, event, true)}
-                      beforeAction={() => {
-                        if (editing && !commit()) return false;
-                        setEditing(undefined);
-                        revertExploration();
-                        return true;
-                      }}
-                    />
-                    <IndependentModels
-                      session={session}
-                      editBuffers={editBuffers}
-                      askAgent={(id, at) => {
-                        if (!openAssistant(at)) return;
-                        setCanvasSelection([]);
-                        setAreaSelection(undefined);
-                        setSelected(id);
-                      }}
-                      positions={spatial.preview}
-                      move={(id, event) => spatial.start(id, event, true)}
-                      beforeAction={() => {
-                        if (editing && !commit()) return false;
-                        setEditing(undefined);
-                        revertExploration();
-                        return true;
-                      }}
-                    />
+                    {!!modelFrames.length && (
+                      <Suspense fallback={null}>
+                        <ModelPanels
+                          session={session}
+                          buffers={editBuffers}
+                          models={independentViews}
+                          analyses={analysisFrames}
+                          optimizations={optimizationFrames}
+                          positions={spatial.preview}
+                          move={(id, event) => spatial.start(id, event, true)}
+                          beforeAction={beforeModelAction}
+                          askAgent={(id, at) => {
+                            if (!openAssistant(at)) return;
+                            setCanvasSelection([]);
+                            setAreaSelection(undefined);
+                            setSelected(id);
+                          }}
+                        />
+                      </Suspense>
+                    )}
                     {artifactMode &&
                       artifacts.map((a) => (
                         <ArtifactView

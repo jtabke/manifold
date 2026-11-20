@@ -167,9 +167,9 @@ assert.equal(large.state.regions.length, 4);
 assert.equal(evaluationWork().parses, 4); // Two definitions and two measurement units, not per row.
 assert.equal(evaluationWork().assignments, 10000);
 assert.equal(evaluationWork().constraints, 10000);
+resetEvaluationWork();
 large.move(manyId, { x: 900, y: 560 });
 worksheetProjection.clear(); // Layout reuse does not depend on that shared cache staying warm.
-resetEvaluationWork();
 assert.equal(select(large.state), states);
 assert.deepEqual(evaluationWork(), {
   parses: 0,

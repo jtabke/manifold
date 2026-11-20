@@ -6,7 +6,6 @@ import { useEditBuffer } from "../app/useEditBuffer";
 import { AUTHORED_MODEL, type AuthoredModel } from "../authoredModels";
 import { inspectModel } from "../modelCommands";
 import {
-  analysisViews,
   removeModelAnalysis,
   createModelAnalysis,
   reviseModelAnalysis,
@@ -174,19 +173,21 @@ export function ModelAnalysisEditor({
   );
 }
 export function ModelAnalyses({
+  views,
   session,
   positions,
   beforeAction,
   move,
   buffers,
 }: {
+  views: readonly f.View[];
   session: RegionSession;
   positions: Record<string, Point>;
   beforeAction: () => boolean;
   move: (id: string, event: PointerEvent) => void;
   buffers: EditBuffers;
 }) {
-  return analysisViews(session.document).map((view) => (
+  return views.map((view) => (
     <AnalysisCard
       key={view.id}
       {...{ session, view, beforeAction, move, buffers }}
