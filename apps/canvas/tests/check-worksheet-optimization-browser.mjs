@@ -521,6 +521,32 @@ try {
     const sampleB = await probeCoords.allTextContents();
     const mapLabels = deflection.locator(".design-map-axis");
     const mapAxisOrder = await mapLabels.allTextContents();
+    const toggleSlice = maps.getByRole("button", {
+      name: "Slice at probe",
+      exact: true,
+    });
+    const slice = maps.getByRole("region", {
+      name: "Slice at probe",
+      exact: true,
+    });
+    const sliceValue = slice.locator(".design-slice-value");
+    const closeSlice = slice.getByRole("button", { name: "Close slice" });
+    if (width === 390) await toggleSlice.tap();
+    else await toggleSlice.press("Enter");
+    await expect(slice.getByRole("heading")).toBeFocused();
+    await expect(slice).toContainText("mass vs. thickness");
+    await expect(slice).toContainText("At width 30.83 mm");
+    await expect(slice).toContainText(
+      "Starts passing between 12.5 mm and 13.13 mm",
+    );
+    await expect(sliceValue).toContainText("mass 3.157 kg");
+    await expect(slice.locator(".design-slice-dot")).toHaveCount(25);
+    await expect(maps.locator(".design-map-slice-line")).toHaveCount(4);
+    const guide = await maps
+      .locator(".design-map-slice-line")
+      .first()
+      .getAttribute("d");
+    await capture("worksheet-slice-at-probe");
     await swapAxes.click();
     await expect(swapAxes).toHaveAttribute("aria-pressed", "true");
     await expect(studyAxisLabels).toHaveText(axisOrder.toReversed());
@@ -529,6 +555,29 @@ try {
     await expect(inspectB).toHaveAttribute("aria-pressed", "true");
     await expect(maps.locator(".design-map-pin")).toHaveCount(8);
     await expect(cursors.first()).not.toHaveAttribute("d", sampleBCoordinates);
+    await expect(sliceValue).toContainText("mass 3.157 kg");
+    await expect(slice.getByLabel("Hold fixed")).toHaveValue("width");
+    await expect(
+      maps.locator(".design-map-slice-line").first(),
+    ).not.toHaveAttribute("d", guide);
+    await slice.getByLabel("Hold fixed").selectOption("thickness");
+    await slice.getByLabel("Response").selectOption("deflection");
+    await expect(slice).toContainText("deflection vs. width");
+    await expect(sliceValue).toContainText("deflection 1.793 mm");
+    const sectionCurve = slice.getByRole("img", {
+      name: "deflection slice across width",
+    });
+    if (width === 390) {
+      const sectionHit = sectionCurve.locator(".design-slice-hit");
+      const box = await sectionHit.boundingBox();
+      await sectionHit.tap({ position: { x: 1, y: box.height / 2 } });
+    } else await sectionCurve.press("Home");
+    await expect(sliceValue).toContainText("width 25 mm");
+    await expect(probeCoords).toHaveText([sampleB[1], "width 25 mm"]);
+    await expect(maps.locator(".design-map-pin")).toHaveCount(8);
+    await closeSlice.click();
+    await expect(slice).toHaveCount(0);
+    await expect(toggleSlice).toBeFocused();
     await inspectA.click();
     const transposedHit = await hit.boundingBox();
     await hit.click({
@@ -592,10 +641,15 @@ try {
     await expect(previewSag.getByRole("cell").last()).toHaveText(
       /Fails−0\.793\d* mm/,
     );
+    await toggleSlice.click();
+    await expect(slice).toContainText("Limit preview");
+    await expect(slice).toContainText("deflection <= 1 mm");
+    await expect(sliceValue).toContainText("mass 3.157 kg");
+    await closeSlice.click();
     assert.deepEqual(
       await saved(),
       beforeTrial,
-      "Preview has no accepted edit",
+      "Preview and slice have no accepted edit",
     );
     if (process.env.MANIFOLD_TEST_EVIDENCE === "1") {
       await compareTwo.click();
@@ -777,6 +831,15 @@ try {
         "sag",
       );
       await capture("worksheet-canvas-candidate");
+      await toggleSlice.click();
+      await expect(slice).toContainText("At width 25 mm");
+      await expect(sliceValue).toContainText("Nearest sample");
+      await expect(maps.locator(".design-map-probe")).toContainText(
+        "Checked candidate",
+      );
+      await expect(apply).toBeEnabled();
+      await closeSlice.click();
+      assert.equal(requests.length, completedRuns);
       await maps
         .getByRole("button", { name: "Compare (2)", exact: true })
         .click();

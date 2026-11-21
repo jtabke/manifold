@@ -697,6 +697,14 @@ grid is derived locally from the accepted worksheet, including on reopen; nothin
 solver until **Run**. Hatching marks failed samples, dots mark undefined values, and the contours
 only approximate the sampled boundaries. Neither the grid nor the contours certify the region.
 
+Choose **Slice at probe** to read a curve across one row or column of that grid. **Hold fixed**
+chooses the input to keep still, and **Response** chooses which sampled quantity to plot.
+If Current or Candidate is between grid points, the slice shows the nearest sampled value and
+labels it as such; neither design moves. Tap the curve or use Left/Right to move the shared
+probe along the slice. Requirement crossings are brackets between adjacent samples that change
+from passing to failing or back, not exact limits. The slice follows any active **Preview limit**
+and reuses the map without changing the worksheet or calling the solver.
+
 **Requirement margins** show what passes, fails, or is near its limit at the inspected point.
 A positive margin is room to spare; a negative margin is a shortfall. A strict inequality can
 fail at zero margin. Failing or near-limit boundaries are highlighted across all maps; select a

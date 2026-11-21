@@ -461,7 +461,11 @@
     padding-top: 8px;
   }
   .design-map-bar {
+    column-gap: 6px;
     margin-bottom: 5px;
+  }
+  .design-map-bar .design-map-buttons button {
+    padding-inline: 6px;
   }
   .design-map-inspect {
     padding: 5px 7px;

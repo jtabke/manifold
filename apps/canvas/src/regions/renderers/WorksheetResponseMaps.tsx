@@ -22,6 +22,8 @@ import {
   type MapPin,
 } from "./WorksheetMapComparison";
 import { canvasZoom, revealCanvasElement } from "../interaction/canvasViewport";
+import { responseSlice } from "../worksheetResponseSlice";
+import { WorksheetResponseSlice } from "./WorksheetResponseSlice";
 import "../styles/worksheetResponseMaps.css";
 
 const plot = { left: 46, top: 10, width: 222, height: 132 };
@@ -298,12 +300,14 @@ export function WorksheetResponseMaps({
     pins: readonly MapPin[];
     comparing?: boolean;
     boundary?: number;
+    sliceAxis?: string;
   }>();
   // A sample index is only meaningful within the grid that produced it.
   const view = local?.grid === grid ? local : { grid, pins: [] };
   const probeSlot = usePinnedProbe();
   const pinButton = useRef<HTMLButtonElement>(null);
   const compareButton = useRef<HTMLButtonElement>(null);
+  const sliceButton = useRef<HTMLButtonElement>(null);
   const active =
     selected === "candidate" && !candidate
       ? "current"
@@ -332,14 +336,14 @@ export function WorksheetResponseMaps({
   const axisX = map.xAxis,
     axisY = map.yAxis,
     last = map.size - 1;
-  const coordinates = (p: DesignMapPoint) =>
+  const coordinates = (p: Pick<DesignMapPoint, "x" | "y">) =>
     [
       (p.x - axisX.bounds[0]) / (axisX.bounds[1] - axisX.bounds[0]),
       (p.y - axisY.bounds[0]) / (axisY.bounds[1] - axisY.bounds[0]),
     ] as const;
   const onPlot = (p: DesignMapPoint) =>
     coordinates(p).every((v) => v >= -1e-12 && v <= 1 + 1e-12);
-  const markerXY = (p: DesignMapPoint) => {
+  const markerXY = (p: Pick<DesignMapPoint, "x" | "y">) => {
     const [x, y] = coordinates(p);
     return pos(clamp(x, 1), clamp(y, 1));
   };
@@ -370,6 +374,47 @@ export function WorksheetResponseMaps({
     );
   };
   const id = useId();
+  const sliceId = `${id}-slice`;
+  const slice =
+    view.sliceAxis &&
+    responseSlice(
+      source,
+      swapped ? { x: point.y, y: point.x } : point,
+      view.sliceAxis,
+    );
+  let sliceGuide: string | undefined;
+  if (slice) {
+    const sample = slice.samples[slice.active].point;
+    const [x, y] = markerXY(swapped ? { x: sample.y, y: sample.x } : sample);
+    sliceGuide =
+      slice.fixed.id === axisX.id
+        ? `M${x},${plot.top}V${plot.top + plot.height}`
+        : `M${plot.left},${y}H${plot.left + plot.width}`;
+  }
+  function closeSlice() {
+    setLocal({ ...view, sliceAxis: undefined });
+    requestAnimationFrame(() => {
+      revealCanvasElement(sliceButton.current, {
+        block: "nearest",
+        inline: "nearest",
+      });
+      sliceButton.current?.focus({ preventScroll: true });
+    });
+  }
+  function toggleSlice() {
+    if (view.sliceAxis) return closeSlice();
+    setLocal({ ...view, sliceAxis: axisX.id });
+    requestAnimationFrame(() => {
+      const panel = document.getElementById(sliceId);
+      const title = document.getElementById(`${sliceId}-heading`);
+      const room = panel?.closest(".er-canvas")?.clientHeight ?? 0;
+      revealCanvasElement(
+        panel && panel.getBoundingClientRect().height <= room ? panel : title,
+        { block: "nearest", inline: "nearest" },
+      );
+      title?.focus({ preventScroll: true });
+    });
+  }
   function toggleComparison() {
     setLocal({ ...view, comparing: !view.comparing });
     if (!view.comparing)
@@ -421,8 +466,28 @@ export function WorksheetResponseMaps({
               <span aria-hidden="true">◆ </span>Candidate
             </button>
           )}
+          <button
+            ref={sliceButton}
+            type="button"
+            aria-expanded={!!view.sliceAxis}
+            aria-controls={view.sliceAxis ? sliceId : undefined}
+            onClick={toggleSlice}
+          >
+            Slice at probe
+          </button>
         </div>
       </div>
+      {view.sliceAxis && (
+        <WorksheetResponseSlice
+          id={sliceId}
+          map={source}
+          slice={slice || undefined}
+          fixed={view.sliceAxis}
+          setFixed={(sliceAxis) => setLocal({ ...view, sliceAxis })}
+          select={select}
+          close={closeSlice}
+        />
+      )}
       <div ref={probeSlot} className="design-map-probe-slot">
         <div className="design-map-inspect">
           <div className="design-map-probe" role="status">
@@ -772,6 +837,9 @@ export function WorksheetResponseMaps({
                     d={`M${plot.left},${py}H${plot.left + plot.width} M${px},${plot.top}V${plot.top + plot.height}`}
                     className="design-map-cursor"
                   />
+                )}
+                {sliceGuide && (
+                  <path d={sliceGuide} className="design-map-slice-line" />
                 )}
                 {onPlot(map.current) && (
                   <circle

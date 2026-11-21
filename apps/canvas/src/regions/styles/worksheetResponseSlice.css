@@ -1,0 +1,122 @@
+.design-slice {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  margin-bottom: 8px;
+  padding: 10px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 8px;
+  background: var(--canvas-surface);
+  font-size: 0.88em;
+}
+.design-slice h4,
+.design-slice p {
+  margin: 0;
+}
+.design-slice-heading,
+.design-slice-controls,
+.design-slice-condition,
+.design-slice-value,
+.design-slice-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+.design-slice-heading {
+  justify-content: space-between;
+  align-items: center;
+}
+.design-slice-controls label {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+.design-slice-controls select {
+  min-width: 0;
+  max-width: 100%;
+}
+.design-slice small,
+.design-slice-condition > span,
+.design-slice-controls label {
+  color: var(--canvas-muted);
+}
+.design-slice-chart {
+  width: min(100%, 480px);
+  overflow: visible;
+  touch-action: none;
+}
+.design-slice-chart text {
+  fill: var(--canvas-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.design-slice-axis,
+.design-slice-gridline,
+.design-slice-response,
+.design-slice-guide {
+  fill: none;
+  stroke: var(--canvas-border);
+  stroke-width: 1;
+}
+.design-slice-axis {
+  stroke: var(--canvas-muted);
+}
+.design-slice-response,
+.design-slice-guide {
+  stroke: var(--canvas-accent);
+}
+.design-slice-response {
+  stroke-width: 1.8;
+}
+.design-slice-guide {
+  stroke-dasharray: 3 3;
+}
+.design-slice-dot {
+  fill: var(--canvas-surface);
+  stroke: var(--canvas-accent);
+}
+.design-slice-sample[data-active] .design-slice-dot {
+  fill: var(--canvas-accent);
+  stroke: var(--canvas-text);
+}
+.design-slice-passes {
+  color: var(--canvas-success);
+}
+.design-slice-fails {
+  color: var(--canvas-warning);
+}
+.design-slice-chart .design-slice-passes {
+  fill: currentColor;
+}
+.design-slice-chart .design-slice-fails {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+.design-slice-hit {
+  cursor: crosshair;
+}
+.design-slice-crossings summary {
+  cursor: pointer;
+}
+.design-slice-crossings ul {
+  display: grid;
+  gap: 5px;
+  max-height: 11em;
+  overflow: auto;
+  margin: 4px 0 0;
+  padding-inline-start: 16px;
+}
+.design-slice-crossings li > span {
+  display: block;
+  color: var(--canvas-muted);
+}
+.design-map-slice-line {
+  fill: none;
+  stroke: var(--canvas-text);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 3;
+  pointer-events: none;
+}

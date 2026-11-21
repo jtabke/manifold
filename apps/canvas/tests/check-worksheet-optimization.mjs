@@ -13,6 +13,7 @@ import {
 } from "../src/regions/worksheetOptimization.ts";
 import { shelfRail, railSpec, sagThickness } from "./shelf-rail.mjs";
 import { curve } from "../src/regions/worksheetProjection.ts";
+import { responseSlice } from "../src/regions/worksheetResponseSlice.ts";
 
 const page = shelfRail(),
   inputs = designChoices(page, "mass").inputs;
@@ -188,6 +189,39 @@ for (const [i, p] of tightened.points.entries()) {
   assert.equal(p.checks[0], original.values[1] <= 1);
   near(p.margins[0].value, 1 - p.values[1]);
 }
+const column = responseSlice(mapped, mapped.current, "width");
+assert.equal(column.varied.id, "thickness");
+assert.equal(column.fixedSnapped, true);
+assert.equal(column.samples.length, 25);
+near(column.fixedValue, 25 + (10 * 35) / 24);
+assert(
+  column.samples.every(
+    ({ point, input, index }, j) =>
+      point === mapped.points[j * 25 + 10] &&
+      index === j * 25 + 10 &&
+      input === point.y,
+  ),
+);
+const patched = responseSlice(tightened, tightened.current, "width");
+assert.deepEqual(
+  patched.samples.map(({ point }) => point.values),
+  column.samples.map(({ point }) => point.values),
+);
+const sagCrossings = (slice) =>
+  slice.crossings.find(({ requirement }) => requirement.id === "sag");
+assert.equal(sagCrossings(column).requirement.label, "deflection <= 2 mm");
+assert.equal(sagCrossings(patched).requirement.label, "deflection <= 0.1 cm");
+assert(
+  sagCrossings(patched).brackets[0].low > sagCrossings(column).brackets[0].high,
+);
+const point = mapped.points[4 + 13 * 25];
+const row = responseSlice(mapped, point, "thickness");
+assert.equal(row.varied.id, "width");
+assert.equal(row.fixedValue, point.y);
+assert.equal(row.snapped, false);
+assert.equal(row.samples[row.active].point, point);
+assert(row.samples.every(({ index }, i) => index === 13 * 25 + i));
+assert.equal(responseSlice(mapped, { x: 70, y: 15 }, "width"), undefined);
 assert.throws(
   () => mapDesignResponses(page, railMapSpec, { id: "sag", text: "1 N" }),
   /compatible with mm/,
@@ -259,6 +293,14 @@ assert.equal(domainMap.points[0].margins[0], null);
 near(domainMap.points[1].margins[0].value, 24);
 near(domainMap.points.at(-2).margins[0].value, 24 / 23 - 1);
 assert.equal(domainMap.requirements[0].fixedValue, undefined);
+const singularRow = responseSlice(domainMap, domainMap.points[0], "offset");
+assert.equal(singularRow.samples[0].point.values[0], null);
+assert.equal(singularRow.samples[0].point.pass, null);
+assert.equal(
+  singularRow.crossings.length,
+  0,
+  "Do not infer a crossing from an undefined sample",
+);
 
 const thermalSheet = {
   ...page,
