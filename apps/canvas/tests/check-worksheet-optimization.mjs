@@ -6,6 +6,7 @@ import {
   designChoices,
   reviewDesign,
   scanDesignRange,
+  mapDesignResponses,
   decodeDesign,
 } from "../src/regions/worksheetOptimization.ts";
 import { shelfRail, railSpec, sagThickness } from "./shelf-rail.mjs";
@@ -120,6 +121,82 @@ assert(
   Object.isFrozen(singular) && Object.isFrozen(singular.points[40].checks),
 );
 
+const railMapSpec = {
+  ...railSpec,
+  axes: [{ id: "width", low: "25 mm", high: "6 cm" }, ...railSpec.axes],
+};
+const mapped = mapDesignResponses(page, railMapSpec);
+assert.deepEqual(mapped.xAxis.bounds, [25, 60]);
+assert.deepEqual(mapped.yAxis.bounds, [5, 20]);
+assert.deepEqual(
+  mapped.outputs.map(({ id, unit, default: visible }) => [id, unit, visible]),
+  [
+    ["mass", "kg", true],
+    ["deflection", "mm", true],
+    ["stress", "MPa", true],
+    ["cost", "", false],
+  ],
+);
+assert.equal(mapped.points.length, 25 * 25);
+assert.deepEqual([mapped.points[0].x, mapped.points[0].y], [25, 5]);
+assert.deepEqual([mapped.points.at(-1).x, mapped.points.at(-1).y], [60, 20]);
+assert.equal(mapped.current.x, 40);
+assert.equal(mapped.current.y, 15);
+assert.equal(mapped.current.pass, true);
+const near = (a, b) =>
+  assert(Math.abs(a - b) <= 1e-10 * Math.max(1, Math.abs(b)));
+for (const p of mapped.points) {
+  const mass = 7800 * (p.x / 1000) * (p.y / 1000);
+  const sag = 2 * (sagThickness(p.x, 2) / p.y) ** 3;
+  const stress = 150000 / (p.x * p.y ** 2);
+  near(p.values[0], mass);
+  near(p.values[1], sag);
+  near(p.values[2], stress);
+  near(p.values[3], mass * 3);
+  assert.deepEqual(p.checks, [sag <= 2, stress <= 100]);
+  assert.equal(p.pass, p.checks.every(Boolean));
+}
+assert(Object.isFrozen(mapped.points[0].values));
+const domainMap = mapDesignResponses(
+  {
+    ...sheet,
+    regions: [
+      ...sheet.regions,
+      { id: "offset", text: "offset := 1", mathVersion: 3 },
+      { id: "rhs", text: "response > offset", mathVersion: 3 },
+      { id: "report", text: "report := 1 / offset", mathVersion: 3 },
+    ],
+  },
+  {
+    goal: "response",
+    mode: "minimize",
+    requirements: ["rhs"],
+    reports: ["report"],
+    axes: [
+      { id: "input", low: "2", high: "3" },
+      { id: "offset", low: "0", high: "1" },
+    ],
+  },
+);
+assert.equal(
+  domainMap.points[0].pass,
+  null,
+  "Undefined objective and constraint are not feasible",
+);
+assert.equal(
+  domainMap.points[1].pass,
+  true,
+  "An undefined observation does not change feasibility",
+);
+near(domainMap.points[1].values[0], 24);
+assert.equal(domainMap.points[1].values[1], null);
+assert.equal(
+  domainMap.points.at(-1).pass,
+  false,
+  "A varying strict limit rejects equality",
+);
+assert.equal(domainMap.points.at(-1).distances[0], 0);
+
 const session = new RegionSession(
   page,
   undefined,
@@ -135,6 +212,8 @@ const run = async () => {
   assert.equal(result.status, "success", result.reason);
   return result.value;
 };
+assert.equal(session.mapWorksheetDesign(railMapSpec).points.length, 625);
+assert.equal(session.document, before, "Mapping is not an edit or a receipt");
 const first = await run();
 assert.equal(
   session.document,

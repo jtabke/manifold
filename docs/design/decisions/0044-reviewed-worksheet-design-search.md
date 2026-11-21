@@ -13,6 +13,12 @@ for adoption. The review is disposable, like a worksheet what-if, not an authore
 model receipt. Opening a sheet or configuring a run does not probe or execute. Apply and Keep use the
 existing session transaction, input writers and scenario branching: no second history or persistence owner.
 
+Two-input response maps use a bounded worksheet grid through the same bound scalar capture as the
+one-input scan. The maps share the probe coordinates and sampled feasibility across outputs but
+scale their colors independently. Approximate contours and sample inspections do not create an
+adoptable candidate; the optional candidate marker comes from the separately checked review.
+Neither map sampling nor inspecting a sample calls the optional numerical host.
+
 This trades durable run provenance for a direct, non-mutating review. Use the published-model workflow
 when an authored optimization request and captured receipt are needed. Search is local, limited to two
 bounded continuous inputs and the supported scalar graph; neither convergence nor a passing worksheet

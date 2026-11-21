@@ -75,6 +75,7 @@ import {
 } from "./models.ts";
 import {
   captureDesign,
+  mapDesignResponses,
   reviewDesign,
   scanDesignRange,
   type DesignExecutor,
@@ -313,6 +314,13 @@ export class RegionSession {
     if (this.closed || this.staging || this.foundation.preview())
       throw Error("Finish the current preview before scanning a design range.");
     return scanDesignRange(this.state, spec);
+  }
+  mapWorksheetDesign(spec: DesignSpec) {
+    if (this.closed || this.staging || this.foundation.preview())
+      throw Error(
+        "Finish the current preview before mapping design responses.",
+      );
+    return mapDesignResponses(this.state, spec);
   }
   /** A worksheet design is a disposable computation, never an edit or a saved model. */
   optimizeWorksheet(spec: DesignSpec) {

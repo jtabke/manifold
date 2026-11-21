@@ -629,7 +629,16 @@ With one varied input, **Scan range** checks 81 points across the same bounds us
 math. It shows combined feasibility and a separate strip for each checked requirement, including
 where the first sampled pass/fail change falls. Undefined points do not count as passing.
 The scan works without SciPy, does not offer a design to apply, and does not certify the intervals
-between points. Editing a setting clears the old scan.
+between points.
+
+With two varied inputs, **Map responses** samples a 25 × 25 grid locally. The first input
+is horizontal and the second is vertical. The goal and quantities on the left side of the selected
+inequalities appear as linked maps, each with its own value scale. Use **Add map** to show a quantity
+from **Also report**. Click, tap, or use arrow keys in any map to inspect the same sample in all maps.
+Hatching marks failed samples, dots mark undefined values, and the lines approximate the sampled
+requirement boundaries. These are not certified feasible regions. After **Run**, **Show on maps**
+locates the separately checked candidate; map samples themselves cannot be applied. Editing a
+setting clears the maps or scan.
 
 Optimization is a bounded local search using the [optional SciPy runtime](../development/README.md#optional-numerical-runtime),
 not a proof of a global optimum or of physical safety. **No feasible candidate found** means

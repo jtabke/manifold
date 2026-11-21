@@ -174,7 +174,13 @@ function captureDesignProblem(page: Page, settings: DesignSpec) {
     );
   const problem = scalarProblem(page, {
     inputs: axes.map((a) => a.id),
-    outputs: [spec.goal, ...spec.reports],
+    outputs: [
+      spec.goal,
+      ...spec.reports,
+      ...spec.requirements.map(
+        (id) => p.bindings[id][p.statements.get(id)!.name],
+      ),
+    ],
     requirements: spec.requirements,
   });
   assert(
@@ -291,13 +297,7 @@ export function scanDesignRange(page: Page, settings: DesignSpec) {
       ({ id }) => result.requirements.get(id)?.pass ?? null,
     );
     const goalDefined = !!result.values.get(spec.goal);
-    // A known failure remains a failure even if another equation is undefined.
-    const pass = checks.includes(false)
-      ? false
-      : !goalDefined || checks.includes(null)
-        ? null
-        : true;
-    return { x, checks, pass };
+    return { x, checks, pass: sampledFeasibility(goalDefined, checks) };
   });
   return immutable({
     input: axis.name,
@@ -307,6 +307,146 @@ export function scanDesignRange(page: Page, settings: DesignSpec) {
   });
 }
 export type DesignRange = ReturnType<typeof scanDesignRange>;
+
+function sampledFeasibility(goalDefined: boolean, checks: (boolean | null)[]) {
+  // A known failure remains a failure even if another equation is undefined.
+  return checks.includes(false)
+    ? false
+    : !goalDefined || checks.includes(null)
+      ? null
+      : true;
+}
+
+function requirementUnit(p: ReturnType<typeof project>, id: string) {
+  const s = p.statements.get(id)!,
+    { bound } = p.solved.constraints.get(id)!;
+  const source =
+    s.expression.kind === "name" && p.bindings[id][s.expression.name];
+  return worksheetInputUnit(
+    source
+      ? p.statements.get(source)
+      : { ...s, raw: s.raw.replace(/<=|>=|≤|≥|<|>/, ":=") },
+    bound,
+  ).label;
+}
+
+export type DesignMapPoint = {
+  x: number;
+  y: number;
+  values: readonly (number | null)[];
+  checks: readonly (boolean | null)[];
+  pass: boolean | null;
+};
+
+/** A bounded grid of actual worksheet probes, not a solver run or a persisted artifact. */
+export function mapDesignResponses(page: Page, settings: DesignSpec) {
+  assert(settings.axes.length === 2, "Choose two inputs to map.");
+  const {
+    axes: [xAxis, yAxis],
+    spec,
+    problem,
+  } = captureDesignProblem(page, settings);
+  const p = project(page);
+  const defaults = [
+    ...new Set([spec.goal, ...problem.requirements.map((r) => r.subject)]),
+  ];
+  const outputs = [...new Set([...defaults, ...spec.reports])].map((id) => {
+    const { s, q } = problem.baselineValue(id);
+    const preferred = problem.requirements
+      .filter((r) => r.subject === id)
+      .at(-1);
+    const fallback = worksheetInputUnit(s, q);
+    const label =
+      (preferred && requirementUnit(p, preferred.id)) ||
+      page.regions.find((r) => r.id === id)?.displayUnit;
+    let unit = fallback.label,
+      scale = fallback.scale;
+    if (label) {
+      try {
+        const u = measurementUnit(label);
+        if (!q.absolute && !u.absolute && same(q.dimension, u.dimension)) {
+          unit = label;
+          scale = u.value;
+        }
+      } catch {
+        /* Ignore invalid display annotations. */
+      }
+    }
+    return {
+      id,
+      name: s.name,
+      unit,
+      scale,
+      offset: q.absolute ? 273.15 : 0,
+      dimension: q.dimension,
+      absolute: !!q.absolute,
+      default: defaults.includes(id),
+    };
+  });
+  const makePoint = (
+    x: number,
+    y: number,
+    values: (id: string) => Quantity | undefined,
+    check: (id: string) => boolean | undefined,
+  ): DesignMapPoint => {
+    const measured = outputs.map(
+      ({ id, scale, offset, dimension, absolute }) => {
+        const q = values(id);
+        if (!q || !same(q.dimension, dimension) || !!q.absolute !== absolute)
+          return null;
+        const value = (q.value - offset) / scale;
+        return Number.isFinite(value) ? value : null;
+      },
+    );
+    const checks = problem.requirements.map(({ id }) => check(id) ?? null);
+    return {
+      x,
+      y,
+      values: measured,
+      checks,
+      pass: sampledFeasibility(measured[0] !== null, checks),
+    };
+  };
+  const size = 25;
+  const coordinates = (bounds: number[], i: number) =>
+    i === size - 1
+      ? bounds[1]
+      : bounds[0] + ((bounds[1] - bounds[0]) * i) / (size - 1);
+  const points = Array.from({ length: size * size }, (_, i) => {
+    const x = coordinates(xAxis.bounds, i % size),
+      y = coordinates(yAxis.bounds, Math.floor(i / size));
+    const result = problem.at([x * xAxis.scale, y * yAxis.scale]);
+    return {
+      ...makePoint(
+        x,
+        y,
+        (id) => result.values.get(id),
+        (id) => result.requirements.get(id)?.pass,
+      ),
+      // Distance from equality in base units for estimating a transition only.
+      distances: problem.requirements.map(({ id, subject }) => {
+        const bound = result.requirements.get(id)?.bound;
+        const actual = result.values.get(subject);
+        return bound && actual ? Math.abs(bound.value - actual.value) : null;
+      }),
+    };
+  });
+  return immutable({
+    xAxis,
+    yAxis,
+    size,
+    points,
+    outputs,
+    labels: problem.requirements.map(({ s }) => s.raw),
+    current: makePoint(
+      xAxis.current,
+      yAxis.current,
+      (id) => problem.baselineValue(id).q,
+      (id) => p.solved.constraints.get(id)?.pass,
+    ),
+  });
+}
+export type DesignResponseMap = ReturnType<typeof mapDesignResponses>;
 
 type Capture = ReturnType<typeof captureDesign>;
 type Candidate = { x: number[]; output: number };
@@ -471,16 +611,7 @@ export function reviewDesign(page: Page, c: Capture, candidate: Candidate) {
       const lhs = before.bindings[id][s.name],
         now = resolved(before, lhs).q,
         proposed = resolved(after, lhs).q,
-        unit =
-          s.expression.kind === "name" && before.bindings[id][s.expression.name]
-            ? worksheetInputUnit(
-                before.statements.get(before.bindings[id][s.expression.name]),
-                old.bound,
-              ).label
-            : worksheetInputUnit(
-                { ...s, raw: s.raw.replace(/<=|>=|≤|≥|<|>/, ":=") },
-                old.bound,
-              ).label;
+        unit = requirementUnit(before, id);
       units.set(lhs, unit);
       const sign = s.relation.startsWith("<") ? 1 : -1;
       const margin = (bound: Quantity, value: Quantity) => ({

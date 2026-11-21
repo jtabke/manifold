@@ -6,11 +6,22 @@ import {
   type DesignSpec,
   type DesignReview,
   type DesignRange,
+  type DesignResponseMap,
 } from "../worksheetOptimization";
 import type { EditBuffers } from "../app/workspaceFiles";
 import { useEditBuffer } from "../app/useEditBuffer";
 import { WorksheetFeasibility } from "./WorksheetFeasibility";
+import {
+  WorksheetResponseMaps,
+  type MapInspection,
+} from "./WorksheetResponseMaps";
 import "../styles/worksheetOptimization.css";
+
+function focusMaps(id: string) {
+  const heading = document.getElementById(id);
+  heading?.focus({ preventScroll: true });
+  heading?.scrollIntoView({ block: "start" });
+}
 
 export function WorksheetOptimizationDialog({
   session,
@@ -39,6 +50,8 @@ export function WorksheetOptimizationDialog({
     reports: [],
   }));
   const [range, setRange] = useState<DesignRange>();
+  const [map, setMap] = useState<DesignResponseMap>();
+  const [inspection, setInspection] = useState<MapInspection>();
   const [review, setReview] = useState<DesignReview>(),
     [error, setError] = useState(""),
     [running, setRunning] = useState(false);
@@ -72,6 +85,9 @@ export function WorksheetOptimizationDialog({
         ?.querySelector<HTMLElement>(".design-feasibility h3")
         ?.focus();
   }, [range]);
+  useEffect(() => {
+    if (map) focusMaps(`${id}-maps`);
+  }, [map, id]);
   useEditBuffer(buffers, id, {
     read: () => JSON.stringify(spec),
     finish: () => {
@@ -82,6 +98,8 @@ export function WorksheetOptimizationDialog({
   const stale = session.document !== opened.document;
   const change = (next: Partial<DesignSpec>) => {
     setRange(undefined);
+    setMap(undefined);
+    setInspection(undefined);
     setReview(undefined);
     setError("");
     setSpec({ ...spec, ...next });
@@ -117,6 +135,17 @@ export function WorksheetOptimizationDialog({
       setError((e as Error).message);
     }
   }
+  function mapResponses(showCandidate = false) {
+    setError("");
+    try {
+      if (stale) throw Error("Worksheet changed. Close and reopen Optimize.");
+      if (showCandidate) setInspection("candidate");
+      if (map) focusMaps(`${id}-maps`);
+      else setMap(session.mapWorksheetDesign(spec));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   function adopt(alternative: boolean) {
     if (!review) return;
     try {
@@ -142,7 +171,7 @@ export function WorksheetOptimizationDialog({
   return (
     <dialog
       ref={dialog}
-      className="worksheet-optimization"
+      className={`worksheet-optimization${map && !stale ? " with-response-maps" : ""}`}
       aria-labelledby={id}
       onKeyDown={(e) => e.stopPropagation()}
       onCancel={(e) => {
@@ -221,10 +250,24 @@ export function WorksheetOptimizationDialog({
               Apply
             </button>
             <button onClick={() => adopt(true)}>Keep as alternative</button>
+            {spec.axes.length === 2 && (
+              <button type="button" onClick={() => mapResponses(true)}>
+                Show on maps
+              </button>
+            )}
           </div>
         </section>
       )}
       {range && !stale && <WorksheetFeasibility range={range} />}
+      {map && !stale && (
+        <WorksheetResponseMaps
+          map={map}
+          review={review}
+          heading={`${id}-maps`}
+          selected={inspection}
+          select={setInspection}
+        />
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -398,6 +441,15 @@ export function WorksheetOptimizationDialog({
         {spec.axes.length === 1 && (
           <button type="button" onClick={scan} disabled={running || stale}>
             Scan range
+          </button>
+        )}
+        {spec.axes.length === 2 && (
+          <button
+            type="button"
+            onClick={() => mapResponses()}
+            disabled={running || stale}
+          >
+            Map responses
           </button>
         )}
         {running && (
