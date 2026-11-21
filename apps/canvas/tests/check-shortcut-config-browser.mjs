@@ -366,11 +366,15 @@ try {
   await count(0);
   await page.keyboard.press("F9");
   await count(1);
-  await page.getByRole("button", { name: "Fit page", exact: true }).click();
-  const fitted = await page.locator(".er-zoom").textContent();
+  // Fit measures on the next frame. The fixture's plot extends beyond this viewport.
+  const fitButton = page.getByRole("button", { name: "Fit page", exact: true });
+  await fitButton.click();
+  await expect(fitButton).not.toHaveText("100%");
+  const fitted = await fitButton.textContent();
   await page.keyboard.press("ControlOrMeta+0");
+  await expect(fitButton).toHaveText("100%");
   await page.keyboard.press("F8");
-  await expect(page.locator(".er-zoom")).toHaveText(fitted);
+  await expect(fitButton).toHaveText(fitted);
   await customize();
   const beforeFailure = await stored();
   await page.evaluate((key) => {
