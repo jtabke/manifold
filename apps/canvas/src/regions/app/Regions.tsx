@@ -86,6 +86,7 @@ import {
   FilePlus2,
   Download,
   ChevronDown,
+  ChartNoAxesCombined,
   Sparkles,
   Layers,
   Link2,
@@ -96,7 +97,8 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import { display, same } from "../../notebook/math";
+import { display, same, unitLabel } from "../../notebook/math";
+import { worksheetInputUnit } from "../worksheetInputUnit";
 import {
   RegionSession,
   ancestors,
@@ -118,6 +120,7 @@ import {
   CanvasActionMenu,
   type ActionMenuLocation,
   type CanvasAction,
+  type CanvasActionPage,
 } from "../renderers/CanvasActionMenu";
 import {
   commandTarget,
@@ -127,6 +130,7 @@ import {
   markingCommands,
   toolbarCommands,
   searchCommands,
+  distinctPlotCommands,
   requestedPlotCommand,
   workspaceCommands as resolveWorkspaceCommands,
   type CanvasCommand,
@@ -322,6 +326,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     () => [...independentViews, ...analysisFrames, ...optimizationFrames],
     [independentViews, analysisFrames, optimizationFrames],
   );
+  const blankPage =
+    !page.regions.length && !modelFrames.length && !drawingEntries.length;
   const extraFrames = useMemo(
     () =>
       modelFrames.map((v) => ({
@@ -434,7 +440,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     resume?.selection || [],
   );
   const [actionMenu, setActionMenu] = useState<
-    ActionMenuLocation & { drawingTools?: CanvasAction[] }
+    ActionMenuLocation & { drawingTools?: CanvasAction[]; plot?: boolean }
   >();
   const [selectionDetail, setSelectionDetail] = useState<CommandSelection>();
   const [recentCommands, setRecentCommands] = useState<string[]>([]);
@@ -2211,6 +2217,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     candidate?: string,
     atOverride?: Point,
     inputOverride?: string,
+    swapped = false,
   ) => {
     try {
       if (artifacts.length >= 16)
@@ -2263,7 +2270,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               spot.x = frame.x + frame.width + 55;
             else spot.y = frame.y + frame.height + 45;
       session.atomic((staged) => {
-        staged.setArtifacts((items) => [...items, { ...a, at: spot }]);
+        staged.setArtifacts((items) => [
+          ...items,
+          { ...a, at: spot, ...(swapped && { swapped }) },
+        ]);
         staged.addModelMember(hierarchy.scope, a.id);
       });
       setPalette(undefined);
@@ -2924,7 +2934,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       anchor,
     });
   };
-  // The button and keyboard act on the selection. Hovering a different object must not retarget them.
+  const selectedActionObject = () => {
+    const id = lastCanvasPress.current?.id;
+    return id && canvasSelection.includes(id) ? id : canvasSelection[0];
+  };
+  // The visible button applies to the current selection; keyboard invocations can
+  // also target the focused object or the last canvas interaction.
   const openSelectionMenu = (
     mode: "pie" | "context",
     held = false,
@@ -2936,19 +2951,18 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     const press = lastCanvasPress.current;
     const id =
       focused ||
-      overlaps.picked ||
-      (press?.id && canvasSelection.includes(press.id)
-        ? press.id
-        : canvasSelection[0]) ||
-      selected ||
-      press?.id;
+      (overlaps.picked && (!anchor || canvasSelection.includes(overlaps.picked))
+        ? overlaps.picked
+        : undefined) ||
+      selectedActionObject() ||
+      (anchor ? undefined : selected || press?.id);
     const node = id && view.querySelector(canvasSelectorFor(id));
     const target = node ? actionTarget(node) : undefined;
     if (node && !node.hasAttribute("data-region-id"))
       setSelectionDetail(actionDetail(node, target));
     const rect = view.getBoundingClientRect();
     const at = (id && overlaps.keyboardPoint(id)) ||
-      press?.point || {
+      ((!anchor || id || !press?.id) && press?.point) || {
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
       };
@@ -3142,8 +3156,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         artifactsEnabled: artifactMode,
         study: (output) =>
           createResponseStudy(defaultStudySpec(session.state, output)),
-        create: (output, input, request) =>
-          createArtifact(request, output, undefined, input),
+        create: (output, input, request, swapped) =>
+          createArtifact(request, output, undefined, input, swapped),
         reopen: (view) =>
           spatial.setScene((scene) => ({
             ...scene,
@@ -3202,7 +3216,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         },
       },
     });
-  const executeCommand = (command: CanvasCommand) => {
+  const executeCommand = (command: CanvasCommand, swapped?: boolean) => {
     if (command.unavailable) {
       setMessage(command.unavailable);
       return;
@@ -3210,7 +3224,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setPalette(undefined);
     setActionMenu(undefined);
     try {
-      command.run();
+      command.run(swapped);
       setRecentCommands((recent) =>
         [command.key, ...recent.filter((key) => key !== command.key)].slice(
           0,
@@ -3230,6 +3244,33 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     page.regions.some((r) => r.id === canvasSelection[0])
       ? commandContextFor(canvasSelection[0])
       : undefined;
+  const quickName = quickContext
+    ? quickContext.target.symbol ||
+      accepted.statements.get(quickContext.target.id || "")?.name ||
+      commandSubject(quickContext)
+    : undefined;
+  const resultId =
+    quickContext?.target.kind === "equation" ||
+    quickContext?.target.kind === "result"
+      ? quickContext.target.id
+      : undefined;
+  const resultStatement = resultId ? p.statements.get(resultId) : undefined;
+  const selectionResult =
+    resultId && resultStatement && !p.errors.has(resultId)
+      ? p.solved.values.get(resultStatement.name)
+      : undefined;
+  const selectionResultPreview =
+    resultId &&
+    selectionResult &&
+    exploration &&
+    ancestors(p, resultId).includes(exploration.input);
+  const actionSelection = selectedActionObject();
+  const actionScope =
+    canvasSelection.length > 1
+      ? `${canvasSelection.length} selected`
+      : actionSelection
+        ? quickName || objectLabel(actionSelection)
+        : undefined;
   const quickCommands = quickContext
     ? toolbarCommands(
         resolveCommands(quickContext, dispatchCommand),
@@ -3328,7 +3369,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     : [];
   const menuSubject = menuContext ? commandSubject(menuContext) : "Canvas";
   const overlapActions =
-    actionMenu && overlaps.ids.length > 1
+    actionMenu &&
+    (!actionMenu.anchor || canvasSelection.length > 0) &&
+    overlaps.ids.length > 1
       ? [
           {
             id: "overlap.next",
@@ -3349,25 +3392,123 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const primary = menuContext
     ? toolbarCommands(menuCommands, menuContext.target.kind)
     : [];
-  const actionMenuItems = [
-    ...primary,
-    ...menuCommands.filter(
-      (c) =>
-        !primary.includes(c) &&
-        (menuContext?.target.kind === "canvas" || c.id !== "canvas.fit"),
+  const isPlot = (command: CanvasCommand) => command.id.startsWith("response.");
+  const primaryActions = primary.filter((command) => !isPlot(command));
+  const plotCommands = distinctPlotCommands(menuCommands.filter(isPlot));
+  const plotInputs = plotCommands.filter(
+    (command) =>
+      command.id === "response.plot" || command.id === "response.plot.input",
+  );
+  const plotOutputs = [
+    ...new Set(
+      plotInputs
+        .map((command) => command.parameters.output)
+        .filter((id): id is string => typeof id === "string"),
     ),
-    ...globalCommands.filter(
-      (command) =>
-        ["canvas.fit", "canvas.undo", "search.open", "help.shortcuts"].includes(
-          command.id,
-        ) && !menuCommands.some((item) => item.id === command.id),
-    ),
-  ].map((command, index) => ({
-    ...presentCommand(command, executeCommand),
-    dividerBefore:
-      index > 0 &&
-      (index === primary.length || command.id === "selection.duplicate"),
-  }));
+  ];
+  const plotName =
+    plotOutputs.length <= 1
+      ? accepted.statements.get(plotOutputs[0] ?? menuContext?.target.id ?? "")
+          ?.name
+      : undefined;
+  const plotDefault = plotInputs.find(
+    (command) => command.id === "response.plot" && !command.unavailable,
+  );
+  const axisVariable = (id: string | string[] | undefined, input: boolean) => {
+    if (typeof id !== "string") return;
+    const statement = accepted.statements.get(id);
+    const quantity = statement && accepted.solved.values.get(statement.name);
+    if (!statement || !quantity) return;
+    return {
+      name: statement.name,
+      unit: input
+        ? worksheetInputUnit(statement, quantity).label
+        : unitLabel(quantity),
+    };
+  };
+  const plotChoicesPage: CanvasActionPage | undefined = plotCommands.length
+    ? {
+        title: plotName ? `Plot ${plotName}` : "Plot responses",
+        axes: plotInputs.some((command) => !command.unavailable)
+          ? { output: axisVariable(plotOutputs[0], false) }
+          : undefined,
+        actions: [
+          ...plotInputs.map((command) => ({
+            ...presentCommand(
+              command,
+              executeCommand,
+              command.label.replace(/^Plot (?:against |(?=.+ against ))/, ""),
+            ),
+            icon: null,
+            group: "Choose a variable",
+            variable: axisVariable(command.parameters.input, true),
+            response: axisVariable(command.parameters.output, false),
+            badge: command === plotDefault ? "Default" : undefined,
+          })),
+          ...plotCommands
+            .filter((command) => command.id === "response.study")
+            .map((command) => ({
+              ...presentCommand(
+                command,
+                executeCommand,
+                plotName
+                  ? `Map ${plotName} across two inputs`
+                  : "Compare two inputs",
+              ),
+              icon: null,
+              group: "Response maps",
+            })),
+          ...plotCommands
+            .filter((command) => command.id === "response.open")
+            .map((command) => ({
+              ...presentCommand(command, executeCommand),
+              icon: null,
+              group: "Existing views",
+            })),
+        ],
+        focusKey: (
+          plotDefault ?? plotCommands.find((command) => !command.unavailable)
+        )?.key,
+      }
+    : undefined;
+  const actionMenuItems: CanvasAction[] = [
+    ...primaryActions.map((command) => presentCommand(command, executeCommand)),
+    ...(plotChoicesPage
+      ? [
+          {
+            id: "response.choose",
+            key: "response.choose",
+            label: "Plot",
+            icon: <ChartNoAxesCombined />,
+            page: plotChoicesPage,
+            dividerBefore: primaryActions.length > 0,
+          },
+        ]
+      : []),
+    ...[
+      ...menuCommands.filter(
+        (c) =>
+          !primary.includes(c) &&
+          !isPlot(c) &&
+          (menuContext?.target.kind === "canvas" || c.id !== "canvas.fit"),
+      ),
+      ...globalCommands.filter(
+        (command) =>
+          [
+            "canvas.fit",
+            "canvas.undo",
+            "search.open",
+            "help.shortcuts",
+          ].includes(command.id) &&
+          !menuCommands.some((item) => item.id === command.id),
+      ),
+    ].map((command, index) => ({
+      ...presentCommand(command, executeCommand),
+      dividerBefore:
+        (index === 0 && (primaryActions.length > 0 || !!plotChoicesPage)) ||
+        (index > 0 && command.id === "selection.duplicate"),
+    })),
+  ];
   const listActions = [
     ...actionMenuItems,
     {
@@ -3386,7 +3527,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         ? presentCommand(
             command,
             executeCommand,
-            ["Edit", "Explore", "Connect", "Inspect"][index],
+            command.toolbarLabel || command.label,
           )
         : {
             id: "unavailable",
@@ -3482,6 +3623,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 ? primaryMenuItems
                 : [...overlapActions, ...listActions])
             }
+            initialPage={actionMenu.plot ? plotChoicesPage : undefined}
             close={() => setActionMenu(undefined)}
             search={() => paletteOpen("search")}
           />
@@ -3599,6 +3741,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             >
               <FileInput size={16} />
               <span>Open file…</span>
+            </button>
+            <button
+              className="er-file-download"
+              title="Download a .manifold file · separate from browser autosave"
+              onClick={() => void exportArtifacts()}
+            >
+              <Download size={16} />
+              <span>Download file</span>
             </button>
             <span className="er-command-heading">Insert</span>
             <button
@@ -3894,11 +4044,15 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   <Undo2 size={16} style={{ transform: "scaleX(-1)" }} />
                 </button>
                 <button
-                  aria-label="Open canvas actions"
+                  aria-label={
+                    actionScope
+                      ? `Open actions: ${actionScope}`
+                      : "Open canvas actions"
+                  }
                   className="er-canvas-actions-trigger"
                   aria-haspopup="menu"
-                  aria-expanded={!!actionMenu?.anchor}
-                  title="Context actions · Right-click or Shift+F10"
+                  aria-expanded={!!actionMenu?.anchor && !actionMenu.plot}
+                  title={`${actionScope ? `Actions for ${actionScope}` : "Canvas actions"} · Right-click or Shift+F10`}
                   onClick={(e) =>
                     openSelectionMenu(
                       "context",
@@ -3907,7 +4061,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     )
                   }
                 >
-                  <span>Actions</span>
+                  <span>
+                    {actionScope ? `Actions: ${actionScope}` : "Canvas actions"}
+                  </span>
                   <ChevronDown size={13} />
                 </button>
               </div>
@@ -4553,6 +4709,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   <div
                     className={`er-paper ${systemActive ? "is-system-overview" : ""}`}
                     data-canvas-renders={renders.current}
+                    data-canvas-tap={
+                      blankPage && !editing && !systemActive ? "" : undefined
+                    }
                     style={{ width, height, transform: `scale(${zoom})` }}
                   >
                     <DrawingCanvas
@@ -4570,17 +4729,21 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       hidden={spatial.hidden}
                       inModel={!!hierarchy.scope}
                     />
-                    {!page.regions.length &&
-                      !modelFrames.length &&
-                      !drawingEntries.length && (
-                        <div className="er-empty">
-                          <h1>A page to think on.</h1>
-                          <p>Start typing, or click anywhere to write.</p>
-                          <small>
-                            Equations, notes, or a CSV dropped here.
-                          </small>
-                        </div>
-                      )}
+                    {blankPage && (
+                      <div className="er-empty">
+                        <h1>A page to think on.</h1>
+                        <p className="er-write-pointer">
+                          Start typing, or click the page to write an equation
+                          or note.
+                        </p>
+                        <p className="er-write-touch">
+                          Tap the page to write an equation or note.
+                        </p>
+                        <small className="er-write-pointer">
+                          You can also drop a CSV here.
+                        </small>
+                      </div>
+                    )}
                     <Suspense
                       fallback={
                         <span className="system-overview" role="status">
@@ -6094,13 +6257,16 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     <GripVertical size={15} />
                   </button>
                 )}
-                <span aria-live="polite">
-                  {quickContext
-                    ? quickContext.target.symbol ||
-                      accepted.statements.get(quickContext.target.id || "")
-                        ?.name ||
-                      commandSubject(quickContext)
-                    : `${selectedFrames.length} selected`}
+                <span className="er-selection-subject" aria-live="polite">
+                  <span>
+                    {quickName || `${selectedFrames.length} selected`}
+                  </span>
+                  {selectionResult && (
+                    <strong className="er-selection-result">
+                      {selectionResultPreview ? "Preview · " : "· "}
+                      {display(selectionResult)}
+                    </strong>
+                  )}
                 </span>
                 {quickContext
                   ? quickCommands.map((command) => (
@@ -6109,7 +6275,35 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         data-command-id={command.id}
                         disabled={!!command.unavailable}
                         title={command.unavailable || command.preview}
-                        onClick={() => executeCommand(command)}
+                        aria-haspopup={
+                          command.id === "response.plot" ? "menu" : undefined
+                        }
+                        aria-expanded={
+                          command.id === "response.plot"
+                            ? !!actionMenu?.plot
+                            : undefined
+                        }
+                        onClick={(event) => {
+                          if (command.id !== "response.plot") {
+                            executeCommand(command);
+                            return;
+                          }
+                          const anchor =
+                            event.currentTarget.getBoundingClientRect();
+                          const { left: x, bottom: y } = anchor;
+                          setActionMenu({
+                            x,
+                            y,
+                            anchor,
+                            held: false,
+                            mode: "context",
+                            plot: true,
+                            target:
+                              quickContext.target.owner ??
+                              quickContext.target.id,
+                            world: canvasPoint(x, y),
+                          });
+                        }}
                       >
                         {command.toolbarLabel}
                       </button>
@@ -6123,6 +6317,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   onClick={() => {
                     setCanvasSelection([]);
                     setSelected(undefined);
+                    canvas.current?.focus({ preventScroll: true });
                   }}
                 >
                   <X size={14} />

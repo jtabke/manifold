@@ -145,9 +145,7 @@ try {
   await expect(grip).toBeFocused();
   // Header actions provide the same named choices after a touch, without right-click.
   await page.touchscreen.tap(point.x, box.y + 45);
-  await page
-    .getByRole("button", { name: "Open canvas actions", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Open actions: / }).click();
   await expect(
     menu().locator('[data-command-id^="overlap.pick:"]'),
   ).toHaveCount(4);
@@ -165,9 +163,7 @@ try {
   await page.keyboard.press("Escape");
   // Merely hovering a different object must not retarget header actions.
   await page.mouse.move(point.x, point.y);
-  await page
-    .getByRole("button", { name: "Open canvas actions", exact: true })
-    .click();
+  await page.getByRole("button", { name: /^Open actions: / }).click();
   await expect(
     menu().getByRole("menuitem", { name: "Select underneath", exact: true }),
   ).toHaveCount(0);

@@ -228,12 +228,15 @@ try {
     exact: true,
   });
   await rawMenu.getByLabel("Known line length", { exact: true }).fill("2 m");
-  await rawMenu
-    .getByRole("button", { name: "Calibrate selected drawings", exact: true })
-    .click();
+  await rawMenu.getByRole("button", { name: "Calibrate", exact: true }).click();
   rawEntries = drawings((await readWorkspace(raw)).document);
   const calibrated = rawEntries.find((e) => e.mark.kind === "area");
   expect(calibrated.mark.scale.metresPerUnit).toBeCloseTo(0.01, 12);
+  await expect(
+    rawMenu.getByRole("button", { name: "Calibrate", exact: true }),
+  ).toHaveAccessibleDescription(
+    /Updates measurements for every drawing in .*\. Shapes stay the same\./,
+  );
   expect(rawEntries.find((e) => e.id === reference.id).mark.points).toEqual(
     reference.mark.points,
   );

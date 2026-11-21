@@ -99,12 +99,14 @@ try {
         await edit.focus();
         await page.keyboard.press("Shift+Space");
         await expect(marking).toBeFocused();
-        return marking.getByRole("menuitem", { name: "Explore", exact: true });
+        return marking.getByRole("menuitem", { name: "Plot", exact: true });
       }
       await page.keyboard.press("Control+k");
       await expect(search).toBeFocused();
       await search.fill("Plot response");
-      return page.getByRole("button", { name: "Plot response", exact: true });
+      return page.getByRole("button", {
+        name: /^(Plot against F|Plot response)$/,
+      });
     };
     const plotCommand = await openPlotCommand();
     await expect(plotCommand).toHaveAttribute(
@@ -115,6 +117,20 @@ try {
       await expect(plotCommand).toHaveAttribute("aria-disabled", "false");
     else await expect(plotCommand).toBeEnabled();
     await plotCommand.click();
+    if (surface === "toolbar") {
+      const picker = page.getByRole("menu", { name: "Plot P", exact: true });
+      await expect(
+        picker.getByRole("menuitem", { name: "F", exact: true }),
+      ).toBeFocused();
+      expect((await saved()).artifacts).toHaveLength(0);
+      await page.keyboard.press("Escape");
+      await expect(plotCommand).toBeFocused();
+      await plotCommand.press("Enter");
+      await expect(
+        picker.getByRole("menuitem", { name: "F", exact: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Enter");
+    }
     if (surface === "marking") await expect(marking).toHaveCount(0);
     if (surface === "search") await expect(search).toHaveCount(0);
     await expect(
@@ -221,13 +237,13 @@ try {
       ]);
       await page.keyboard.press("Shift+Space");
       await expect(
-        page.getByRole("menuitem", { name: "Explore", exact: true }),
+        page.getByRole("menuitem", { name: "Vary", exact: true }),
       ).toHaveAttribute("data-command-id", "quantity.vary");
       await expect(
         page.getByRole("menuitem", { name: "Connect", exact: true }),
       ).toHaveAttribute("data-command-id", "quantity.connect");
       await expect(
-        page.getByRole("menuitem", { name: "Inspect", exact: true }),
+        page.getByRole("menuitem", { name: "Find uses", exact: true }),
       ).toHaveAttribute("data-command-id", "quantity.trace");
       await page.keyboard.press("Escape");
     }

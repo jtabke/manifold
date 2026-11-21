@@ -223,7 +223,9 @@ replace its default allowed origins and `--port` selects the port; stop it with 
 
 Select an equation for **Edit**, **Plot**, **Trace** and **Connect**. The toolbar avoids neighboring objects and docks below the canvas if it cannot fit beside the selection.
 
-For other equation actions, click **Actions** beside Undo/Redo, right-click the equation, or press Shift+F10. The same flat list lets you plot against a specific input, reopen an existing plot, inspect the computation, make a model, duplicate, export or delete. Shift-click multiple objects for **Group** and **Organize**. Use the arrow keys and Enter, or press the number printed beside an item. Escape closes the list. Ctrl/Cmd+K searches both object and workspace commands.
+**Plot** shows the result and the axis still to fill. Choose a worksheet variable with its unit, or press Enter to use the focused default. **Swap axes** in the picker or on a finished plot transposes the display: the same assigned input still varies, and the same calculated result is plotted. It does not invert the equation or run another Python sweep. Choose **Map _result_ across two inputs** for linked maps, or reopen a plot or study under **Existing views**. Nothing is created until you choose an option.
+
+For other equation actions, click **Actions** beside Undo/Redo, right-click the equation, or press Shift+F10. Choose **Plot** there to open the same picker in place; **Back to actions** returns to the list. Other actions include inspecting the computation, making a model, duplicating, exporting and deleting. Shift-click multiple objects for **Group** and **Organize**. Use the arrow keys and Enter, or press the number printed beside an action. Escape closes the menu. Ctrl/Cmd+K searches both object and workspace commands.
 Click **?** beside the zoom controls in the tools row for searchable **Keyboard shortcuts**
 reference, or search **help** / **Keyboard shortcuts** with the default Ctrl/⌘+K. Scope notes
 explain where keys apply. Escape closes the reference and restores focus; opening from the
@@ -341,8 +343,9 @@ value changes; specialized plot/value controls retain their existing acceptance 
 ### Experimental marking menu
 
 An optional experimental marking menu opens with Shift+Space. Its four equation
-directions are Edit, Explore (plot), Connect and Inspect (trace). The directions stay
-fixed across object types; Explore varies an assigned quantity. Hold the shortcut,
+directions are Edit, Plot, Connect and Trace, matching the selection strip. The wheel's
+Plot action uses the default input directly; use the selection strip or Actions to choose an
+input. The same direction offers Vary for an assigned quantity. Hold the shortcut,
 flick and release Space; the menu appears after 180 ms if you need guidance. Tap the
 shortcut to show it immediately, then click or use arrow keys and Enter. Escape
 cancels. Other objects offer their own primary actions. Secondary commands remain
@@ -368,12 +371,16 @@ reviewed interfaces; evaluation currently uses globally unique symbols.
 ## Save, open and share
 
 The document header groups **File**, the editable document name, local-save status,
-Search, Ask agent and **Download**. The row beneath groups Undo/Redo and canvas actions,
-selection/ink/shape tools, and View/Pan/Zoom/Help. **View** contains Reveal,
+Search, Ask agent and, on wider screens, **Download**. The toolbar beneath groups
+Undo/Redo, **Canvas actions** (or **Actions: _selection_**), drawing tools and navigation.
+On narrow screens the selection strip also shows a resolved equation's value, so the
+user can read it without panning to the end of a long formula. **View** contains Reveal,
 named viewpoints and System overview. Scenario controls appear in a separate labelled
 strip when alternatives exist. The compact authoring toolbar keeps **Select**, **Pen**,
-**Shapes** and **Diagram label** prominent. Shape variants live in the Shapes picker; highlighter,
-eraser and lasso are in **More drawing tools**, which shows the active tool’s name and icon. **Drawing style** appears for drawing
+**Shapes** and **Diagram label** prominent. The Shapes picker previews the geometry each tool
+creates. Dots mark the placements for paths such as the three-point arc. After choosing a shape,
+its icon stays in the Shapes slot. Highlighter, eraser and lasso are in **More drawing tools**,
+which shows the active tool’s name and icon. **Drawing style** appears for drawing
 creation and affects new drawings, not the selected worksheet content. Drawing selection
 actions appear only with selected drawings. Controls wrap on narrow screens without
 hiding the document name. File, View and tool disclosures support Tab, Escape and
@@ -387,8 +394,9 @@ precedence over the transport filename. Enter or blur keeps a rename; Escape can
 Undo/Redo restores accepted renames. Legacy browser-only names migrate into the document.
 Files currently contain one page, not a tabbed multi-page document.
 
-- **Download** in the header (Ctrl/Cmd+S) downloads a portable `.manifold` copy after
-  finishing pending edits. Keep a copy outside browser storage for backup or sharing.
+- **Download** in the header, **File → Download file** on narrow screens, or Ctrl/Cmd+S
+  downloads a portable `.manifold` copy after finishing pending edits. Keep a copy outside
+  browser storage for backup or sharing.
   Your browser controls the download location and whether to ask for a filename.
   Later edits autosave only in this browser; use **Download** again for an updated copy.
   This does not overwrite an opened file or keep a connection to it.
@@ -474,7 +482,8 @@ also pan.
 **Switch tools at the pointer:** with a drawing tool active, a drawing selected, or focus
 in the drawing toolbar, hold **Shift+Space**, move toward a tool and release to choose it.
 Tap the shortcut to open the wheel for a click or arrow keys and Enter; Escape dismisses it.
-**More drawing tools → Tool wheel** opens the same picker. Use **Edit tool wheel…** in
+**More → Tool wheel** opens the same picker. On touch, tap a tool or the central **Close**
+button. Use **Edit tool wheel…** in
 that menu to assign any drawing tool to one of the eight directions. Choosing a tool already
 on the wheel swaps its position. **Save wheel** applies the layout for this browser; it
 does not change the worksheet or shortcut bindings. **Restore defaults** puts the original
@@ -532,7 +541,7 @@ km, in, ft, yd and mi. Other length-unit names supported by the unit engine, suc
 accept explicit units and fractions, for example `120 mm`, `6 ft` and `1/2 in`.
 
 - **Display unit** converts measurements without resizing geometry or changing calibration.
-- **100 canvas units represent** defines physical scale. Changing it deliberately
+- **Length per 100 canvas units** defines physical scale. Changing it deliberately
   recalibrates all drawings in that area; zoom only changes the view.
 - **Grid spacing** defines physical increments. Shape endpoints and pointer moves snap
   when enabled. Minor grid lines thin out at distant zoom levels; the snap increment
@@ -545,8 +554,9 @@ accept explicit units and fractions, for example `120 mm`, `6 ft` and `1/2 in`.
   appear only on selected lines. These are measurements and explicit edits, not
   persistent CAD constraints.
 - To calibrate an existing sketch, select exactly one nonzero reference line, optionally
-  with other unscaled drawings, enter its **Known line length**, and choose **Calibrate
-  selected drawings**. A new area uses the entered length unit. Existing-area calibration
+  with other unscaled drawings. Scale shows **Known line length** and **Calibrate** for
+  that selection. Enter the known length and choose **Calibrate**. A new area uses the
+  entered length unit. Existing-area calibration
   affects all its members but leaves their geometry and camera unchanged. Calibration
   and membership assignment are one Undo step.
 
@@ -675,8 +685,8 @@ where the first sampled pass/fail change falls. Undefined points do not count as
 The scan works without SciPy, does not offer a design to apply, and does not certify the intervals
 between points.
 
-For two inputs, choose **Actions → Plot against two inputs** on an equation, or **Plot on canvas**
-from a two-input Optimize setup. This places a movable response study on the canvas. **Setup** lets
+For two inputs, choose **Plot → Map _result_ across two inputs** on an equation, or **Plot on canvas**
+from a two-input Optimize setup. This places a movable response study on the canvas. **Swap axes** beside Study inputs transposes all maps for the open view without changing saved bounds, the probe, pins, or any checked candidate. **Setup** lets
 you select the horizontal and vertical inputs, edit the bounds, and choose requirements separately.
 **Add map** opens the reported-quantity picker. **Update maps** saves the study settings as one
 undoable view edit, without changing the worksheet values. The study travels in the native file.

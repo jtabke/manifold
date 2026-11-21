@@ -1046,6 +1046,93 @@ function useDrawingCanvas(
   };
 }
 type Controller = ReturnType<typeof useDrawingCanvas>;
+
+// Preview the geometry and distinguish control points from points on the path.
+const shapePreviews: Partial<
+  Record<
+    Tool,
+    {
+      path: string;
+      points?: [number, number][];
+      guide?: string;
+      caption?: string;
+    }
+  >
+> = {
+  line: { path: "M8 24 48 8" },
+  arrow: { path: "M8 24 48 8 M36 6 48 8 41 18" },
+  rectangle: { path: "M8 6 H48 V26 H8 Z" },
+  ellipse: { path: "M8 16 A20 10 0 1 1 48 16 A20 10 0 1 1 8 16 Z" },
+  polyline: {
+    path: "M6 23 21 9 34 22 50 13",
+    points: [
+      [6, 23],
+      [21, 9],
+      [34, 22],
+      [50, 13],
+    ],
+    caption: "Polyline",
+  },
+  curve: {
+    path: "M7 24 Q23 2 49 24",
+    points: [
+      [7, 24],
+      [49, 24],
+    ],
+    guide: "M7 24 23 2 49 24",
+    caption: "Curve",
+  },
+  arc: {
+    path: "M8 23 A22 22 0 0 1 48 23",
+    points: [
+      [8, 23],
+      [28, 10.17],
+      [48, 23],
+    ],
+    caption: "3-point arc",
+  },
+  spline: {
+    path: "M6 25 C12 25 14 8 22 8 S30 24 38 24 44 11 50 9",
+    points: [
+      [6, 25],
+      [22, 8],
+      [38, 24],
+      [50, 9],
+    ],
+    caption: "Spline",
+  },
+};
+function ShapePreview({
+  preview,
+  compact = false,
+}: {
+  preview: NonNullable<(typeof shapePreviews)[Tool]>;
+  compact?: boolean;
+}) {
+  return (
+    <svg
+      className="drawing-shape-preview"
+      viewBox="0 0 56 32"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d={preview.path}
+        stroke="currentColor"
+        strokeWidth={compact ? 3 : 1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {!compact && preview.guide && (
+        <path d={preview.guide} className="drawing-shape-guide" />
+      )}
+      {!compact &&
+        preview.points?.map(([x, y]) => (
+          <circle key={x} cx={x} cy={y} r="2.25" />
+        ))}
+    </svg>
+  );
+}
 function DrawingToolbar({
   drawing: d,
   onChooseTool,
@@ -1073,7 +1160,8 @@ function DrawingToolbar({
   const activeShapeLabel =
     activeShape && (shortToolNames[activeShape[0]] ?? activeShape[1]);
   const activeExtra = extraTools.find(([tool]) => tool === d.tool);
-  const ShapeIcon = activeShape?.[2] ?? Shapes;
+  const ShapeIcon = (!hand && activeShape?.[2]) || Shapes;
+  const activePreview = !hand && activeShape && shapePreviews[activeShape[0]];
   const ExtraIcon = (!hand && activeExtra?.[2]) || MoreHorizontal;
   const styleVisible =
     !hand && !["select", "lasso", "eraser", "area"].includes(d.tool);
@@ -1084,7 +1172,14 @@ function DrawingToolbar({
     [tool, name, Icon]: (typeof tools)[number],
     label: string = name,
     inPanel = false,
+    tile = false,
   ) => {
+    const preview = tile && shapePreviews[tool];
+    const caption = !tile
+      ? label
+      : preview
+        ? preview.caption
+        : (shortToolNames[tool] ?? label);
     const entry = drawingShortcutActions.find((a) => a.tool === tool)!;
     const keys = bindings[entry.id];
     const shownKeys = keys.length ? shortcutLabel(keys) : undefined;
@@ -1098,20 +1193,22 @@ function DrawingToolbar({
           if (d.choose(tool)) onChooseTool();
         }}
       >
-        <Icon size={17} />
-        <span
-          className={
-            tool === "text" && !inPanel ? "drawing-label-full" : undefined
-          }
-        >
-          {label}
-        </span>
+        {preview ? <ShapePreview preview={preview} /> : <Icon size={17} />}
+        {caption && (
+          <span
+            className={
+              tool === "text" && !inPanel ? "drawing-label-full" : undefined
+            }
+          >
+            {caption}
+          </span>
+        )}
         {tool === "text" && !inPanel && (
           <span className="drawing-label-short" aria-hidden="true">
             Label
           </span>
         )}
-        {inPanel && shownKeys && (
+        {inPanel && !tile && shownKeys && (
           <kbd className="drawing-shortcut-key" aria-hidden="true">
             {shownKeys}
           </kbd>
@@ -1134,9 +1231,17 @@ function DrawingToolbar({
         {button(tools[1])}
         <CanvasCommandMenu
           label="Shapes"
-          icon={<ShapeIcon size={17} />}
+          icon={
+            activePreview ? (
+              <ShapePreview preview={activePreview} compact />
+            ) : (
+              <ShapeIcon size={17} />
+            )
+          }
           active={!hand && !!activeShape}
           activeTool={activeShapeLabel}
+          iconOnlyWhenActive
+          panelClassName="drawing-shape-picker"
           description={
             activeShape && !hand
               ? `Shapes · ${activeShape[1]} active`
@@ -1144,16 +1249,31 @@ function DrawingToolbar({
           }
         >
           {shapeGroups.map(([label, group]) => (
-            <div className="drawing-tool-group" key={label}>
-              <span className="er-command-heading">{label}</span>
-              {shapes(group).map((entry) => button(entry, entry[1], true))}
+            <div
+              className="drawing-tool-group"
+              key={label}
+              role="group"
+              aria-label={label}
+            >
+              <span className="er-command-heading" aria-hidden="true">
+                {label}
+              </span>
+              <div
+                className="drawing-shape-grid"
+                data-wide={group.length <= 2 || undefined}
+              >
+                {shapes(group).map((entry) =>
+                  button(entry, entry[1], true, true),
+                )}
+              </div>
             </div>
           ))}
         </CanvasCommandMenu>
         {button(tools.find(([tool]) => tool === "text")!)}
-        <div className="drawing-icon-menu">
+        <div className="drawing-more-tools">
           <CanvasCommandMenu
             label="More drawing tools"
+            displayLabel="More"
             icon={<ExtraIcon size={17} />}
             activeTool={
               activeExtra && (shortToolNames[activeExtra[0]] ?? activeExtra[1])
@@ -1200,8 +1320,11 @@ function DrawingToolbar({
           if (d.choose("area")) onChooseTool();
         }}
       />
-      {styleVisible && (
-        <div className="drawing-icon-menu">
+      <div
+        className="drawing-icon-menu drawing-style-slot"
+        data-available={styleVisible}
+      >
+        {styleVisible && (
           <CanvasCommandMenu
             label="Drawing style"
             icon={<Palette size={17} />}
@@ -1234,8 +1357,8 @@ function DrawingToolbar({
               />
             </label>
           </CanvasCommandMenu>
-        </div>
-      )}
+        )}
+      </div>
       <div
         className="drawing-selection-actions"
         role="group"

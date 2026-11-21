@@ -70,6 +70,79 @@
 .er-app .cam-context-action.is-active {
   background: var(--canvas-accent-tint);
 }
+.cam-context-menu[data-action-page] .cam-subject {
+  color: var(--canvas-text);
+  font-weight: 650;
+  font-size: 14px;
+}
+.cam-axis-diagram {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 6px;
+  padding: 8px 9px 5px;
+}
+.cam-axis-diagram svg {
+  width: 45px;
+  height: 40px;
+  grid-row: span 2;
+  fill: none;
+  stroke: var(--canvas-accent);
+  stroke-width: 1.6;
+}
+.cam-axis-diagram [data-axis] {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--canvas-text);
+  font-size: 12px;
+}
+.cam-axis-diagram small,
+.cam-axis-unit {
+  color: var(--canvas-muted);
+  font-size: 11px;
+}
+.cam-variable {
+  font:
+    16px "STIX Two Math",
+    "Cambria Math",
+    serif;
+  overflow-wrap: anywhere;
+}
+.er-app
+  [data-action-page]
+  .cam-context-action[data-command-id="menu.swap-axes"] {
+  min-height: 32px;
+  color: var(--canvas-accent);
+}
+.cam-context-action[aria-checked="true"] > svg {
+  color: var(--canvas-accent);
+}
+.cam-choice-group {
+  padding: 8px 9px 3px;
+  color: var(--canvas-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.er-app [data-action-page] .cam-context-action {
+  min-height: 42px;
+}
+.cam-choice-badge {
+  margin-inline-start: auto;
+  padding: 2px 6px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 4px;
+  color: var(--canvas-muted);
+  font-size: 10px;
+}
+.cam-context-action .cam-open-page {
+  margin-inline-start: auto;
+  width: 14px;
+}
+.cam-context-action:has(.cam-open-page) kbd {
+  margin-inline-start: 0;
+}
 .cam-context-action[aria-disabled="true"] {
   opacity: 0.45;
   cursor: default;
@@ -160,6 +233,26 @@
 .cam-action:focus-visible {
   outline: 1px solid var(--canvas-accent, #c7a0ef);
   outline-offset: 3px;
+}
+.cam-backdrop:has(.cam-close) {
+  background: color-mix(in srgb, var(--canvas-bg) 55%, transparent);
+}
+.er-app .cam-close {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 44px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 22px;
+  background: var(--canvas-surface);
+  font-size: 11px;
+}
+@media (pointer: coarse) {
+  .cam-context-action kbd {
+    display: none;
+  }
 }
 .cam-cancel-hint {
   position: absolute;

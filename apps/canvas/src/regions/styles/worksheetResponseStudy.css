@@ -79,6 +79,12 @@
   gap: 4px 8px;
   min-width: 0;
 }
+.study-axis-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .study-varied h3 {
   margin: 0 4px 0 0;
   color: var(--canvas-muted);
@@ -232,6 +238,18 @@
   }
   .study-varied {
     row-gap: 2px;
+  }
+  .study-inputs {
+    position: relative;
+  }
+  .study-axis-heading {
+    flex-basis: 100%;
+  }
+  .er-response-study .study-axis-heading .er-swap-axes {
+    position: absolute;
+    top: 0;
+    right: 0;
+    min-height: 24px;
   }
 }
 @container (max-width: 280px) {

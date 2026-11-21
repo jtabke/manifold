@@ -285,6 +285,11 @@ try {
     await page
       .locator('.er-selection-tools [data-command-id="response.plot"]')
       .click();
+    const defaultInput = page
+      .getByRole("menu", { name: "Plot T", exact: true })
+      .locator('[data-command-id="response.plot"]');
+    await expect(defaultInput).toBeFocused();
+    await page.keyboard.press("Enter");
     const artifact = page.getByLabel("Python response artifact", {
       exact: true,
     });

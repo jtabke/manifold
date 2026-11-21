@@ -48,9 +48,9 @@ try {
       ).page;
     const act = async (name) => {
       await mass.click({ position: { x: 6, y: 8 } });
-      await page
-        .getByRole("button", { name: "Open canvas actions", exact: true })
-        .click();
+      await page.getByRole("button", { name: /^Open actions: / }).click();
+      if (name === "Map mass across two inputs")
+        await page.getByRole("menuitem", { name: "Plot", exact: true }).click();
       await page.getByRole("menuitem", { name, exact: true }).click();
     };
     const capture = (name) =>
@@ -104,7 +104,7 @@ try {
       await dialog.getByRole("button", { name: "Add second input" }).click();
       await dialog.getByLabel("Input 2", { exact: true }).selectOption("width");
       await dialog.getByRole("button", { name: "Plot on canvas" }).click();
-    } else await act("Plot against two inputs");
+    } else await act("Map mass across two inputs");
     const study = page.locator("[data-response-study]");
     const maps = study.getByRole("region", { name: "Response maps" });
     await expect(study).toBeVisible();
@@ -154,8 +154,8 @@ try {
     await study.getByRole("button", { name: "Add map", exact: true }).click();
     const setup = study.getByRole("region", { name: "Study setup" });
     await expect(setup.getByLabel("Add reported quantity")).toBeFocused();
-    await setup.getByLabel("Input 1", { exact: true }).selectOption("width");
-    await expect(setup.getByLabel("Input 2", { exact: true })).toHaveValue(
+    await setup.getByLabel("X axis", { exact: true }).selectOption("width");
+    await expect(setup.getByLabel("Y axis", { exact: true })).toHaveValue(
       "thickness",
     );
     await setup.getByLabel("Minimum for width").fill("25");
@@ -510,6 +510,39 @@ try {
       "true",
     );
     await capture("worksheet-map-comparison");
+    const swapAxes = study.getByRole("button", {
+      name: "Swap axes",
+      exact: true,
+    });
+    const beforeSwap = await saved();
+    const studyAxisLabels = study.locator(".study-axes dd button");
+    const probeCoords = maps.locator(".design-probe-coordinates > span");
+    const axisOrder = await studyAxisLabels.allTextContents();
+    const sampleB = await probeCoords.allTextContents();
+    const mapLabels = deflection.locator(".design-map-axis");
+    const mapAxisOrder = await mapLabels.allTextContents();
+    await swapAxes.click();
+    await expect(swapAxes).toHaveAttribute("aria-pressed", "true");
+    await expect(studyAxisLabels).toHaveText(axisOrder.toReversed());
+    await expect(mapLabels).toHaveText(mapAxisOrder.toReversed());
+    await expect(probeCoords).toHaveText(sampleB.toReversed());
+    await expect(inspectB).toHaveAttribute("aria-pressed", "true");
+    await expect(maps.locator(".design-map-pin")).toHaveCount(8);
+    await expect(cursors.first()).not.toHaveAttribute("d", sampleBCoordinates);
+    await inspectA.click();
+    const transposedHit = await hit.boundingBox();
+    await hit.click({
+      position: {
+        x: (13 / 24) * transposedHit.width,
+        y: (20 / 24) * transposedHit.height,
+      },
+    });
+    await expect(inspectB).toHaveAttribute("aria-pressed", "true");
+    await expect(probeCoords).toHaveText(sampleB.toReversed());
+    assert.deepEqual(await saved(), beforeSwap);
+    assert.equal(requests.length, 0);
+    await swapAxes.click();
+    await expect(cursors.first()).toHaveAttribute("d", sampleBCoordinates);
     const beforeTrial = await saved();
     const preview = maps
       .getByRole("region", { name: "Requirement margins", exact: true })
@@ -697,6 +730,14 @@ try {
       await expect(
         review.getByRole("heading", { name: "Candidate preview" }),
       ).toBeInViewport();
+      const savedCandidate = await saved();
+      const completedRuns = requests.length;
+      await swapAxes.click();
+      await expect(review).toBeVisible();
+      await expect(maps.locator(".design-map-candidate")).toHaveCount(4);
+      assert.deepEqual(await saved(), savedCandidate);
+      assert.equal(requests.length, completedRuns);
+      await swapAxes.click();
       const candidateComparison = review.getByRole("table", {
         name: "Design comparison",
       });

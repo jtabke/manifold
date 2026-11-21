@@ -17,8 +17,10 @@ export function CanvasCommandMenu({
   align = "left",
   active = false,
   activeTool,
+  iconOnlyWhenActive = false,
   description,
   closeOnAction = true,
+  panelClassName,
 }: {
   label: string;
   displayLabel?: string;
@@ -27,8 +29,10 @@ export function CanvasCommandMenu({
   align?: "left" | "right";
   active?: boolean;
   activeTool?: string;
+  iconOnlyWhenActive?: boolean;
   description?: string;
   closeOnAction?: boolean;
+  panelClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -114,7 +118,9 @@ export function CanvasCommandMenu({
         onClick={() => setOpen(!open)}
       >
         {icon}
-        <span>{(active && activeTool) || displayLabel || label}</span>
+        {(!active || !iconOnlyWhenActive) && (
+          <span>{(active && activeTool) || displayLabel || label}</span>
+        )}
         <ChevronDown size={12} aria-hidden="true" />
       </button>
       {open && (
@@ -122,7 +128,11 @@ export function CanvasCommandMenu({
           id={id}
           ref={panel}
           style={position}
-          className="er-command-panel"
+          className={
+            panelClassName
+              ? `er-command-panel ${panelClassName}`
+              : "er-command-panel"
+          }
           role="group"
           aria-label={`${label} commands`}
           onClick={(event) => {

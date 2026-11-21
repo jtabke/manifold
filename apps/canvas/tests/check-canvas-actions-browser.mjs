@@ -23,6 +23,9 @@ try {
       exact: true,
     });
     const item = (name) => menu.getByRole("menuitem", { name, exact: true });
+    const plotPicker = page.getByRole("menu", { name: "Plot P", exact: true });
+    const plotChoice = (name) =>
+      plotPicker.getByRole("menuitem", { name, exact: true });
     const editor = page.getByLabel("Write an engineering region", {
       exact: true,
     });
@@ -89,18 +92,36 @@ try {
 
     // The menu targets the object under the pointer, without editing or moving it.
     await power.click({ button: "right", position: { x: 400, y: 25 } });
-    await expect(item("Plot response")).toHaveAttribute(
-      "aria-disabled",
-      "false",
+    await item("Plot").click();
+    await expect(plotChoice("F")).toBeFocused();
+    await expect(plotChoice("F")).toHaveAttribute(
+      "aria-description",
+      "Default input · N",
     );
     expect((await saved()).page).toEqual(original);
+    expect((await saved()).artifacts).toHaveLength(0);
+    const xAxis = plotPicker.locator('[data-axis="x"]');
+    await expect(xAxis).toContainText("F");
+    await page.keyboard.press("ArrowDown");
+    await expect(plotChoice("v")).toBeFocused();
+    await expect(xAxis).toContainText("v");
+    const swap = plotPicker.getByRole("menuitemcheckbox", {
+      name: "Swap axes",
+      exact: true,
+    });
+    await swap.click();
+    await expect(swap).toHaveAttribute("aria-checked", "true");
+    await expect(xAxis).toContainText("P");
+    expect((await saved()).artifacts).toHaveLength(0);
+    await plotChoice("Back to actions").click();
+    await expect(item("Plot")).toBeFocused();
     await page.keyboard.press("Escape");
     await page.keyboard.press("Shift+Space");
     await expect(pie).toHaveAttribute("data-revealed", "true");
     await expect(pie.getByRole("menuitem")).toHaveCount(4);
-    await expect(item("Explore")).toHaveAttribute("title", "Plot response");
+    await expect(item("Plot")).toHaveAttribute("title", "Plot response");
     await expect(page.locator(".er-selection-tools:visible")).toHaveCount(0);
-    await item("Explore").click();
+    await item("Plot").click();
     const plot = page.getByLabel("Python response artifact", { exact: true });
     await expect(plot).toHaveAttribute("data-status", "current");
     await expect(page.locator('[data-result-for="P"]')).toContainText("60 W");
@@ -143,7 +164,7 @@ try {
     ])
       await expect(item(name)).toHaveCount(0);
     for (const name of [
-      "Plot against v",
+      "Plot",
       "Try alternative",
       "Inspect computation",
       "Duplicate",
@@ -159,6 +180,7 @@ try {
         .getByRole("menuitem")
         .evaluateAll((nodes) => nodes.map((n) => n.getAttribute("aria-label")));
     const rightClickLabels = await labels();
+    await expect(menu.locator('[data-command-id^="response."]')).toHaveCount(1);
     const numbers = await menu
       .getByRole("menuitem")
       .evaluateAll((nodes) =>
@@ -172,16 +194,21 @@ try {
         i < 9 ? [String(i + 1), String(i + 1)] : [null, null],
       ),
     );
-    const existing = menu.locator('[data-command-id="response.open"]');
-    await expect(existing).toHaveAttribute("aria-keyshortcuts", "9");
-    await page.keyboard.press("9");
+    const plotNumber = await item("Plot").getAttribute("aria-keyshortcuts");
+    await page.keyboard.press(plotNumber);
+    await expect(plotChoice("F")).toBeFocused();
+    await expect(plotChoice("v")).toBeVisible();
+    await expect(plotChoice("Map P across two inputs")).toBeVisible();
+    const existing = plotPicker.locator('[data-command-id="response.open"]');
+    await expect(existing).toBeVisible();
+    await page.keyboard.press("End");
+    await expect(existing).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(menu).toHaveCount(0);
     await expect(plot).toBeVisible();
     expect((await saved()).artifacts).toHaveLength(1);
-    const actions = page.getByRole("button", {
-      name: "Open canvas actions",
-      exact: true,
-    });
+    const actions = page.getByRole("button", { name: /^Open actions: / });
+    await expect(actions).toHaveAccessibleName("Open actions: P");
     await actions.click();
     expect(await labels()).toEqual(rightClickLabels);
     await page.keyboard.press("End");
@@ -220,18 +247,14 @@ try {
     await page.keyboard.press("Escape");
 
     // Header and keyboard entry points use the same contextual menu.
-    await page
-      .getByRole("button", { name: "Open canvas actions", exact: true })
-      .click();
+    await actions.click();
     await expect(menu).toBeFocused();
     await expect(contextual).toBeVisible();
-    const triggerBox = await page
-      .getByRole("button", { name: "Open canvas actions", exact: true })
-      .boundingBox();
+    const triggerBox = await actions.boundingBox();
     const menuBox = await contextual.boundingBox();
     expect(menuBox.x).toBeCloseTo(triggerBox.x, 0);
     expect(menuBox.y).toBeCloseTo(triggerBox.y + triggerBox.height + 5, 0);
-    await expect(item("Plot against F")).toBeVisible();
+    await expect(item("Plot")).toBeVisible();
     await page.keyboard.press("Home");
     await expect(item("Edit equation")).toBeFocused();
     await page.keyboard.press("Enter");

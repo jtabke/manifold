@@ -32,8 +32,44 @@ try {
     .getByRole("toolbar", { name: "Canvas selection", exact: true })
     .locator('[data-command-id="response.plot"]')
     .click();
+  await page.getByRole("menuitem", { name: "F", exact: true }).click();
   const artifact = page.getByLabel("Python response artifact", { exact: true });
   await expect(artifact).toHaveAttribute("data-status", "current");
+  const initialView = await saved();
+  const swap = artifact.getByRole("button", { name: "Swap axes", exact: true });
+  const sliderInput = artifact.getByRole("slider", {
+    name: "Vary artifact input",
+    exact: true,
+  });
+  const execution = await artifact.getAttribute("data-execution-key");
+  await swap.click();
+  await expect(swap).toHaveAttribute("aria-pressed", "true");
+  await expect(sliderInput).toHaveAttribute("aria-orientation", "vertical");
+  await expect(
+    artifact.getByRole("button", { name: "Select swept input" }),
+  ).toContainText("F");
+  await expect(
+    artifact.getByRole("button", { name: "Select horizontal quantity" }),
+  ).toContainText("P");
+  await expect(artifact).toHaveAttribute("data-execution-key", execution);
+  await expect(artifact).toHaveAttribute("data-status", "current");
+  await expect(
+    artifact
+      .getByRole("button", { name: "Inspect plotted requirement" })
+      .locator("path")
+      .first(),
+  ).toHaveAttribute("d", /^M[^HV]+V[^HV]+$/);
+  const swapped = await saved();
+  expect(swapped.page).toEqual(initialView.page);
+  expect(swapped.artifacts).toEqual([
+    { ...initialView.artifacts[0], swapped: true },
+  ]);
+  await sliderInput.press("ArrowUp");
+  await expect(page.locator('[data-result-for="P"]')).toContainText("63 W");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.locator('[data-result-for="P"]')).toContainText("60 W");
+  await swap.click();
+  await expect(sliderInput).toHaveAttribute("aria-orientation", "horizontal");
   const baseline = (await saved()).page;
   const baselineComparison = (await saved()).artifacts[0].comparing;
   const open = async () => {
@@ -182,8 +218,51 @@ try {
   await expect(controls).toContainText("undefined");
   await controls.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.locator('[data-result-for="P"]')).toContainText("60 W");
-  expect(errors).toEqual([]);
   await context.close();
+
+  const native = await browser.newPage({
+    viewport: { width: 1440, height: 1000 },
+  });
+  native.on("pageerror", (error) => errors.push(error.message));
+  await native.goto(new URL("?trial=B", base).href);
+  await startWriting(native);
+  const nativeEditor = native.getByLabel("Write an engineering region", {
+    exact: true,
+  });
+  for (const text of ["P = F*v", "F = 20 N", "v = 3 m/s"]) {
+    await nativeEditor.fill(text);
+    await nativeEditor.press("Enter");
+  }
+  await nativeEditor.press("Escape");
+  await native
+    .locator('.er-region[data-kind="equation"]')
+    .first()
+    .click({ position: { x: 400, y: 25 } });
+  await native
+    .getByRole("toolbar", { name: "Canvas selection", exact: true })
+    .getByRole("button", { name: "Plot", exact: true })
+    .click();
+  await native.getByRole("menuitem", { name: "F", exact: true }).click();
+  const curve = native.getByRole("img", {
+    name: "Live response curve",
+    exact: true,
+  });
+  const curveSwap = native.getByRole("button", {
+    name: "Swap axes",
+    exact: true,
+  });
+  await expect(curve).toBeVisible();
+  const responsePath = curve.locator(".er-response-line");
+  const originalPath = await responsePath.getAttribute("d");
+  await curveSwap.press("Enter");
+  await expect(curveSwap).toHaveAttribute("aria-pressed", "true");
+  await expect(responsePath).not.toHaveAttribute("d", originalPath);
+  await expect(native.locator('[data-result-for="P"]')).toContainText("60 W");
+  await curveSwap.click();
+  await expect(curveSwap).toHaveAttribute("aria-pressed", "false");
+  await expect(responsePath).toHaveAttribute("d", originalPath);
+  await native.close();
+  expect(errors).toEqual([]);
   console.log(
     "Continuous exploration: live results/requirements/plot, explicit step/bounds, cancel, accept/Undo, atomic alternative, plot entry and undefined-result recovery pass.",
   );

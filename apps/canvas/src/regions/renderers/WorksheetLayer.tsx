@@ -182,6 +182,7 @@ export function WorksheetLayer({
         key={id}
         data-region-id={id}
         data-kind={kind}
+        data-canvas-tap={kind === "equation" && editing !== id ? "" : undefined}
         data-interaction={
           editing === id ? "editing" : selected === id ? "selected" : "idle"
         }

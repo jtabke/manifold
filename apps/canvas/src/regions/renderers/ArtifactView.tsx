@@ -23,6 +23,7 @@ import {
 } from "../artifacts";
 import { useArtifactDocument, useComputations } from "../app/artifactRuntime";
 import type { ArtifactRuntime as Runtime } from "../artifactComputations";
+import { responsePlotAxes, SwapAxesButton } from "./PlotAxes";
 
 type Props = {
   artifact: Artifact;
@@ -93,6 +94,7 @@ export function ArtifactView(props: Props) {
       at: a.at,
       width: a.width,
       height: a.height,
+      swapped: a.swapped,
     },
     ...(a.views || []),
   ];
@@ -114,6 +116,7 @@ export function ArtifactView(props: Props) {
                 at: next.at,
                 width: next.width,
                 height: next.height,
+                swapped: next.swapped,
               }
             : v,
         ),
@@ -138,6 +141,7 @@ export function ArtifactView(props: Props) {
             : { x: view.at.x, y: view.at.y + measured + 35 },
           width: view.width,
           height: view.height,
+          ...(renderer === "plot" && view.swapped && { swapped: true }),
         },
       ],
     });
@@ -161,6 +165,7 @@ export function ArtifactView(props: Props) {
                 at: view.at,
                 width: view.width,
                 height: view.height,
+                swapped: view.swapped,
               }}
               viewId={view.id}
               page={bound}
@@ -273,7 +278,7 @@ function ArtifactPresentationView({
     },
   });
   const svg = useRef<SVGSVGElement>(null);
-  const gesture = useValueGesture<{ clientX: number; value: number }>({
+  const gesture = useValueGesture<{ pixel: number; value: number }>({
     finish,
     revert,
     cancelKey: (event) => {
@@ -402,45 +407,57 @@ function ArtifactPresentationView({
   const ys = [...points, ...basePoints].map((p) => p[1]);
   observed.forEach((r) => ys.push(scalarY(r.value)));
   if (threshold !== undefined) ys.push(threshold);
-  const min = Math.min(...ys),
-    max = Math.max(...ys),
-    span = max - min || 1;
+  const min = ys.length ? Math.min(...ys) : 0,
+    max = ys.length ? Math.max(...ys) : 1;
   const left = 64,
     right = a.width - 28,
     top = 28,
     bottom = a.height - 118;
-  const px = (x: number) =>
-    left + ((x - a.low) / (a.high - a.low)) * (right - left);
-  const py = (y: number) => bottom - ((y - min) / span) * (bottom - top);
+  const swapped = !!a.swapped;
+  const axes = responsePlotAxes(
+    { left, right, top, bottom },
+    [a.low, a.high],
+    [min, max],
+    swapped,
+  );
+  const point = (input: number, output: number) => {
+    const [cx, cy] = axes.point(input, output);
+    return { cx, cy };
+  };
   const path = (data: readonly (readonly [number, number])[]) =>
-    data.map(([x, y], i) => `${i ? "L" : "M"}${px(x)},${py(y)}`).join(" ");
+    data
+      .map(
+        ([input, output], i) =>
+          `${i ? "L" : "M"}${axes.point(input, output).join(",")}`,
+      )
+      .join(" ");
   const fmt = (n: number) => Number(n.toPrecision(5)).toString();
   const xDisplay = (n: number) => resolved?.inputUnit.fromBase(n) ?? n;
+  const horizontal = swapped ? resolved?.y : resolved?.x;
+  const vertical = swapped ? resolved?.x : resolved?.y;
+  const hUnit = swapped ? resolved?.yUnit : resolved?.xUnit;
+  const vUnit = swapped ? resolved?.xUnit : resolved?.yUnit;
+  const inputLinked =
+    (ownFocus?.target === "input" &&
+      (!ownFocus.quantity || ownFocus.quantity === a.input)) ||
+    ownFocus?.target === "point";
+  const responseLinked = ownFocus?.target === "expression";
   const liveX = live?.xq.value,
     liveY = live && scalarY(live.yq);
   const contextLabel = page.contexts.find((c) => c.id === page.active)?.label;
   const baseLabel = page.contexts.find((c) => c.id === a.compareContext)?.label;
   const isPreview = current !== page;
   const tick =
-    10 ** Math.ceil(Math.log10((a.high - a.low) / (right - left))) ||
+    10 ** Math.ceil(Math.log10((a.high - a.low) / axes.inputLength)) ||
     a.high - a.low;
   const proposed = (value: number, fine = false) => {
     const step = fine ? tick / 10 : tick;
     return Math.max(a.low, Math.min(a.high, Math.round(value / step) * step));
   };
-  const screenX = (clientX: number) => {
-    const rect = svg.current!.getBoundingClientRect();
-    return Math.max(
-      a.low,
-      Math.min(
-        a.high,
-        a.low +
-          ((((clientX - rect.left) * a.width) / rect.width - left) /
-            (right - left)) *
-            (a.high - a.low),
-      ),
-    );
-  };
+  const inputPixel = (e: { clientX: number; clientY: number }) =>
+    axes.inputPixel(svg.current, e.clientX, e.clientY);
+  const positiveKey = swapped ? "ArrowUp" : "ArrowRight";
+  const negativeKey = swapped ? "ArrowDown" : "ArrowLeft";
   const intersections: number[] = [];
   if (threshold !== undefined)
     for (let i = 1; i < points.length; i++) {
@@ -478,6 +495,7 @@ function ArtifactPresentationView({
       aria-label="Python response artifact"
       data-artifact-id={a.id}
       data-view-id={viewId}
+      data-swapped={(swapped && a.renderer === "plot") || undefined}
       data-status={result.status}
       data-execution-key={result.receipt?.code_sha256}
       style={{
@@ -697,6 +715,17 @@ function ArtifactPresentationView({
             )}
           </div>
         )}
+      {a.renderer === "plot" && (
+        <div className="er-artifact-axes">
+          <SwapAxesButton
+            swapped={swapped}
+            disabled={pending || dragging || isPreview}
+            onSwap={() =>
+              change({ ...accepted, swapped: !swapped || undefined })
+            }
+          />
+        </div>
+      )}
       {result.current && a.renderer === "plot" && (
         <svg
           ref={svg}
@@ -714,11 +743,11 @@ function ArtifactPresentationView({
             aria-label="Select sampled range"
             onPointerDown={(e) => {
               e.currentTarget.setPointerCapture(e.pointerId);
-              brush.current = screenX(e.clientX);
+              brush.current = axes.inputAt(inputPixel(e));
             }}
             onPointerMove={(e) => {
               if (brush.current === undefined) return;
-              const x = screenX(e.clientX);
+              const x = axes.inputAt(inputPixel(e));
               select("range", [
                 Math.min(x, brush.current),
                 Math.max(x, brush.current),
@@ -733,10 +762,7 @@ function ArtifactPresentationView({
           />
           {ownFocus?.range && (
             <rect
-              x={px(ownFocus.range[0])}
-              y={top}
-              width={Math.max(1, px(ownFocus.range[1]) - px(ownFocus.range[0]))}
-              height={bottom - top}
+              {...axes.band(...ownFocus.range)}
               fill="#8970b822"
               pointerEvents="none"
             />
@@ -748,10 +774,10 @@ function ArtifactPresentationView({
             pointerEvents="none"
           />
           <text x={left - 10} y={top + 5} textAnchor="end">
-            {fmt(max)}
+            {fmt(swapped ? xDisplay(a.high) : max)}
           </text>
           <text x={left - 10} y={bottom + 5} textAnchor="end">
-            {fmt(min)}
+            {fmt(swapped ? xDisplay(a.low) : min)}
           </text>
           {!!basePoints.length && (
             <path
@@ -800,26 +826,33 @@ function ArtifactPresentationView({
               {...activate("requirement")}
             >
               <path
-                d={`M${left},${py(threshold)}H${right}`}
+                d={axes.limit(threshold)}
                 stroke="transparent"
                 strokeWidth="16"
               />
               <path
-                d={`M${left},${py(threshold)}H${right}`}
+                d={axes.limit(threshold)}
                 stroke={
                   ownFocus?.target === "requirement" ? "#7959a8" : "#7b8078"
                 }
                 strokeDasharray="5 5"
                 pointerEvents="none"
               />
-              <text x={right} y={py(threshold) - 9} textAnchor="end">
+              <text
+                x={swapped ? axes.x(threshold) : right}
+                y={swapped ? top + 12 : axes.y(threshold) - 9}
+                textAnchor={
+                  swapped && axes.x(threshold) - left < (right - left) / 2
+                    ? "start"
+                    : "end"
+                }
+              >
                 {fmt(threshold)} {resolved?.yUnit} limit
               </text>
               {intersections.map((x, i) => (
                 <g key={i}>
                   <circle
-                    cx={px(x)}
-                    cy={py(threshold)}
+                    {...point(x, threshold)}
                     r="5"
                     fill="#fdfcf9"
                     stroke="#7b8078"
@@ -838,8 +871,10 @@ function ArtifactPresentationView({
               tabIndex={0}
               aria-label={`Inspect paired measurement row ${r.row + 1}`}
               data-observed-row={r.row}
-              cx={px(r.inputs[evidence.result!.input].value)}
-              cy={py(scalarY(r.value))}
+              {...point(
+                r.inputs[evidence.result!.input].value,
+                scalarY(r.value),
+              )}
               r={
                 dataSelection?.dataset === evidence.result?.dataset &&
                 dataSelection?.rows.includes(r.row)
@@ -876,15 +911,14 @@ function ArtifactPresentationView({
             baseline.xq.value <= a.high && (
               <g pointerEvents="none">
                 <circle
-                  cx={px(baseline.xq.value)}
-                  cy={py(scalarY(baseline.yq))}
+                  {...point(baseline.xq.value, scalarY(baseline.yq))}
                   r="6"
                   fill="#fff"
                   stroke="#969b95"
                   strokeWidth="2"
                 />
                 <path
-                  d={`M${px(baseline.xq.value)},${bottom}V${py(scalarY(baseline.yq))}`}
+                  d={axes.guide(baseline.xq.value, scalarY(baseline.yq))}
                   stroke="#b1b5ae"
                   strokeDasharray="3 4"
                 />
@@ -896,7 +930,7 @@ function ArtifactPresentationView({
             liveX <= a.high && (
               <g>
                 <path
-                  d={`M${px(liveX)},${bottom}V${py(liveY)}`}
+                  d={axes.guide(liveX, liveY)}
                   stroke="#aa6329"
                   pointerEvents="none"
                 />
@@ -905,7 +939,7 @@ function ArtifactPresentationView({
                   tabIndex={0}
                   aria-label="Vary artifact input"
                   aria-disabled={!editable}
-                  aria-orientation="horizontal"
+                  aria-orientation={swapped ? "vertical" : "horizontal"}
                   aria-valuemin={xDisplay(a.low)}
                   aria-valuemax={xDisplay(a.high)}
                   aria-valuenow={xDisplay(liveX)}
@@ -913,7 +947,7 @@ function ArtifactPresentationView({
                     live && resolved?.inputUnit.format(live.xq.value)
                   }
                   className={`er-design-point ${ownFocus?.target === "point" ? "is-selected" : ""} ${isPreview ? "is-preview" : ""}`}
-                  transform={`translate(${px(liveX)} ${py(liveY)})`}
+                  transform={`translate(${axes.point(liveX, liveY).join(" ")})`}
                   onPointerDown={(e) => {
                     if (!editable) {
                       select("point");
@@ -921,7 +955,7 @@ function ArtifactPresentationView({
                     }
                     if (
                       gesture.startPointer(e, {
-                        clientX: e.clientX,
+                        pixel: inputPixel(e),
                         value: liveX,
                       })
                     )
@@ -930,16 +964,14 @@ function ArtifactPresentationView({
                   onPointerMove={(e) => {
                     const g = gesture.pointer(e);
                     if (!g) return;
-                    const dx = e.clientX - g.data.clientX;
-                    if (Math.abs(dx) < 3 && !g.moved) return;
+                    const delta = inputPixel(e) - g.data.pixel;
+                    if (Math.abs(delta) < 3 && !g.moved) return;
                     gesture.movePointer(e);
-                    const rect = svg.current!.getBoundingClientRect();
                     explore(
                       a.input,
                       proposed(
                         g.data.value +
-                          ((dx * a.width) / rect.width / (right - left)) *
-                            (a.high - a.low),
+                          (delta / axes.inputLength) * (a.high - a.low),
                         e.shiftKey,
                       ),
                       e.currentTarget,
@@ -965,7 +997,7 @@ function ArtifactPresentationView({
                     }
                     if (
                       editable &&
-                      (e.key === "ArrowLeft" || e.key === "ArrowRight")
+                      (e.key === negativeKey || e.key === positiveKey)
                     ) {
                       if (!gesture.startKey(e.key)) return;
                       select("point");
@@ -973,7 +1005,7 @@ function ArtifactPresentationView({
                         a.input,
                         proposed(
                           liveX +
-                            (e.key === "ArrowRight" ? 1 : -1) *
+                            (e.key === positiveKey ? 1 : -1) *
                               (e.shiftKey ? tick / 10 : tick),
                           e.shiftKey,
                         ),
@@ -982,7 +1014,7 @@ function ArtifactPresentationView({
                     }
                   }}
                   onKeyUp={(e) => {
-                    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                    if (e.key === negativeKey || e.key === positiveKey) {
                       e.stopPropagation();
                       gesture.finishKey(e.key);
                     }
@@ -1001,28 +1033,28 @@ function ArtifactPresentationView({
                     strokeWidth="2"
                   />
                   <text x={15} y={-12} className="er-point-hint">
-                    {resolved?.x.name} ↔ drag
+                    {resolved?.x.name} {swapped ? "↕" : "↔"} drag
                   </text>
                   <title>
-                    Drag horizontally to vary {resolved?.x.name}; vertical
-                    dragging does not solve for inputs.
+                    Drag {swapped ? "vertically" : "horizontally"} to vary{" "}
+                    {resolved?.x.name}.
                   </title>
                 </g>
               </g>
             )}
           <text x={left} y={bottom + 24}>
-            {fmt(xDisplay(a.low))}
+            {fmt(swapped ? min : xDisplay(a.low))}
           </text>
           <text x={right} y={bottom + 24} textAnchor="end">
-            {fmt(xDisplay(a.high))}
+            {fmt(swapped ? max : xDisplay(a.high))}
           </text>
           <g
             role="button"
             tabIndex={0}
             aria-label="Select horizontal quantity"
-            data-link-source={a.input}
-            className={`er-chart-axis ${(ownFocus?.target === "input" && (!ownFocus.quantity || ownFocus.quantity === a.input)) || ownFocus?.target === "point" ? "is-linked" : ""}`}
-            {...activate("input")}
+            data-link-source={swapped ? a.output : a.input}
+            className={`er-chart-axis ${(swapped ? responseLinked : inputLinked) ? "is-linked" : ""}`}
+            {...activate(swapped ? "expression" : "input")}
           >
             <rect
               x={(left + right) / 2 - 65}
@@ -1032,19 +1064,21 @@ function ArtifactPresentationView({
               rx="4"
             />
             <text x={(left + right) / 2} y={bottom + 48} textAnchor="middle">
-              {resolved?.x.name} ({resolved?.xUnit})
+              {horizontal?.name} ({hUnit})
             </text>
           </g>
           <g
             role="button"
             tabIndex={0}
-            aria-label="Select output quantity"
-            data-link-source={a.output}
-            className="er-chart-target"
-            {...activate("expression")}
+            aria-label={
+              swapped ? "Select swept input" : "Select output quantity"
+            }
+            data-link-source={swapped ? a.input : a.output}
+            className={`er-chart-target er-chart-axis ${(swapped ? inputLinked : responseLinked) ? "is-linked" : ""}`}
+            {...activate(swapped ? "input" : "expression")}
           >
             <text x={left} y={16}>
-              {resolved?.y.name} ({resolved?.yUnit})
+              {vertical?.name} ({vUnit})
             </text>
           </g>
         </svg>
@@ -1103,7 +1137,11 @@ function ArtifactPresentationView({
             )}
             {ownFocus.target === "point" && editable && (
               <>
-                <span>{isPreview ? "Preview" : `${resolved?.x.name} ↔`}</span>
+                <span>
+                  {isPreview
+                    ? "Preview"
+                    : `${resolved?.x.name} ${swapped ? "↕" : "↔"}`}
+                </span>
                 {pending && !dragging ? (
                   exploring ? (
                     <span>Exploration controls open</span>

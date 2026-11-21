@@ -33,11 +33,49 @@
   border-top: 1px solid var(--canvas-border);
   padding-top: 4px;
 }
-.drawing-tool-group > button {
-  justify-content: flex-start;
-  width: 100%;
-  font-size: 12px;
-  text-align: left;
+.er-command-panel.drawing-shape-picker {
+  width: 252px;
+  gap: 6px;
+}
+.drawing-shape-grid {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.drawing-shape-grid[data-wide] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.er-app .drawing-shape-grid > button {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  height: 52px;
+  padding: 4px;
+  border: 1px solid var(--canvas-border);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.drawing-shape-grid .drawing-shape-preview {
+  width: 54px;
+  height: 30px;
+}
+.drawing-shape-grid circle {
+  fill: var(--canvas-surface);
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+.drawing-shape-guide {
+  opacity: 0.55;
+  stroke: currentColor;
+  stroke-dasharray: 2 2;
+}
+.drawing-toolbar .drawing-primary-tools > .er-command-menu > button {
+  width: 98px;
+}
+.drawing-primary-tools > .er-command-menu > button > .drawing-shape-preview {
+  width: 27px;
+  height: 18px;
 }
 .drawing-shortcut-key {
   margin-left: auto;
@@ -49,6 +87,9 @@
 }
 .drawing-icon-menu {
   flex-shrink: 0;
+}
+.drawing-style-slot[data-available="false"] {
+  display: none;
 }
 .drawing-wheel-editor {
   box-sizing: border-box;
@@ -353,13 +394,28 @@
   stroke: var(--canvas-surface);
   paint-order: stroke;
 }
+.er-command-panel.drawing-scale-disclosure {
+  width: 328px;
+}
 .drawing-scale-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
-  width: min(310px, calc(100vw - 54px));
-  max-height: min(650px, calc(100dvh - 180px));
-  overflow: auto;
   padding: 4px;
+  overflow-wrap: anywhere;
+}
+.drawing-scale-panel button {
+  height: auto;
+  white-space: normal;
+}
+.drawing-scale-panel small {
+  padding: 0;
+}
+.er-app .drawing-scale-panel .drawing-scale-primary {
+  justify-self: start;
+  border-color: var(--canvas-border);
+  background: var(--canvas-accent-tint);
+  color: var(--canvas-accent);
 }
 .drawing-scale-panel p {
   margin: 0;
@@ -416,7 +472,7 @@
   .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
     .drawing-toolbar
     :is(.drawing-primary-tools > button, .er-command-menu > button) {
-    padding-inline: 5px;
+    padding-inline: 8px;
     gap: 4px;
   }
   .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
@@ -440,6 +496,16 @@
     display: none;
   }
 }
+@media (pointer: coarse) and (max-width: 600px) {
+  .drawing-primary-tools > button,
+  .drawing-toolbar .er-command-menu > button {
+    min-height: 36px;
+  }
+  .drawing-primary-tools > button:nth-child(2),
+  .drawing-more-tools .er-command-menu > button {
+    min-width: 44px;
+  }
+}
 @media (max-width: 440px) {
   .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
     :is(
@@ -448,11 +514,81 @@
     )
     > svg:first-child,
   .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
-    .drawing-primary-tools
-    .drawing-icon-menu
-    button[data-active="true"]
+    .drawing-more-tools
+    .er-command-menu
+    > button
     > svg:first-child {
     display: none;
+  }
+}
+@media (max-width: 440px) {
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-toolbar
+    :is(.drawing-primary-tools > button, .er-command-menu > button) {
+    padding-inline: 5px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-more-tools
+    button[data-active="true"]
+    > svg:last-child {
+    display: none;
+  }
+}
+@media (max-width: 440px) {
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-primary-tools
+    > .er-command-menu
+    > button[data-active="true"]
+    > svg:first-child {
+    display: block;
+    width: 18px;
+    height: 18px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-primary-tools
+    > .er-command-menu
+    > button[data-active="true"]
+    > .drawing-shape-preview {
+    width: 27px;
+  }
+}
+@media (min-width: 384px) and (max-width: 440px) {
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-toolbar
+    .drawing-primary-tools
+    > button {
+    font-size: 12px;
+    padding-inline: 4px;
+  }
+  /* Reserve space independently of tool name or whether stroke style applies. */
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom) .drawing-style-slot {
+    display: block;
+    width: 32px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-primary-tools
+    > .er-command-menu
+    > button {
+    width: 82px;
+    gap: 3px;
+    padding-inline: 4px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-more-tools
+    .er-command-menu
+    > button {
+    width: 68px;
+    padding-inline: 4px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-primary-tools
+    .er-command-menu
+    > button
+    > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 @media (max-width: 900px) {

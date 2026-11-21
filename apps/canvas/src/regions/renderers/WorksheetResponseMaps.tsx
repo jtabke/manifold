@@ -65,7 +65,10 @@ function tiles(size: number) {
   });
 }
 
-function boundaries(map: DesignResponseMap) {
+const transposeIndex = (index: number, size: number, swapped: boolean) =>
+  swapped ? (index % size) * size + Math.floor(index / size) : index;
+
+function boundaries(map: DesignResponseMap, swapped: boolean) {
   const last = map.size - 1;
   return map.requirements.map((_, index) => {
     let path = "";
@@ -92,7 +95,9 @@ function boundaries(map: DesignResponseMap) {
               from && to && sum > 0 && Number.isFinite(sum)
                 ? Math.abs(from.value) / sum
                 : 0.5;
-          return [svgPoint((a + (c - a) * t) / last, (b + (d - b) * t) / last)];
+          const x = (a + (c - a) * t) / last;
+          const y = (b + (d - b) * t) / last;
+          return [swapped ? svgPoint(y, x) : svgPoint(x, y)];
         });
         for (let i = 0; i < edges.length; i += 2)
           path += `M${edges[i]}L${edges[i + 1]}`;
@@ -101,12 +106,15 @@ function boundaries(map: DesignResponseMap) {
   });
 }
 
-function prepareMaps(map: DesignResponseMap) {
-  const cells = tiles(map.size);
+function prepareMaps(map: DesignResponseMap, swapped: boolean) {
+  const positions = tiles(map.size);
+  const cells = positions.map(
+    (_, i) => positions[transposeIndex(i, map.size, swapped)],
+  );
   const failed = map.points
     .map((p, i) => (p.pass === false ? cells[i] : ""))
     .join("");
-  const contours = boundaries(map);
+  const contours = boundaries(map, swapped);
   const layers = map.outputs.map((_, k) => {
     const values = map.points.flatMap((p) =>
       p.values[k] === null ? [] : [p.values[k]],
@@ -247,8 +255,9 @@ function MapMarkings({
 export type MapInspection = number | "current" | "candidate";
 
 export function WorksheetResponseMaps({
-  map,
+  map: source,
   grid,
+  swapped,
   review,
   limits,
   heading,
@@ -257,13 +266,32 @@ export function WorksheetResponseMaps({
 }: {
   map: DesignResponseMap;
   grid: DesignResponseMap;
+  swapped: boolean;
   review?: DesignReview;
   limits: ReactNode;
   heading: string;
   selected?: MapInspection;
   select: (value: MapInspection) => void;
 }) {
-  const { failed, contours, layers } = useMemo(() => prepareMaps(map), [map]);
+  const map = useMemo(() => {
+    if (!swapped) return source;
+    const transpose = (point: DesignMapPoint) => ({
+      ...point,
+      x: point.y,
+      y: point.x,
+    });
+    return {
+      ...source,
+      xAxis: source.yAxis,
+      yAxis: source.xAxis,
+      current: transpose(source.current),
+      points: source.points.map(transpose),
+    };
+  }, [source, swapped]);
+  const { failed, contours, layers } = useMemo(
+    () => prepareMaps(source, swapped),
+    [source, swapped],
+  );
   const candidate = useMemo(() => candidatePoint(map, review), [map, review]);
   const [local, setLocal] = useState<{
     grid: DesignResponseMap;
@@ -324,7 +352,7 @@ export function WorksheetResponseMaps({
     );
     const i = clamp(Math.round((last * (p.x - plot.left)) / plot.width), last),
       j = clamp(Math.round(last * (1 - (p.y - plot.top) / plot.height)), last);
-    select(j * map.size + i);
+    select(transposeIndex(j * map.size + i, map.size, swapped));
   };
   const move = (event: KeyboardEvent<SVGSVGElement>) => {
     if (!Object.hasOwn(directions, event.key)) return;
@@ -333,8 +361,12 @@ export function WorksheetResponseMaps({
     const [dx, dy] = directions[event.key],
       [x, y] = coordinates(point);
     select(
-      clamp(Math.round(y * last) + dy, last) * map.size +
-        clamp(Math.round(x * last) + dx, last),
+      transposeIndex(
+        clamp(Math.round(y * last) + dy, last) * map.size +
+          clamp(Math.round(x * last) + dx, last),
+        map.size,
+        swapped,
+      ),
     );
   };
   const id = useId();

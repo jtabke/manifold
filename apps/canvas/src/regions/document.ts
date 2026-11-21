@@ -118,6 +118,7 @@ type PlotFrame = {
 };
 export type CurvePlot = PlotFrame & {
   input: string;
+  swapped?: boolean;
   low: number;
   high: number;
   study?: never;
@@ -1386,7 +1387,7 @@ export class RegionSession {
     );
     this.emit();
   }
-  addPlot(output: string, input: string): string {
+  addPlot(output: string, input: string, swapped = false): string {
     if (this.state.plots.length >= 16)
       throw Error("This workspace supports up to 16 plots.");
     const p = project(this.state),
@@ -1417,6 +1418,7 @@ export class RegionSession {
         high: center + delta,
         width: 500,
         height: 325,
+        ...(swapped && { swapped }),
         ...(occupied
           ? { at: { x: next.origin.x + 555, y: sourceY + occupied * 345 } }
           : {}),
@@ -1441,6 +1443,18 @@ export class RegionSession {
     if (parent) edit.model(parent)?.members.push(id);
     this.apply(next);
     return id;
+  }
+  swapPlotAxes(id: string) {
+    if (
+      this.foundation.preview() ||
+      !this.state.plots.some((plot) => plot.id === id && !plot.study)
+    )
+      return;
+    const edit = new PageEdit(this.state);
+    const plot = edit.plot(id) as CurvePlot;
+    if (plot.swapped) delete plot.swapped;
+    else plot.swapped = true;
+    this.apply(edit.page);
   }
   updateResponseStudy(id: string, spec: DesignSpec) {
     if (this.foundation.preview())

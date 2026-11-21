@@ -110,7 +110,8 @@ try {
     name: "Shapes: Arc",
     exact: true,
   });
-  await expect(arcTool).toHaveText("Arc");
+  await expect(arcTool).toHaveText("");
+  await expect(arcTool.locator("svg").first()).toBeVisible();
   await click(450, 620);
   await click(500, 620);
   await click(560, 620);
@@ -258,15 +259,36 @@ try {
   });
   phone.on("pageerror", (error) => errors.push(error.message));
   await phone.goto(process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310");
-  await phone
-    .getByRole("button", { name: "More drawing tools", exact: true })
-    .tap();
-  await phone.getByRole("button", { name: "Tool wheel", exact: true }).tap();
+  const openPhoneWheel = async () => {
+    await moreTools(phone).tap();
+    await phone.getByRole("button", { name: "Tool wheel", exact: true }).tap();
+  };
+  await openPhoneWheel();
   const phoneWheel = phone.getByRole("menu", {
     name: "Drawing tools",
     exact: true,
   });
   await expect(phoneWheel).toBeVisible();
+  await expect(phoneWheel.getByRole("status")).toHaveText(
+    "Tap a choice, or tap Close",
+  );
+  const closeWheel = phoneWheel.getByRole("menuitem", {
+    name: "Close",
+    exact: true,
+  });
+  await expect
+    .poll(async () => (await closeWheel.boundingBox())?.height)
+    .toBeGreaterThanOrEqual(44);
+  assert.ok((await closeWheel.boundingBox()).width >= 44);
+  await closeWheel.tap();
+  await expect(phoneWheel).toBeHidden();
+  await expect(moreTools(phone)).toBeFocused();
+  await openPhoneWheel();
+  await phone.keyboard.press("End");
+  await expect(closeWheel).toBeFocused();
+  await phone.keyboard.press("Enter");
+  await expect(phoneWheel).toBeHidden();
+  await openPhoneWheel();
   await captureEvidence(phone, {
     path: new URL("../screenshots/drawing-tool-wheel-390.png", import.meta.url)
       .pathname,

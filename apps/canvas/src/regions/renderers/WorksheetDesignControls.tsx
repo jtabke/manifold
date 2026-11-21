@@ -67,9 +67,15 @@ export function DesignFields({
           return (
             <div className="design-axis" key={i}>
               <label>
-                Input {i + 1}
+                {fixedAxes ? (i === 0 ? "X axis" : "Y axis") : `Input ${i + 1}`}
                 <select
-                  aria-label={`Input ${i + 1}`}
+                  aria-label={
+                    fixedAxes
+                      ? i === 0
+                        ? "X axis"
+                        : "Y axis"
+                      : `Input ${i + 1}`
+                  }
                   value={a.id}
                   onChange={(e) =>
                     axisChange(

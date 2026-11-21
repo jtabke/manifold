@@ -105,10 +105,17 @@ Changing invocation method does not change the selected definition, plot binding
 review semantics or recovery behavior. New integrations must register supported
 capabilities explicitly rather than advertising operations that cannot execute.
 
-Common actions are visible on the selection; other object actions are one menu away.
-There is no nested action menu or separate disclosure on the equation. Specific plot inputs,
-existing plots, selection edits and exports appear directly in the list. Undo, Fit, search
-and help remain workspace controls rather than repeated items on every object. Equations offer
+Common actions are visible on the selection, with its result on narrow screens. The Actions
+trigger names its selection or the canvas and never silently retargets to the last click.
+Plot opens the same input picker from the selection strip or Actions. In Actions the picker
+replaces the list in place, with Back to actions. Its axis diagram and unit-bearing variables
+make the response and swept input distinguishable. Swap axes transposes the display without
+rebinding definitions or evaluating the inverse. Linked maps transpose together; orientation
+is local to the open study so inspection and a checked candidate stay valid. Opening the picker
+does not create a view; Enter accepts the focused default input. Search still finds the commands
+directly, including “plot response.”
+Undo, Fit, search and help remain workspace controls rather than repeated items on every
+object. Equations offer
 Edit/Plot/Trace/Connect; quantities offer Edit value/Vary/Find uses; results and plot
 selections offer Inspect source/Explore/Compare; datasets offer Inspect/Connect/
 Visualize, with unavailable calculated-data views explained. A selected term is
@@ -125,17 +132,17 @@ identities, not inferred physical equivalence. Code and recovery details remain
 inspectable; view removal is distinguished from document Undo.
 
 An optional experimental marking menu accelerates four primary operations for the
-current object. The cardinal intents stay fixed: Edit above, Explore right, Connect
-below and Inspect left. The resolved operation varies by capability: Explore plots
-an equation response or focuses a quantity's direct variation control. Unsupported
+current object. The cardinal intents stay fixed: edit above, explore right, connect
+below and inspect left. Labels name the resolved operation and use the selection strip's
+label when available: the right wedge plots an equation or invokes Vary on a quantity. Unsupported
 categories stay unavailable rather than rotating the other directions. Blank space,
 models and selections offer only their supported operations. Secondary choices such
 as comparison remain in the contextual list and search.
 
 Hold Shift+Space, flick toward an action and release Space. Execution does not wait
 for the menu, which appears after 180 ms as guidance. Tapping the shortcut reveals
-it for explicit selection. The smaller ring has an open center, and contextual
-toolbars are hidden while either menu is open. Escape or an outside click cancels.
+it for explicit selection. Contextual toolbars are hidden while either menu is open.
+Escape, an outside click or the touch wheel's central Close button cancels.
 Arrow keys and Enter remain available. Text editing retains Shift+Space input and
 the native context menu; Space-drag still pans.
 

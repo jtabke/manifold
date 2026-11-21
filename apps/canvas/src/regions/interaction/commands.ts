@@ -84,6 +84,7 @@ export type CommandRequest = { target: CommandTarget } & (
       input: string;
       output: string;
       request?: string;
+      swapped?: boolean;
     }
   | { operation: "definition.code"; input: string; output: string }
   | { operation: "response.open" | "dataset.visualize"; view: string }
@@ -140,7 +141,7 @@ export type CanvasCommand = {
     kind: "document" | "view" | "navigation" | "none";
     description: string;
   };
-  run: () => void;
+  run: (swapped?: boolean) => void;
 };
 /** Describes reversal; it never executes or changes engineering state. */
 const undoEffect = (
@@ -318,8 +319,13 @@ export function resolveCommands(
           "navigation",
           "Changes selection or view; engineering definitions remain unchanged.",
         ),
-      run: () => {
-        if (!unavailable && request) execute(request);
+      run: (swapped) => {
+        if (!unavailable && request)
+          execute(
+            swapped && request.operation === "response.plot"
+              ? { ...request, swapped }
+              : request,
+          );
       },
     });
   };
@@ -852,13 +858,39 @@ export function requestedPlotCommand(
     },
   };
 }
+/** Present each bound response once, keeping its default identity and both search names. */
+export function distinctPlotCommands(commands: CanvasCommand[]) {
+  const base = commands.find((c) => c.id === "response.plot");
+  const equivalent =
+    base &&
+    commands.find(
+      (c) =>
+        c.id === "response.plot.input" &&
+        c.parameters.input === base.parameters.input &&
+        c.parameters.output === base.parameters.output &&
+        c.unavailable === base.unavailable,
+    );
+  if (!equivalent || !base) return commands;
+  return commands
+    .filter((c) => c !== equivalent)
+    .map((c) =>
+      c === base
+        ? {
+            ...c,
+            label: equivalent.label,
+            keywords: [...c.keywords, ...equivalent.keywords],
+          }
+        : c,
+    );
+}
+
 export function searchCommands(
   commands: CanvasCommand[],
   query: string,
   recent: string[],
 ) {
   const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  return commands
+  return distinctPlotCommands(commands)
     .filter((c) =>
       words.every((word) => c.keywords.join(" ").toLowerCase().includes(word)),
     )

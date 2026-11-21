@@ -52,7 +52,7 @@ const commandIcons: Record<string, ReactNode> = {
 };
 export const presentCommand = (
   command: CanvasCommand,
-  executeCommand: (command: CanvasCommand) => void,
+  executeCommand: (command: CanvasCommand, swapped?: boolean) => void,
   label = command.label,
 ): CanvasAction => ({
   id: command.id,
@@ -61,5 +61,5 @@ export const presentCommand = (
   icon: commandIcons[command.icon] || <MoreHorizontal />,
   hint: command.label,
   unavailable: command.unavailable,
-  run: () => executeCommand(command),
+  run: (swapped) => executeCommand(command, swapped),
 });

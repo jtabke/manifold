@@ -41,6 +41,7 @@ export function DrawingScaleControls({
   drawArea: () => void;
 }) {
   const unitList = useId();
+  const calibrationImpact = useId();
   const areas = entries.filter((e) => e.mark.kind === "area"),
     selected = entries.filter((e) => selection.has(e.id));
   const target =
@@ -66,7 +67,7 @@ export function DrawingScaleControls({
     [width, setWidth] = useState("100 mm"),
     [height, setHeight] = useState("80 mm"),
     [angle, setAngle] = useState("0");
-  const [known, setKnown] = useState("1 m"),
+  const [known, setKnown] = useState(""),
     [error, setError] = useState("");
   useEffect(() => {
     setName(scale?.name ?? "Drawing area");
@@ -137,8 +138,14 @@ export function DrawingScaleControls({
     }
   };
   const existing = target?.mark.kind === kind ? target : undefined;
-  const referenceLine =
-    selected.filter((e) => e.mark.kind === "line").length === 1;
+  const lines = selected.filter((e) => e.mark.kind === "line");
+  const referenceLine = lines.length === 1 ? lines[0] : undefined;
+  const referenceArea = areas.find(
+    (item) => item.id === referenceLine?.mark.area?.item,
+  );
+  useEffect(() => setKnown(""), [referenceLine?.id]);
+  const canAssign = selected.some((e) => e.mark.kind !== "area");
+  const canResetPlacement = selected.some((e) => e.mark.dimensionPlacement);
   const corner =
     selected.length === 2
       ? selectedAngle(drawingGeometry(entries), selection)
@@ -153,13 +160,11 @@ export function DrawingScaleControls({
         displayLabel="Scale"
         icon={<Ruler size={17} />}
         closeOnAction={false}
+        panelClassName="drawing-scale-disclosure"
         description="Manage drawing scale, physical units and dimensions"
       >
         <div className="drawing-scale-panel">
-          <strong>Scaled drawings</strong>
-          <p>
-            Each area has its own physical scale. Zoom never changes dimensions.
-          </p>
+          <strong>Drawing scale</strong>
           {corner && (
             <fieldset disabled={disabled}>
               <legend>Included angle</legend>
@@ -211,32 +216,83 @@ export function DrawingScaleControls({
               )}
             </fieldset>
           )}
-          <button type="button" disabled={disabled} onClick={drawArea}>
+          <button
+            className="drawing-scale-primary"
+            type="button"
+            disabled={disabled}
+            onClick={drawArea}
+          >
             Draw new area
           </button>
-          <label>
-            Drawing area
-            <select
-              aria-label="Drawing area"
-              value={area?.id ?? ""}
-              onChange={(e) => {
-                setAreaId(e.target.value || undefined);
-                select([]);
+          {areas.length > 0 && (
+            <label>
+              Drawing area
+              <select
+                aria-label="Drawing area"
+                value={area?.id ?? ""}
+                onChange={(e) => {
+                  setAreaId(e.target.value || undefined);
+                  select([]);
+                }}
+              >
+                <option value="">Choose an area</option>
+                {areas.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.mark.scale!.name} ({e.mark.scale!.unit})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {referenceLine ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                run(() => {
+                  const id = calibrateDrawingSelection(
+                    session,
+                    [...selection],
+                    known,
+                    scale?.unit ??
+                      known.trim().match(/[A-Za-zµμ]+$/)?.[0] ??
+                      unit,
+                  );
+                  setAreaId(id);
+                });
               }}
             >
-              <option value="">Choose an area</option>
-              {areas.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.mark.scale!.name} ({e.mark.scale!.unit})
-                </option>
-              ))}
-            </select>
-          </label>
-          {!area && (
-            <small>
-              Draw an area boundary, or select an existing reference line and
-              calibrate it below. Existing sketches stay unscaled.
-            </small>
+              <fieldset disabled={disabled}>
+                <legend>Calibrate from a line</legend>
+                <label>
+                  Known line length
+                  <input
+                    aria-label="Known line length"
+                    value={known}
+                    required
+                    placeholder="e.g. 250 mm"
+                    onChange={(e) => setKnown(e.target.value)}
+                  />
+                </label>
+                {referenceArea && (
+                  <small id={calibrationImpact}>
+                    Updates measurements for every drawing in{" "}
+                    {referenceArea.mark.scale!.name}. Shapes stay the same.
+                  </small>
+                )}
+                <button
+                  type="submit"
+                  aria-describedby={
+                    referenceArea ? calibrationImpact : undefined
+                  }
+                >
+                  Calibrate
+                </button>
+              </fieldset>
+            </form>
+          ) : (
+            !area && (
+              <small>Select one line to calibrate from a known length.</small>
+            )
           )}
           {scale && area && (
             <form
@@ -286,12 +342,8 @@ export function DrawingScaleControls({
                     ))}
                   </datalist>
                 </label>
-                <small>
-                  Changing display units converts labels, not geometry. Explicit
-                  units in fields are accepted.
-                </small>
                 <label>
-                  100 canvas units represent
+                  Length per 100 canvas units
                   <input
                     aria-label="Drawing scale span"
                     value={span}
@@ -301,9 +353,11 @@ export function DrawingScaleControls({
                     }}
                   />
                 </label>
-                <small>
-                  Changing this span recalibrates every drawing in the area.
-                </small>
+                {spanDirty && (
+                  <small>
+                    Updates measurements for every drawing in this area.
+                  </small>
+                )}
                 <label>
                   Grid spacing
                   <input
@@ -340,39 +394,36 @@ export function DrawingScaleControls({
                   />
                   Show all dimensions
                 </label>
-                <small>
-                  By default, dimensions appear on selected shapes. Drag a
-                  dimension line or label to place it permanently. Placement
-                  does not change geometry.
-                </small>
                 <button type="submit">Apply area properties</button>
               </fieldset>
             </form>
           )}
           {area && (
             <>
-              <button
-                type="button"
-                disabled={
-                  disabled || !selected.some((e) => e.mark.kind !== "area")
-                }
-                onClick={() =>
-                  run(() => assignDrawingArea(session, [...selection], area.id))
-                }
-              >
-                Assign selected drawings
-              </button>
-              <button
-                type="button"
-                disabled={
-                  disabled || !selected.some((e) => e.mark.dimensionPlacement)
-                }
-                onClick={() =>
-                  run(() => resetDimensionPlacements(session, [...selection]))
-                }
-              >
-                Reset dimension placement
-              </button>
+              {canAssign && (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() =>
+                    run(() =>
+                      assignDrawingArea(session, [...selection], area.id),
+                    )
+                  }
+                >
+                  Assign selected drawings
+                </button>
+              )}
+              {canResetPlacement && (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() =>
+                    run(() => resetDimensionPlacements(session, [...selection]))
+                  }
+                >
+                  Reset dimension placement
+                </button>
+              )}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -413,6 +464,7 @@ export function DrawingScaleControls({
                     {kind === "line" ? "Length" : "Width"}
                     <input
                       aria-label="Exact drawing width or length"
+                      placeholder="e.g. 120 mm, 6 ft, 1/2 in"
                       value={width}
                       onChange={(e) => setWidth(e.target.value)}
                     />
@@ -440,11 +492,6 @@ export function DrawingScaleControls({
                       />
                     </label>
                   )}
-                  <small>
-                    For example: 120 mm, 6 ft, or 1/2 in. Dimensions apply only
-                    when you press the button below; no CAD constraints are
-                    implied.
-                  </small>
                   <button type="submit">
                     {existing ? "Apply dimensions" : `Create exact ${kind}`}
                   </button>
@@ -452,41 +499,6 @@ export function DrawingScaleControls({
               </form>
             </>
           )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              run(() => {
-                const id = calibrateDrawingSelection(
-                  session,
-                  [...selection],
-                  known,
-                  scale?.unit ??
-                    known.trim().match(/[A-Za-zµμ]+$/)?.[0] ??
-                    unit,
-                );
-                setAreaId(id);
-              });
-            }}
-          >
-            <fieldset disabled={disabled || !referenceLine}>
-              <legend>Calibrate from a line</legend>
-              <label>
-                Known line length
-                <input
-                  aria-label="Known line length"
-                  value={known}
-                  onChange={(e) => setKnown(e.target.value)}
-                />
-              </label>
-              <small>
-                Select exactly one line, optionally with other unscaled
-                drawings. Calibration changes physical interpretation, not the
-                sketch's size. An existing area's other drawings are
-                recalibrated too.
-              </small>
-              <button type="submit">Calibrate selected drawings</button>
-            </fieldset>
-          </form>
           {error && <p role="alert">{error}</p>}
         </div>
       </CanvasCommandMenu>

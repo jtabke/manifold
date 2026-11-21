@@ -44,9 +44,22 @@ export function CanvasSelectionToolbar({
         { x, y: sy + bounds.height * scale + gap },
         { x: sx + bounds.width * scale + gap, y: sy },
         { x: sx - width - gap, y: sy },
+        // Near an edge, use the smaller gutter before giving up the local strip.
+        { x, y: Math.max(4, sy - height - gap), gutter: 4 },
+        {
+          x,
+          y: Math.min(bottom + 4, sy + bounds.height * scale + gap),
+          gutter: 4,
+        },
       ];
-      const free = candidates.find(({ x, y }) => {
-        if (x < margin || x > right || y < margin || y > bottom) return false;
+      const free = candidates.find(({ x, y, gutter = margin }) => {
+        if (
+          x < margin ||
+          x > right ||
+          y < gutter ||
+          y > bottom + margin - gutter
+        )
+          return false;
         const world = {
           x: (x + scroll.x - 3) / scale,
           y: (y + scroll.y - 3) / scale,

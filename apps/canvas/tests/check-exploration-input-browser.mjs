@@ -41,6 +41,7 @@ try {
           .getByRole("toolbar", { name: "Canvas selection", exact: true })
           .locator('[data-command-id="response.plot"]')
           .click();
+        await page.getByRole("menuitem", { name: "F", exact: true }).click();
         const artifact = page.getByLabel("Python response artifact", {
           exact: true,
         });

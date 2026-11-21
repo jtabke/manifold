@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { RegionSession } from "../src/regions/document.ts";
 import { archive, decodeWorkspace } from "../src/regions/artifacts.ts";
 import { readWorkspace } from "./browser-workspace.mjs";
+import { shelfRail } from "./shelf-rail.mjs";
+import { workspaceStorage } from "../src/regions/workspaceStorage.ts";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
@@ -116,7 +118,13 @@ try {
     }));
     expect(layout.scroll).toBeLessThanOrEqual(layout.width);
     expect(layout.canvas).toBeGreaterThan(600);
-    for (const name of ["File", "View", "Shapes", "More drawing tools"]) {
+    for (const name of [
+      "File",
+      "View",
+      "Shapes",
+      "More drawing tools",
+      "Scaled drawings",
+    ]) {
       await button(name).click();
       await expect(button(name)).toHaveAttribute("aria-expanded", "true");
       const panel = page.getByRole("group", {
@@ -126,6 +134,25 @@ try {
       const bounds = await panel.boundingBox();
       expect(bounds.x).toBeGreaterThanOrEqual(7);
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 7);
+      if (name === "Scaled drawings") {
+        expect(
+          await panel.evaluate((p) => p.scrollWidth <= p.clientWidth),
+        ).toBe(true);
+        await expect(
+          panel.getByRole("button", { name: "Draw new area" }),
+        ).toBeEnabled();
+        await expect(
+          panel.getByText("Select one line to calibrate from a known length."),
+        ).toBeVisible();
+        await expect(panel.getByLabel("Known line length")).toHaveCount(0);
+        await expect(
+          panel.getByLabel("Drawing area", { exact: true }),
+        ).toHaveCount(0);
+      }
+      if (name === "File" && width <= 600)
+        await expect(
+          panel.getByRole("button", { name: "Download file" }),
+        ).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(button(name)).toBeFocused();
       await expect(panel).toHaveCount(0);
@@ -135,7 +162,7 @@ try {
       "File",
       "Search objects and commands",
       "Ask agent",
-      "Download file",
+      ...(width > 600 ? ["Download file"] : []),
       "Select / Edit",
       "Pan canvas",
       "Fit page",
@@ -154,6 +181,183 @@ try {
   await button("View").click();
   await title.click();
   await expect(button("View")).toHaveAttribute("aria-expanded", "false");
+
+  const phone = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  phone.on("pageerror", (error) => errors.push(error.message));
+  await phone.goto(base);
+  const phoneButton = (name) =>
+    phone.getByRole("button", { name, exact: true });
+  const touchHint = phone.getByText(
+    "Tap the page to write an equation or note.",
+  );
+  await expect(touchHint).toBeVisible();
+  const hint = await touchHint.boundingBox();
+  await phone.touchscreen.tap(hint.x + 10, hint.y + 6);
+  await expect(
+    phone.getByLabel("Write an engineering region", { exact: true }),
+  ).toBeFocused();
+  await phone.keyboard.press("Escape");
+  await phone.evaluate(() => document.fonts.ready.then(() => undefined));
+  await expect(phoneButton("Move canvas toolbar")).toBeHidden();
+  const toolNames = [
+    "Select / Edit",
+    "Pen",
+    "Shapes",
+    "Diagram label",
+    "More drawing tools",
+    "Scaled drawings",
+  ];
+  const toolBoxes = await Promise.all(
+    toolNames.map((name) => phoneButton(name).boundingBox()),
+  );
+  const centreY = (box) => box.y + box.height / 2;
+  for (const [index, bounds] of toolBoxes.entries()) {
+    expect(centreY(bounds), toolNames[index]).toBeCloseTo(
+      centreY(toolBoxes[0]),
+      0,
+    );
+    expect(bounds.x + bounds.width, toolNames[index]).toBeLessThanOrEqual(390);
+  }
+  expect(toolBoxes[1].width).toBeGreaterThanOrEqual(44);
+  expect(toolBoxes[4].width).toBeGreaterThanOrEqual(44);
+  const styleSharesDrawingRow = async () => {
+    const scale = await phoneButton("Scaled drawings").boundingBox();
+    const style = await phoneButton("Drawing style").boundingBox();
+    expect(centreY(style)).toBeCloseTo(centreY(scale), 0);
+    expect(scale.x).toBeCloseTo(toolBoxes[5].x, 0);
+    expect(style.x + style.width).toBeLessThanOrEqual(390);
+  };
+  await phoneButton("Pen").tap();
+  await styleSharesDrawingRow();
+  await phoneButton("Shapes").tap();
+  const shapePicker = phone.getByRole("group", {
+    name: "Shapes commands",
+    exact: true,
+  });
+  await expect(shapePicker).toBeInViewport({ ratio: 1 });
+  await expect(phoneButton("Rectangle")).toHaveText("");
+  const arc = phoneButton("Three-point arc");
+  await expect(arc).toHaveText("3-point arc");
+  await expect(arc.locator("svg circle")).toHaveCount(3);
+  await arc.tap();
+  await expect(shapePicker).toHaveCount(0);
+  await expect(phoneButton("Shapes: Arc")).toHaveText("");
+  await expect(phoneButton("Shapes: Arc").locator("svg").first()).toBeVisible();
+  await styleSharesDrawingRow();
+  await phoneButton("Shapes: Arc").tap();
+  await phoneButton("Rectangle").tap();
+  await styleSharesDrawingRow();
+  await phoneButton("More drawing tools").tap();
+  await phoneButton("Highlighter").tap();
+  await styleSharesDrawingRow();
+  await phoneButton("Select / Edit").tap();
+  for (const name of ["Zoom in", "Zoom out"]) {
+    const target = await phoneButton(name).boundingBox();
+    expect(target.width).toBeGreaterThanOrEqual(33);
+    expect(target.height).toBeGreaterThanOrEqual(36);
+  }
+  const rail = new RegionSession(shelfRail());
+  await phone.getByLabel("Open workspace file", { exact: true }).setInputFiles({
+    name: "Shelf rail.manifold",
+    mimeType: "application/json",
+    buffer: Buffer.from(archive(rail.native())),
+  });
+  rail.dispose();
+  await phone
+    .locator('[data-region-id="mass"]')
+    .tap({ position: { x: 6, y: 8 } });
+  const strip = phone.getByRole("toolbar", {
+    name: "Canvas selection",
+    exact: true,
+  });
+  await expect(strip).toContainText("4.68 kg");
+  await expect(strip.getByText("· 4.68 kg", { exact: true })).toBeInViewport({
+    ratio: 1,
+  });
+  await expect(phone.locator('[data-result-for="mass"]')).not.toBeInViewport();
+  const selectedActions = phoneButton("Open actions: mass");
+  await expect(selectedActions).toHaveText("Actions: mass");
+  await selectedActions.tap();
+  const actions = phone.getByRole("menu", {
+    name: "Context actions",
+    exact: true,
+  });
+  await expect(actions).toHaveAttribute("aria-description", "Equation mass");
+  await expect(actions.locator('[data-command-id^="response."]')).toHaveCount(
+    1,
+  );
+  await actions.getByRole("menuitem", { name: "Plot", exact: true }).tap();
+  const plots = phone.getByRole("menu", { name: "Plot mass", exact: true });
+  await expect(
+    plots.getByRole("menuitem", { name: "density", exact: true }),
+  ).toBeFocused();
+  await expect(
+    plots.getByRole("menuitem", {
+      name: "Map mass across two inputs",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await phone.keyboard.press("Escape");
+  await expect(selectedActions).toBeFocused();
+  await phoneButton("View").tap();
+  await phone
+    .getByLabel("Canvas toolbar position", { exact: true })
+    .selectOption("right");
+  await phone.keyboard.press("Escape");
+  await expect(phone.locator(".wc-toolbar-right")).toBeVisible();
+  // The two-row strip fits into the narrow gap above mass, not the bottom shelf.
+  await expect(strip).not.toHaveAttribute("data-docked", "");
+  const sideResult = await strip.boundingBox();
+  const equation = await phone.locator('[data-region-id="mass"]').boundingBox();
+  const view = await phone.locator(".er-canvas").boundingBox();
+  expect(sideResult.y).toBeGreaterThan(view.y);
+  expect(sideResult.y + sideResult.height).toBeLessThan(equation.y);
+  await strip
+    .getByRole("button", { name: "Clear canvas selection", exact: true })
+    .tap();
+  await phoneButton("Open canvas actions").tap();
+  await expect(actions).toHaveAttribute("aria-description", "Canvas");
+  await phone.keyboard.press("Escape");
+  await phone
+    .locator('[data-region-id="mass"]')
+    .tap({ position: { x: 6, y: 8 } });
+  const savedRail = () =>
+    readWorkspace(
+      phone,
+      workspaceStorage(
+        "manifold.artifact-experiment.v1",
+        new URL(phone.url()).search,
+      ),
+    );
+  const beforePlot = await savedRail();
+  await strip.getByRole("button", { name: "Plot", exact: true }).tap();
+  await expect(
+    plots.getByRole("menuitem", { name: "Back to actions", exact: true }),
+  ).toHaveCount(0);
+  expect(await savedRail()).toEqual(beforePlot);
+  await expect(plots.locator('[data-axis="x"]')).toHaveText("Choose an input");
+  await expect(
+    plots.getByRole("menuitem", { name: "thickness", exact: true }),
+  ).toContainText("mm");
+  await plots
+    .getByRole("menuitemcheckbox", { name: "Swap axes", exact: true })
+    .tap();
+  await expect(plots.locator('[data-axis="y"]')).toHaveText("Choose an input");
+  expect(await savedRail()).toEqual(beforePlot);
+  await plots.getByRole("menuitem", { name: "thickness", exact: true }).tap();
+  await expect(plots).toHaveCount(0);
+  await expect
+    .poll(async () => (await savedRail()).artifacts.at(-1)?.input)
+    .toBe("thickness");
+  const plotted = (await savedRail()).artifacts.at(-1);
+  expect(plotted.swapped).toBe(true);
+  expect(plotted.output).toBe("mass");
+  expect((await savedRail()).page.regions).toEqual(beforePlot.page.regions);
+  await phone.close();
 
   // A legacy browser-only title is migrated into the portable document once.
   const migrated = await browser.newContext();

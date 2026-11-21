@@ -187,7 +187,7 @@ try {
   });
   await rectangle.click();
   await expect(selection).toBeVisible();
-  const actions = page.getByRole("button", { name: "Open canvas actions" });
+  const actions = page.getByRole("button", { name: /^Open actions: / });
   await actions.click();
   await expect(
     page.getByRole("menuitem", { name: "Duplicate", exact: true }),
@@ -254,7 +254,8 @@ try {
     expect(bounds.x).toBeGreaterThanOrEqual(7);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 7);
     await chooseDrawingTool(page, "Ellipse");
-    await expect(tool("Shapes")).toHaveText("Ellipse");
+    await expect(tool("Shapes")).toHaveAccessibleName("Shapes: Ellipse");
+    await expect(tool("Shapes").locator("svg").first()).toBeVisible();
     await expect(tool("Shapes")).toHaveAttribute("data-active", "true");
     if (width === 390) {
       await expect(

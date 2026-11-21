@@ -65,6 +65,7 @@ type CommandPorts = {
       output: string,
       input: string,
       request?: string,
+      swapped?: boolean,
     ) => string | undefined;
     reopen: (view: string) => void;
     code: (output: string, artifact: string) => void;
@@ -206,8 +207,16 @@ export function dispatchCanvasCommand(
       return;
     case "response.plot":
       if (plots.artifactsEnabled)
-        plots.create(command.output, command.input, command.request);
-      else o.select(session.addPlot(command.output, command.input));
+        plots.create(
+          command.output,
+          command.input,
+          command.request,
+          command.swapped,
+        );
+      else
+        o.select(
+          session.addPlot(command.output, command.input, command.swapped),
+        );
       return;
     case "response.open":
       plots.reopen(command.view);

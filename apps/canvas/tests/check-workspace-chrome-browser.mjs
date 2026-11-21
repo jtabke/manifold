@@ -123,7 +123,7 @@ try {
       );
       for (const name of [
         "Pen",
-        "Open canvas actions",
+        /^Open (?:canvas actions|actions: )/,
         "Fit page",
         "Zoom in",
         "Keyboard shortcuts",

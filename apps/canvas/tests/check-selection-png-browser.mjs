@@ -182,8 +182,9 @@ try {
   expect(multiple.corner).toBe(0);
   // A plot is exported by its view identity rather than its source equation.
   await open();
+  await page.getByRole("menuitem", { name: "Plot", exact: true }).click();
   await page
-    .getByRole("menuitem", { name: "Plot response", exact: true })
+    .locator('[role="menuitem"][data-command-id="response.plot"]')
     .click();
   const plot = page.getByLabel("Python response artifact", { exact: true });
   await expect(plot).toHaveAttribute("data-status", "current");

@@ -88,6 +88,7 @@ export type Data = {
 };
 export type ArtifactPresentation = {
   id: string;
+  swapped?: boolean;
   renderer: "plot" | "table";
   at: Point;
   width: number;
@@ -108,6 +109,7 @@ export type ArtifactFocus = {
 };
 export type Artifact = {
   id: string;
+  swapped?: boolean;
   output: string;
   input: string;
   low: number;
@@ -1000,7 +1002,8 @@ export function validateWorkspaceData(
         id(q.id) &&
         ids.has(q.output) &&
         (q.study === undefined
-          ? ids.has(q.input) &&
+          ? (q.swapped === undefined || typeof q.swapped === "boolean") &&
+            ids.has(q.input) &&
             Number.isFinite(q.low + q.high) &&
             q.low < q.high
           : validResponseStudy(q, ids)) &&
@@ -1019,6 +1022,7 @@ export function validateWorkspaceData(
       !ids.has(a.input) ||
       !ids.has(a.output) ||
       a.source !== "model-derived-python" ||
+      (a.swapped !== undefined && typeof a.swapped !== "boolean") ||
       !["plot", "table"].includes(a.renderer as string) ||
       typeof a.request !== "string" ||
       a.request.length > 4000 ||
@@ -1057,9 +1061,12 @@ export function validateWorkspaceData(
           (v: unknown) =>
             object(v) &&
             Object.keys(v).every((k) =>
-              ["id", "renderer", "at", "width", "height"].includes(k),
+              ["id", "renderer", "at", "width", "height", "swapped"].includes(
+                k,
+              ),
             ) &&
             id(v.id) &&
+            (v.swapped === undefined || typeof v.swapped === "boolean") &&
             ["plot", "table"].includes(v.renderer as string) &&
             point(v.at) &&
             typeof v.width === "number" &&

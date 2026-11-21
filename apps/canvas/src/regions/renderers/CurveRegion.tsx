@@ -12,6 +12,7 @@ import {
   type Point,
 } from "../document";
 import { useLayoutGesture } from "../interaction/useLayoutGesture";
+import { responsePlotAxes, SwapAxesButton } from "./PlotAxes";
 const format = (n: number, digits = 5) =>
   Number(n.toPrecision(digits)).toString();
 
@@ -79,7 +80,15 @@ export function CurveRegion({
       : [page.active];
   const series = useMemo(
     () => ids.map((context) => ({ context, ...curve(page, plot, context) })),
-    [page, plot, compare, comparisonContext],
+    [
+      page,
+      plot.input,
+      plot.output,
+      plot.low,
+      plot.high,
+      compare,
+      comparisonContext,
+    ],
   );
   const output = p.statements.get(plot.output),
     input = p.statements.get(plot.input),
@@ -101,14 +110,27 @@ export function CurveRegion({
     right = width - 24,
     top = 78,
     bottom = height - 62;
-  const x = (n: number) =>
-      left + ((n - plot.low) / (plot.high - plot.low)) * (right - left),
-    y = (n: number) =>
-      bottom - ((n - min + pad) / (max - min + 2 * pad)) * (bottom - top);
+  const swapped = !!plot.swapped;
+  const axes = responsePlotAxes(
+    { left, right, top, bottom },
+    [plot.low, plot.high],
+    [min - pad, max + pad],
+    swapped,
+  );
+  const inputLabel = `${input?.name ?? "?"}${inputUnit?.label ? ` (${inputUnit.label})` : ""}`;
+  const outputUnit = series[0]?.unit && unitLabel(series[0].unit);
+  const outputLabel = `${output?.name ?? "?"}${outputUnit ? ` (${outputUnit})` : ""}`;
+  const shown = (n: number, isInput: boolean) =>
+    format(isInput ? (inputUnit?.fromBase(n) ?? n) : n, 3);
+  const ticks = (domain: readonly [number, number], count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) => domain[0] + ((domain[1] - domain[0]) * i) / (count - 1),
+    );
   const svg = useRef<SVGSVGElement>(null);
   const [preview, setPreview] = useState<number>();
   const scrub = useRef<
-    { x: number; y: number; moved: boolean; id: number } | undefined
+    { pixel: number; moved: boolean; id: number } | undefined
   >(undefined);
   useEffect(() => {
     const cancel = (e: KeyboardEvent) => {
@@ -124,19 +146,8 @@ export function CurveRegion({
     window.addEventListener("keydown", cancel, true);
     return () => window.removeEventListener("keydown", cancel, true);
   }, [revert]);
-  const point = (e: PointerEvent<SVGSVGElement>) => {
-    const rect = svg.current!.getBoundingClientRect();
-    return Math.max(
-      plot.low,
-      Math.min(
-        plot.high,
-        plot.low +
-          ((((e.clientX - rect.left) / rect.width) * width - left) /
-            (right - left)) *
-            (plot.high - plot.low),
-      ),
-    );
-  };
+  const point = (e: PointerEvent<SVGSVGElement>) =>
+    axes.inputAt(axes.inputPixel(svg.current, e.clientX, e.clientY));
   const guide = preview ?? q?.value;
   const path = (
     points: readonly { x: number; y?: number; limit?: number }[],
@@ -149,7 +160,7 @@ export function CurveRegion({
           open = false;
           return "";
         }
-        const segment = `${open ? "L" : "M"}${x(pt.x)},${y(pt[field]!)}`;
+        const segment = `${open ? "L" : "M"}${axes.point(pt.x, pt[field]!).join(",")}`;
         open = true;
         return segment;
       })
@@ -159,11 +170,12 @@ export function CurveRegion({
     <section
       className={`er-plot ${selected ? "is-selected" : ""}`}
       data-plot-id={plot.id}
+      data-swapped={swapped || undefined}
       tabIndex={0}
       aria-label={`Response of ${output?.name || "output"} to ${input?.name || "input"}`}
       onFocus={select}
       onKeyDown={(e) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && e.target === e.currentTarget) {
           e.stopPropagation();
           inspect();
         }
@@ -213,6 +225,11 @@ export function CurveRegion({
           Same definitions ·{" "}
           {page.contexts.find((c) => c.id === page.active)?.label}
         </small>
+        <SwapAxesButton
+          swapped={swapped}
+          disabled={workingPage !== session.state}
+          onSwap={() => session.swapPlotAxes(plot.id)}
+        />
       </header>
       {values.length ? (
         <svg
@@ -225,8 +242,7 @@ export function CurveRegion({
             select();
             e.currentTarget.setPointerCapture(e.pointerId);
             scrub.current = {
-              x: e.clientX,
-              y: e.clientY,
+              pixel: swapped ? e.clientY : e.clientX,
               moved: false,
               id: e.pointerId,
             };
@@ -235,9 +251,8 @@ export function CurveRegion({
           onPointerMove={(e) => {
             if (
               scrub.current &&
-              Math.hypot(
-                e.clientX - scrub.current.x,
-                e.clientY - scrub.current.y,
+              Math.abs(
+                (swapped ? e.clientY : e.clientX) - scrub.current.pixel,
               ) > 4
             ) {
               scrub.current.moved = true;
@@ -264,26 +279,30 @@ export function CurveRegion({
             revert();
           }}
         >
-          {[0, 1, 2, 3].map((i) => {
-            const value = min - pad + ((max - min + 2 * pad) * i) / 3;
+          {ticks(axes.vertical, swapped ? 3 : 4).map((value, i) => {
             return (
               <g key={i}>
                 <line
                   className="er-gridline"
                   x1={left}
                   x2={right}
-                  y1={y(value)}
-                  y2={y(value)}
+                  y1={axes.y(value)}
+                  y2={axes.y(value)}
                 />
-                <text x={left - 9} y={y(value) + 4} textAnchor="end">
-                  {format(value, 3)}
+                <text x={left - 9} y={axes.y(value) + 4} textAnchor="end">
+                  {shown(value, swapped)}
                 </text>
               </g>
             );
           })}
-          {[plot.low, (plot.low + plot.high) / 2, plot.high].map((value) => (
-            <text key={value} x={x(value)} y={bottom + 22} textAnchor="middle">
-              {format(inputUnit?.fromBase(value) ?? value, 3)}
+          {ticks(axes.horizontal, 3).map((value) => (
+            <text
+              key={value}
+              x={axes.x(value)}
+              y={bottom + 22}
+              textAnchor="middle"
+            >
+              {shown(value, !swapped)}
             </text>
           ))}
           {series.map((s) => (
@@ -304,21 +323,17 @@ export function CurveRegion({
           ))}
           {series[0]?.points.at(-1)?.limit !== undefined && (
             <text
-              x={right}
-              y={y(series[0].points.at(-1)!.limit!) - 7}
-              textAnchor="end"
+              x={swapped ? axes.x(series[0].points.at(-1)!.limit!) : right}
+              y={
+                swapped ? top - 4 : axes.y(series[0].points.at(-1)!.limit!) - 7
+              }
+              textAnchor={swapped ? "middle" : "end"}
             >
               Limit {format(series[0].points.at(-1)!.limit!, 4)}
             </text>
           )}
           {guide !== undefined && (
-            <line
-              className="er-guide"
-              x1={x(guide)}
-              x2={x(guide)}
-              y1={top}
-              y2={bottom}
-            />
+            <path className="er-guide" d={axes.guide(guide)} fill="none" />
           )}
           {guide !== undefined &&
             output &&
@@ -328,37 +343,29 @@ export function CurveRegion({
               const value = result.absolute
                 ? result.value - 273.15
                 : result.value;
+              const [cx, cy] = axes.point(guide, value);
               return (
-                <circle
-                  className="er-design-point"
-                  cx={x(guide)}
-                  cy={y(value)}
-                  r={7}
-                >
+                <circle className="er-design-point" cx={cx} cy={cy} r={7}>
                   <title>
                     {input?.name} = {inputUnit?.format(guide) ?? format(guide)}{" "}
-                    · {output.name} = {display(result)} · drag horizontally
+                    · {output.name} = {display(result)} · drag{" "}
+                    {swapped ? "vertically" : "horizontally"}
                   </title>
                 </circle>
               );
             })()}
           {acceptedInput && guide !== acceptedInput.value && (
-            <line
+            <path
               className="er-accepted-guide"
-              x1={x(acceptedInput.value)}
-              x2={x(acceptedInput.value)}
-              y1={top}
-              y2={bottom}
+              d={axes.guide(acceptedInput.value)}
+              fill="none"
             />
           )}
           <text x={left} y={top - 12}>
-            {output?.name}
-            {series[0]?.unit && unitLabel(series[0].unit)
-              ? ` (${unitLabel(series[0].unit)})`
-              : ""}
+            {swapped ? inputLabel : outputLabel}
           </text>
           <text x={(left + right) / 2} y={height - 13} textAnchor="middle">
-            {input?.name} {inputUnit ? `(${inputUnit.label || "1"})` : ""}
+            {swapped ? outputLabel : inputLabel}
           </text>
         </svg>
       ) : (

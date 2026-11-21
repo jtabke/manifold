@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { GripVertical } from "lucide-react";
+import { SwapAxesButton } from "./PlotAxes";
 import type { EditBuffers } from "../app/workspaceFiles";
 import { useEditBuffer } from "../app/useEditBuffer";
 import { revealCanvasElement } from "../interaction/canvasViewport";
@@ -88,6 +89,8 @@ export function WorksheetResponseStudy({
     complete: (geometry) => move(geometry.at),
   });
   const [inspector, setInspector] = useState<"setup" | "review">();
+  // View-only, like the probe and pins: do not change the study or invalidate a checked candidate.
+  const [swapped, setSwapped] = useState(false);
   const [draft, setDraft] = useState<{
     of: ResponseStudyPlot["study"];
     spec: DesignSpec;
@@ -100,6 +103,8 @@ export function WorksheetResponseStudy({
   );
   const fields = draft?.of === plot.study ? draft.spec : spec;
   const dirty = fields !== spec;
+  const orderedAxes = (axes: DesignSpec["axes"]) =>
+    swapped ? [...axes].reverse() : axes;
   const [inspection, setInspection] = useState<{
     map: DesignResponseMap;
     selected: MapInspection;
@@ -273,9 +278,15 @@ export function WorksheetResponseStudy({
       </div>
       <section className="study-inputs" aria-labelledby={`${id}-inputs`}>
         <div className="study-varied">
-          <h3 id={`${id}-inputs`}>Study inputs</h3>
+          <div className="study-axis-heading">
+            <h3 id={`${id}-inputs`}>Study inputs</h3>
+            <SwapAxesButton
+              swapped={swapped}
+              onSwap={() => setSwapped((value) => !value)}
+            />
+          </div>
           <dl className="study-axes" aria-label="Varied inputs">
-            {spec.axes.map((axis, k) => {
+            {orderedAxes(spec.axes).map((axis, k) => {
               const input = choices.inputs.find((q) => q.id === axis.id);
               return (
                 <div key={axis.id}>
@@ -363,10 +374,21 @@ export function WorksheetResponseStudy({
               <DesignFields
                 choices={choices}
                 name={name}
-                spec={fields}
+                spec={
+                  swapped
+                    ? { ...fields, axes: orderedAxes(fields.axes) }
+                    : fields
+                }
                 change={(patch) => {
                   search.clear();
-                  setDraft({ of: plot.study, spec: { ...fields, ...patch } });
+                  setDraft({
+                    of: plot.study,
+                    spec: {
+                      ...fields,
+                      ...patch,
+                      axes: patch.axes ? orderedAxes(patch.axes) : fields.axes,
+                    },
+                  });
                 }}
                 disabled={search.running || pending}
                 fixedAxes
@@ -425,6 +447,7 @@ export function WorksheetResponseStudy({
             <WorksheetResponseMaps
               map={preview ?? map}
               grid={map}
+              swapped={swapped}
               review={review}
               limits={
                 <WorksheetLimitPreview

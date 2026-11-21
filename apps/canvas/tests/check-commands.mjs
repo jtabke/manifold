@@ -104,7 +104,21 @@ assert.deepEqual(
 const plot = commands.find((c) => c.id === "response.plot");
 assert.equal(toolbar[1], plot);
 assert.equal(marking[1], plot);
-assert.ok(search.includes(plot));
+const searchDefault = search.find((c) => c.key === plot.key);
+assert.match(searchDefault.label, /^Plot against /);
+assert.equal(
+  search.filter(
+    (c) =>
+      c.parameters.input === plot.parameters.input &&
+      c.parameters.output === power,
+  ).length,
+  1,
+);
+assert.ok(
+  searchCommands(commands, searchDefault.label, []).some(
+    (c) => c.key === plot.key,
+  ),
+);
 const before = JSON.stringify(session.state);
 for (const surface of [
   toolbar[1],

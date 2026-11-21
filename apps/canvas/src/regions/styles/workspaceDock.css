@@ -57,6 +57,12 @@
   border-radius: 0 !important;
   padding: 2px !important;
 }
+@media (pointer: coarse) {
+  /* View → Toolbar position remains available; the grip is a mouse drag handle. */
+  .er-app .wc-toolbar-grip {
+    display: none;
+  }
+}
 .wc-toolbar-left,
 .wc-toolbar-right {
   flex-shrink: 0;
@@ -128,8 +134,9 @@
   display: inline;
   white-space: normal;
 }
-:is(.wc-toolbar-left, .wc-toolbar-right) .er-history-tools > button:last-child {
-  flex-direction: row;
+:is(.wc-toolbar-left, .wc-toolbar-right) .er-canvas-actions-trigger > span {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 :is(.wc-toolbar-left, .wc-toolbar-right)
   .er-command-menu
