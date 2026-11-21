@@ -631,14 +631,24 @@ where the first sampled pass/fail change falls. Undefined points do not count as
 The scan works without SciPy, does not offer a design to apply, and does not certify the intervals
 between points.
 
-With two varied inputs, **Map responses** samples a 25 × 25 grid locally. The first input
-is horizontal and the second is vertical. The goal and quantities on the left side of the selected
-inequalities appear as linked maps, each with its own value scale. Use **Add map** to show a quantity
-from **Also report**. Click, tap, or use arrow keys in any map to inspect the same sample in all maps.
-Hatching marks failed samples, dots mark undefined values, and the lines approximate the sampled
-requirement boundaries. These are not certified feasible regions. After **Run**, **Show on maps**
-locates the separately checked candidate; map samples themselves cannot be applied. Editing a
-setting clears the maps or scan.
+For two inputs, choose **Actions → Plot against two inputs** on an equation, or **Plot on canvas**
+from a two-input Optimize setup. This places a movable response study on the canvas. **Setup** lets
+you select the horizontal and vertical inputs, edit the bounds, and choose requirements separately.
+**Add map** opens the reported-quantity picker. **Update maps** saves the study settings as one
+undoable view edit, without changing the worksheet values. The study travels in the native file.
+
+The goal, selected requirement quantities, and additional reports each have their own map and scale.
+Click, tap, or use arrow keys in any map to inspect the same sample across the study. The 25 × 25
+grid is derived locally from the accepted worksheet, including on reopen; nothing calls the optional
+solver until **Run**. Hatching marks failed samples, dots mark undefined values, and the contours
+only approximate the sampled boundaries. Neither the grid nor the contours certify the region.
+
+The card shows current inputs and has a **Worksheet sources** disclosure with links back to the
+original expressions. **Fold source equations** puts ungrouped sources from the same scope into an
+ordinary collapsible canvas group without replacing the equations or changing their layout. Existing
+groups are left alone. **Run** opens a non-blocking candidate review beside the maps (above them
+on narrow screens). Use **Locate on maps** to inspect the checked candidate. Map inspection
+does not set either input, and the candidate is not saved with the study.
 
 Optimization is a bounded local search using the [optional SciPy runtime](../development/README.md#optional-numerical-runtime),
 not a proof of a global optimum or of physical safety. **No feasible candidate found** means

@@ -13,7 +13,7 @@ import {
 } from "../notebook/math.ts";
 import { immutable, readMap } from "../notebook/immutable.ts";
 import { deeplyFrozen } from "./immutableJson.ts";
-import type { Page, Region, Plot } from "./document.ts";
+import type { Page, Region, CurvePlot } from "./document.ts";
 import {
   compileScalarProblem,
   sampleScalarAxis,
@@ -466,5 +466,5 @@ export const worksheetProjection = createWorksheetProjection();
 export const project = worksheetProjection.project;
 export const scalarProblem = worksheetProjection.scalarProblem;
 export const semanticKey = worksheetProjection.semanticKey;
-export const curve = (page: Page, plot: Plot, context = page.active) =>
+export const curve = (page: Page, plot: CurvePlot, context = page.active) =>
   worksheetProjection.curve(page, plot, context);

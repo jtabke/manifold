@@ -1,10 +1,4 @@
-import {
-  useId,
-  useMemo,
-  useState,
-  type KeyboardEvent,
-  type MouseEvent,
-} from "react";
+import { useId, useMemo, type KeyboardEvent, type MouseEvent } from "react";
 import type {
   DesignMapPoint,
   DesignResponseMap,
@@ -157,7 +151,6 @@ export function WorksheetResponseMaps({
   select: (value: MapInspection) => void;
 }) {
   const { failed, contours, layers } = useMemo(() => prepareMaps(map), [map]);
-  const [extra, setExtra] = useState<string[]>([]);
   const candidate = candidatePoint(map, review);
   const active =
     selected === "candidate" && !candidate
@@ -197,6 +190,7 @@ export function WorksheetResponseMaps({
   const move = (event: KeyboardEvent<SVGSVGElement>) => {
     if (!Object.hasOwn(directions, event.key)) return;
     event.preventDefault();
+    event.stopPropagation();
     const [dx, dy] = directions[event.key],
       [x, y] = coordinates(point);
     select(
@@ -207,9 +201,6 @@ export function WorksheetResponseMaps({
   const id = useId();
   const axisLabel = ({ name, unit }: DesignResponseMap["xAxis"]) =>
     unit ? `${name} (${unit})` : name;
-  const available = map.outputs.filter(
-    (o) => !o.default && !extra.includes(o.id),
-  );
   return (
     <section className="design-maps" aria-labelledby={heading}>
       <div className="design-map-bar">
@@ -263,10 +254,9 @@ export function WorksheetResponseMaps({
                 : "No requirements selected"}
         </span>
         <span className="design-map-announcement">
-          {map.outputs.map((o, k) =>
-            o.default || extra.includes(o.id)
-              ? `${o.name}: ${point.values[k] === null ? "undefined" : unitValue(point.values[k], o.unit)}. `
-              : "",
+          {map.outputs.map(
+            (o, k) =>
+              `${o.name}: ${point.values[k] === null ? "undefined" : unitValue(point.values[k], o.unit)}. `,
           )}
         </span>
       </div>
@@ -314,7 +304,6 @@ export function WorksheetResponseMaps({
       </small>
       <div className="design-map-grid">
         {map.outputs.map((output, k) => {
-          if (!output.default && !extra.includes(output.id)) return null;
           const layer = layers[k],
             key = `${id}-${k}`,
             value = point.values[k];
@@ -330,17 +319,6 @@ export function WorksheetResponseMaps({
                 <span>
                   {value === null ? "Undefined" : unitValue(value, output.unit)}
                 </span>
-                {!output.default && (
-                  <button
-                    type="button"
-                    aria-label={`Remove ${output.name} map`}
-                    onClick={() =>
-                      setExtra(extra.filter((v) => v !== output.id))
-                    }
-                  >
-                    ×
-                  </button>
-                )}
               </div>
               <svg
                 viewBox="0 0 282 179"
@@ -513,25 +491,6 @@ export function WorksheetResponseMaps({
           );
         })}
       </div>
-      {available.length > 0 && (
-        <label className="design-map-add">
-          Add map{" "}
-          <select
-            aria-label="Add map"
-            value=""
-            onChange={(e) => setExtra([...extra, e.currentTarget.value])}
-          >
-            <option value="" disabled>
-              Choose a reported quantity…
-            </option>
-            {available.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
     </section>
   );
 }

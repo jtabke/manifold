@@ -136,6 +136,42 @@ export type Artifact = {
     sources?: SourceEvidence[];
   };
 };
+function validResponseStudy(plot: Plot, ids: Set<string>) {
+  const v = plot.study;
+  const known = (entries: unknown, max: number) =>
+    Array.isArray(entries) &&
+    entries.length <= max &&
+    new Set(entries).size === entries.length &&
+    entries.every((id) => typeof id === "string" && ids.has(id));
+  return (
+    object(v) &&
+    Object.keys(plot).every((k) =>
+      ["id", "output", "study", "at", "width", "height"].includes(k),
+    ) &&
+    Object.keys(v).every((k) =>
+      ["mode", "axes", "requirements", "reports"].includes(k),
+    ) &&
+    (v.mode === "minimize" || v.mode === "maximize") &&
+    Array.isArray(v.axes) &&
+    v.axes.length === 2 &&
+    v.axes.every(
+      (a) =>
+        object(a) &&
+        Object.keys(a).every((k) => ["id", "low", "high"].includes(k)) &&
+        ids.has(a.id) &&
+        [a.low, a.high].every(
+          (s) =>
+            typeof s === "string" &&
+            s.trim().length > 0 &&
+            s.length <= 120 &&
+            !/[\r\n]/.test(s),
+        ),
+    ) &&
+    v.axes[0].id !== v.axes[1].id &&
+    known(v.requirements, 16) &&
+    known(v.reports, 32)
+  );
+}
 export const STORAGE = workspaceStorage("manifold.artifact-experiment.v1");
 const scalar = (q: Quantity) => (q.absolute ? q.value - 273.15 : q.value);
 export function names(page: Page, a: Artifact) {
@@ -962,10 +998,12 @@ export function validateWorkspaceData(
     !p.plots.every(
       (q: Plot) =>
         id(q.id) &&
-        ids.has(q.input) &&
         ids.has(q.output) &&
-        Number.isFinite(q.low + q.high) &&
-        q.low < q.high &&
+        (q.study === undefined
+          ? ids.has(q.input) &&
+            Number.isFinite(q.low + q.high) &&
+            q.low < q.high
+          : validResponseStudy(q, ids)) &&
         q.width >= 320 &&
         q.width <= 1100 &&
         q.height >= 240 &&

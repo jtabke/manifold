@@ -1,6 +1,6 @@
 /** Hierarchy is containment and an explicit interface over existing identities.
  * Evaluation continues to use the worksheet's existing bindings and contexts. */
-import { project, type Page } from "./document.ts";
+import { plotSources, project, type Page } from "./document.ts";
 export const MODEL_ICONS = [
   "box",
   "clock",
@@ -109,7 +109,10 @@ export function modelBoundary(
       { source: r.dataset, target: r.id, kind: "evidence" },
       { source: r.output, target: r.id, kind: "computation" },
     );
-  for (const r of [...page.plots, ...representations])
+  for (const plot of page.plots)
+    for (const source of new Set(plotSources(plot)))
+      edges.push({ source, target: plot.id, kind: "representation" });
+  for (const r of representations)
     for (const source of [r.input, r.output])
       if (source) edges.push({ source, target: r.id, kind: "representation" });
   const crossing = edges.filter(

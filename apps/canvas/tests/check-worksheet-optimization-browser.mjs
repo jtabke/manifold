@@ -10,14 +10,9 @@ import { shelfRail, sagThickness } from "./shelf-rail.mjs";
 
 const base = process.env.MANIFOLD_BASE_URL || "http://127.0.0.1:58310";
 const browser = await chromium.launch({ ...browserOptions(), headless: true });
-const native = (limit) => {
-  const s = new RegionSession(shelfRail(limit));
-  try {
-    return archive(s.native());
-  } finally {
-    s.dispose();
-  }
-};
+const native = new RegionSession(shelfRail());
+const file = Buffer.from(archive(native.native()));
+native.dispose();
 try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({
@@ -31,6 +26,15 @@ try {
       if (r.url().includes("/api/optimizer/")) requests.push(r.url());
     });
     await page.goto(base);
+    await page
+      .getByLabel("Open workspace file", { exact: true })
+      .setInputFiles({
+        name: "Shelf rail.manifold",
+        mimeType: "application/json",
+        buffer: file,
+      });
+    const mass = page.locator('[data-region-id="mass"]');
+    await expect(mass).toBeVisible();
     const saved = async () =>
       (
         await readWorkspace(
@@ -41,149 +45,146 @@ try {
           ),
         )
       ).page;
-    const openSheet = async (limit) => {
+    const act = async (name) => {
+      await mass.click({ position: { x: 6, y: 8 } });
       await page
-        .getByLabel("Open workspace file", { exact: true })
-        .setInputFiles({
-          name: "Shelf rail.manifold",
-          mimeType: "application/json",
-          buffer: Buffer.from(native(limit)),
-        });
-      await expect(page.locator('[data-region-id="mass"]')).toBeVisible();
+        .getByRole("button", { name: "Open canvas actions", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name, exact: true }).click();
     };
-    await openSheet("2 mm");
+    const capture = (name) =>
+      captureEvidence(page, {
+        path: new URL(`../screenshots/${name}-${width}.png`, import.meta.url)
+          .pathname,
+        animations: "disabled",
+      });
+    const before = await saved();
+    await act("Optimize…");
     const dialog = page.getByRole("dialog", {
       name: "Optimize mass",
       exact: true,
     });
-    const open = async () => {
-      await page
-        .locator('[data-region-id="mass"]')
-        .click({ position: { x: 6, y: 8 } });
-      await page
-        .getByRole("button", { name: "Open canvas actions", exact: true })
-        .click();
-      await page
-        .getByRole("menuitem", { name: "Optimize…", exact: true })
-        .click();
-      await expect(dialog.getByLabel("Optimization goal")).toBeFocused();
-      await dialog
-        .getByLabel("Input 1", { exact: true })
-        .selectOption("thickness");
-      await dialog.getByLabel("Minimum for thickness").fill("5 mm");
-      await dialog.getByLabel("Maximum for thickness").fill("2 cm");
-      await dialog.getByLabel("Add reported quantity").selectOption("cost");
-      await expect(dialog.getByLabel("stress <= allowable")).toBeChecked();
-    };
-    const setTwoAxes = async () => {
-      await dialog.getByLabel("Input 1", { exact: true }).selectOption("width");
-      await dialog.getByLabel("Minimum for width").fill("25");
-      await dialog.getByLabel("Maximum for width").fill("60");
-      await dialog.getByRole("button", { name: "Add second input" }).click();
-      await dialog
-        .getByLabel("Input 2", { exact: true })
-        .selectOption("thickness");
-      await dialog.getByLabel("Minimum for thickness").fill("5 mm");
-      await dialog.getByLabel("Maximum for thickness").fill("20 mm");
-    };
-    const maps = dialog.getByRole("region", { name: "Response maps" });
-    const mapButton = dialog.getByRole("button", {
-      name: "Map responses",
-      exact: true,
+    await expect(dialog.getByLabel("Optimization goal")).toBeFocused();
+    await dialog
+      .getByLabel("Input 1", { exact: true })
+      .selectOption("thickness");
+    await dialog.getByLabel("Minimum for thickness").fill("5 mm");
+    await dialog.getByLabel("Maximum for thickness").fill("2 cm");
+    const scan = dialog.getByRole("button", { name: "Scan range" });
+    const feasibility = dialog.getByRole("region", {
+      name: "Sampled feasibility",
     });
-    await open();
-    assert.equal(
-      requests.length,
-      0,
-      "Opening or configuring must not probe or run",
-    );
-    const before = await saved();
-    const scan = dialog.getByRole("button", {
-        name: "Scan range",
-        exact: true,
-      }),
-      feasibility = dialog.getByRole("region", { name: "Sampled feasibility" });
     await scan.click();
     await expect(feasibility.getByRole("heading")).toBeFocused();
     await expect(feasibility).toContainText("11.5625 mm and 11.75 mm");
     await expect(
       feasibility.locator("li").filter({ hasText: "stress <= allowable" }),
     ).toContainText("75 of 81 samples pass");
-    assert.equal(
-      requests.length,
-      0,
-      "Feasibility uses the worksheet, not the optimizer",
-    );
-    assert.deepEqual(await saved(), before);
-    assert(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth));
-    await captureEvidence(page, {
-      path: new URL(
-        `../screenshots/worksheet-feasibility-${width}.png`,
-        import.meta.url,
-      ).pathname,
-      animations: "disabled",
-    });
     await dialog.getByLabel("Maximum for thickness").fill("8 mm");
     await expect(feasibility).toHaveCount(0);
     await scan.click();
     await expect(feasibility.locator("li").first()).toContainText(
       "0 of 81 samples pass",
     );
-    await setTwoAxes();
-    await expect(feasibility).toHaveCount(0);
-    await expect(scan).toHaveCount(0);
-    await expect(maps).toHaveCount(0);
-    await mapButton.click();
-    await expect(
-      maps.getByRole("heading", { name: "Response maps" }),
-    ).toBeFocused();
+    assert.equal(
+      requests.length,
+      0,
+      "Opening, configuring and scanning must not run optimization",
+    );
+    assert.deepEqual(await saved(), before);
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+
+    if (width === 390) {
+      // Two axes entered from Optimize hand off to the same canvas placement, not another modal.
+      await act("Optimize…");
+      await dialog
+        .getByLabel("Input 1", { exact: true })
+        .selectOption("thickness");
+      await dialog.getByRole("button", { name: "Add second input" }).click();
+      await dialog.getByLabel("Input 2", { exact: true }).selectOption("width");
+      await dialog.getByRole("button", { name: "Plot on canvas" }).click();
+    } else await act("Plot against two inputs");
+    const study = page.locator("[data-response-study]");
+    const maps = study.getByRole("region", { name: "Response maps" });
+    await expect(study).toBeVisible();
+    await expect(dialog).toHaveCount(0);
     await expect(maps.getByRole("img", { name: /response map/ })).toHaveCount(
       3,
     );
     const outputs = maps.locator(".design-map-title span");
     await expect(outputs).toHaveText(["4.68 kg", "0.9259 mm", "16.67 MPa"]);
-    assert(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth));
+    const canvas = page.locator(".er-canvas");
+    const viewport = await canvas.boundingBox(),
+      bounds = await study.boundingBox();
+    assert(
+      bounds.width <= viewport.width,
+      `Card ${bounds.width} fits viewport ${viewport.width}`,
+    );
     const mapRows = await maps
       .locator(".design-map-card")
       .evaluateAll((cards) => cards.map((card) => card.offsetTop));
     assert.equal(new Set(mapRows).size, width === 390 ? 3 : 1);
-    await captureEvidence(page, {
-      path: new URL(
-        `../screenshots/worksheet-response-maps-${width}.png`,
-        import.meta.url,
-      ).pathname,
-      animations: "disabled",
-    });
-    if (width === 390) {
-      await maps.locator(".design-map-grid").evaluate((grid) => {
-        const d = grid.closest("dialog");
-        d.scrollTop +=
-          grid.getBoundingClientRect().top -
-          d.querySelector("header").getBoundingClientRect().bottom -
-          6;
-      });
-      await captureEvidence(page, {
-        path: new URL(
-          "../screenshots/worksheet-response-maps-390-scrolled.png",
-          import.meta.url,
-        ).pathname,
-        animations: "disabled",
-      });
-    }
+    assert.equal(
+      requests.length,
+      0,
+      "Canvas study creation only derives worksheet samples",
+    );
+    await expect.poll(async () => (await saved()).plots.length).toBe(1);
+    const created = (await saved()).plots[0];
+    assert.deepEqual((await saved()).regions, before.regions);
+
+    await study.getByRole("button", { name: "Add map", exact: true }).click();
+    const setup = study.getByRole("region", { name: "Study setup" });
+    await expect(setup.getByLabel("Add reported quantity")).toBeFocused();
+    await setup.getByLabel("Input 1", { exact: true }).selectOption("width");
+    await expect(setup.getByLabel("Input 2", { exact: true })).toHaveValue(
+      "thickness",
+    );
+    await setup.getByLabel("Minimum for width").fill("25");
+    await setup.getByLabel("Maximum for width").fill("6 cm");
+    await setup.getByLabel("Minimum for thickness").fill("5 mm");
+    await setup.getByLabel("Maximum for thickness").fill("20 mm");
+    await setup.getByLabel("Add reported quantity").selectOption("cost");
+    await expect(
+      study.getByRole("button", { name: "Run", exact: true }),
+    ).toBeDisabled();
+    await expect(
+      maps.getByRole("img", { name: "cost response map" }),
+    ).toHaveCount(0);
+    assert.deepEqual(
+      (await saved()).plots,
+      [created],
+      "Draft does not change the accepted view",
+    );
+    await setup
+      .getByRole("button", { name: "Update maps", exact: true })
+      .click();
+    await expect(setup).toHaveCount(0);
+    await expect(outputs).toHaveText([
+      "4.68 kg",
+      "0.9259 mm",
+      "16.67 MPa",
+      "14.04",
+    ]);
+    await expect
+      .poll(async () => (await saved()).plots[0].study.axes[0].low)
+      .toBe("25 mm");
+    assert.deepEqual((await saved()).regions, before.regions);
+
     const deflection = maps.getByRole("img", {
       name: "deflection response map",
     });
-    const hit = deflection.locator(".design-map-hit");
-    const bound = await hit.boundingBox();
+    const hit = deflection.locator(".design-map-hit"),
+      hitBounds = await hit.boundingBox();
     await hit.click({
-      position: { x: 0.15 * bound.width, y: 0.9 * bound.height },
+      position: { x: 0.15 * hitBounds.width, y: 0.9 * hitBounds.height },
     });
     await expect(maps.getByRole("status")).toContainText(
       "Fails selected requirements",
     );
-    await expect(maps.locator(".design-map-sample")).toHaveCount(3);
-    const cursors = maps.locator(".design-map-cursor");
-    const coordinates = await cursors.first().getAttribute("d");
+    await expect(maps.locator(".design-map-sample")).toHaveCount(4);
+    const cursors = maps.locator(".design-map-cursor"),
+      coordinates = await cursors.first().getAttribute("d");
     await maps
       .getByRole("img", { name: "stress response map" })
       .press("ArrowUp");
@@ -196,210 +197,169 @@ try {
       ).size,
       1,
     );
-    await maps.getByLabel("Add map", { exact: true }).selectOption("cost");
-    await expect(
-      maps.getByRole("img", { name: "cost response map" }),
-    ).toBeVisible();
-    await expect(maps.locator(".design-map-sample")).toHaveCount(4);
-    await maps.getByRole("button", { name: "Remove cost map" }).click();
-    await expect(
-      maps.getByRole("img", { name: "cost response map" }),
-    ).toHaveCount(0);
-    await maps.getByRole("button", { name: "Current" }).click();
-    await expect(outputs).toHaveText(["4.68 kg", "0.9259 mm", "16.67 MPa"]);
+    await maps.getByRole("button", { name: "Current", exact: true }).click();
+    assert.equal(requests.length, 0, "Inspection is not a solver run");
+    const configured = await saved();
+    assert.deepEqual(configured.regions, before.regions);
+    assert.deepEqual(configured.contexts, before.contexts);
+
+    if (width === 1440) {
+      const grip = study.getByRole("button", { name: "Move response study" });
+      await grip.scrollIntoViewIfNeeded();
+      const g = await grip.boundingBox();
+      await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(g.x + g.width / 2 + 34, g.y + g.height / 2 + 28, {
+        steps: 5,
+      });
+      await page.mouse.up();
+      await expect
+        .poll(async () => (await saved()).plots[0].at.x)
+        .toBeCloseTo(configured.plots[0].at.x + 34, 0);
+      await page.keyboard.press("Control+z");
+      await expect
+        .poll(async () => (await saved()).plots[0].at)
+        .toEqual(configured.plots[0].at);
+      await study
+        .getByRole("button", { name: "Fold source equations" })
+        .click();
+      await expect(
+        page
+          .locator("[data-group-id]")
+          .filter({ hasText: "mass calculations" }),
+      ).toBeVisible();
+      await expect(mass).toBeHidden();
+      await expect(
+        study.getByRole("button", { name: "Fold source equations" }),
+      ).toHaveCount(0);
+      assert.deepEqual((await saved()).regions, before.regions);
+    }
+    await page.reload();
+    await expect(outputs).toHaveText([
+      "4.68 kg",
+      "0.9259 mm",
+      "16.67 MPa",
+      "14.04",
+    ]);
     assert.equal(
       requests.length,
       0,
-      "Mapping and inspecting never call the optimizer",
+      "Reload derives the study without a solver job",
     );
-    assert.deepEqual(await saved(), before);
     await expect(
-      dialog.getByRole("button", { name: "Apply", exact: true }),
+      maps.getByRole("button", { name: "Candidate", exact: true }),
     ).toHaveCount(0);
-    await dialog.getByLabel("Maximum for thickness").fill("19 mm");
-    await expect(maps).toHaveCount(0);
-    await dialog.getByRole("button", { name: "Remove second input" }).click();
-    await dialog
-      .getByLabel("Input 1", { exact: true })
-      .selectOption("thickness");
-    await dialog.getByLabel("Minimum for thickness").fill("5 mm");
-    await dialog.getByLabel("Maximum for thickness").fill("2 cm");
-    await dialog.getByRole("button", { name: "Run", exact: true }).click();
+    await study
+      .getByRole("heading", { name: "mass", exact: true, level: 2 })
+      .scrollIntoViewIfNeeded();
+    await capture("worksheet-canvas-study");
+
+    const run = study.getByRole("button", { name: "Run", exact: true });
+    await run.click();
     const capability = await context.request.get(
       base + "/api/optimizer/capability",
     );
     if (capability.status() === 503) {
       assert.notEqual(process.env.MANIFOLD_REQUIRE_OPTIMIZER, "1");
-      await expect(dialog.getByRole("alert")).toContainText(
+      await expect(study.getByRole("alert")).toContainText(
         /runtime unavailable/i,
       );
       await expect(
-        dialog.getByRole("button", { name: "Apply", exact: true }),
+        study.getByRole("button", { name: "Apply", exact: true }),
       ).toHaveCount(0);
-      assert.deepEqual(await saved(), before);
     } else {
       assert.equal(capability.status(), 200);
-      const preview = dialog.getByRole("table", { name: "Design comparison" });
-      const candidate = (name) =>
-        preview
-          .getByRole("row")
-          .filter({
-            has: page.getByRole("rowheader", { name, exact: true }),
-          })
-          .getByRole("cell")
-          .last();
-      const reviewed = async () => {
-        await expect(
-          dialog.getByRole("heading", { name: "Candidate preview" }),
-        ).toBeVisible({ timeout: 10000 });
-        await expect(
-          dialog.getByRole("table", { name: "Requirement margins" }),
-        ).toContainText("At limit");
-      };
-      await reviewed();
-      assert(
-        Math.abs(
-          parseFloat(await candidate("thickness").innerText()) -
-            sagThickness(40, 2),
-        ) < 2e-5,
-      );
-      await expect(candidate("deflection")).toHaveText(/2 mm/);
-      await expect(candidate("stress")).toHaveText(/MPa/);
-      const expectedCost = (3 * 0.04 * 7800 * sagThickness(40, 2)) / 1000;
-      await expect(candidate("cost")).toHaveText(
-        String(Number(expectedCost.toPrecision(6))),
-      );
+      const review = study.getByRole("region", { name: "Candidate review" });
+      await expect(
+        review.getByRole("table", { name: "Requirement margins" }),
+      ).toContainText("At limit", { timeout: 10000 });
+      await expect(
+        review.getByRole("heading", { name: "Candidate preview" }),
+      ).toBeInViewport();
+      const preview = review.getByRole("table", { name: "Design comparison" });
+      await expect(
+        preview.getByRole("row").filter({
+          has: page.getByRole("rowheader", { name: "width", exact: true }),
+        }),
+      ).toContainText("25 mm");
+      await expect(outputs).toHaveText([
+        "2.647 kg",
+        "2 mm",
+        "32.57 MPa",
+        "7.94",
+      ]);
+      await expect(maps.locator(".design-map-candidate")).toHaveCount(4);
+      await review.getByRole("button", { name: "Locate on maps" }).click();
+      await expect(
+        maps.getByRole("heading", { name: "Response maps" }),
+      ).toBeFocused();
+      await capture("worksheet-canvas-candidate");
       assert.deepEqual(
         await saved(),
-        before,
-        "Run must not change the original file",
+        configured,
+        "Run does not change worksheet or study settings",
       );
+      await review
+        .getByRole("button", {
+          name: width === 390 ? "Keep as alternative" : "Apply",
+          exact: true,
+        })
+        .click();
+      await expect(review).toHaveCount(0);
+      await expect(study).toBeVisible();
+      await expect
+        .poll(async () =>
+          Number(
+            project(await saved())
+              .solved.values.get("width")
+              .value.toFixed(5),
+          ),
+        )
+        .toBe(0.025);
+      const applied = await saved();
       assert(
-        await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth),
-        "No horizontal scrolling, including at 390 px",
+        Math.abs(
+          project(applied).solved.values.get("thickness").value * 1000 -
+            sagThickness(25, 2),
+        ) < 2e-5,
       );
-      await dialog
-        .getByRole("button", { name: "Apply", exact: true })
-        .scrollIntoViewIfNeeded();
-      await captureEvidence(page, {
-        path: new URL(
-          `../screenshots/worksheet-design-${width}.png`,
-          import.meta.url,
-        ).pathname,
-        animations: "disabled",
-      });
       if (width === 390) {
-        await dialog
-          .getByRole("button", { name: "Keep as alternative" })
-          .click();
-        await expect(dialog).toHaveCount(0);
-        const kept = await saved();
-        assert.notEqual(kept.active, "original");
+        assert.notEqual(applied.active, "original");
         assert.equal(
-          project(kept, "original").texts.thickness,
-          before.regions.find((r) => r.id === "thickness").text,
+          project(applied, "original").texts.thickness,
+          "thickness := 15 mm",
         );
-        assert(
-          Math.abs(
-            project(kept).solved.values.get("thickness").value * 1000 -
-              sagThickness(40, 2),
-          ) < 2e-5,
-        );
-      } else {
-        await setTwoAxes();
-        await expect(scan).toHaveCount(0);
-        await expect(preview).toHaveCount(
-          0,
-          "Editing settings invalidates the preview",
-        );
-        await mapButton.click();
-        await maps
-          .getByRole("img", { name: "mass response map" })
-          .press("ArrowDown");
-        await expect(maps.getByRole("status")).toContainText("Sampled design");
-        await dialog.getByRole("button", { name: "Run", exact: true }).click();
-        await reviewed();
-        assert(
-          Math.abs(parseFloat(await candidate("width").innerText()) - 25) <
-            1e-5,
-        );
-        await dialog
-          .getByRole("button", { name: "Show on maps", exact: true })
-          .click();
-        await expect(maps.getByRole("status")).toContainText(
-          "Checked candidate",
-        );
-        await expect(outputs).toHaveText(["2.647 kg", "2 mm", "32.57 MPa"]);
-        await expect(maps.locator(".design-map-candidate")).toHaveCount(3);
-        await captureEvidence(page, {
-          path: new URL(
-            `../screenshots/worksheet-response-maps-candidate-${width}.png`,
-            import.meta.url,
-          ).pathname,
-          animations: "disabled",
-        });
-        await maps.getByLabel("Add map", { exact: true }).selectOption("cost");
-        await expect(outputs).toHaveText([
-          "2.647 kg",
-          "2 mm",
-          "32.57 MPa",
-          "7.94",
-        ]);
-        await captureEvidence(page, {
-          path: new URL(
-            `../screenshots/worksheet-response-maps-cost-${width}.png`,
-            import.meta.url,
-          ).pathname,
-          animations: "disabled",
-        });
-        assert.deepEqual(
-          await saved(),
-          before,
-          "Run and mapping leave the sheet unchanged",
-        );
-        await dialog
-          .getByRole("button", { name: "Apply", exact: true })
-          .click();
-        await expect(dialog).toHaveCount(0);
-        const applied = await saved();
-        assert.equal(applied.active, "original");
-        assert(
-          Math.abs(
-            project(applied).solved.values.get("thickness").value * 1000 -
-              sagThickness(25, 2),
-          ) < 2e-5,
-        );
-        assert(
-          Math.abs(
-            project(applied).solved.values.get("width").value * 1000 - 25,
-          ) < 1e-5,
-        );
-        await page.keyboard.press("Control+z");
-        await expect
-          .poll(async () => project(await saved()).texts.thickness)
-          .toBe("thickness := 15 mm");
-        assert.equal(project(await saved()).texts.width, "width := 40 mm");
-        // Tighten the permitted range until no design can satisfy the sag limit.
-        await open();
-        await dialog.getByLabel("Maximum for thickness").fill("8 mm");
-        await dialog.getByRole("button", { name: "Run", exact: true }).click();
-        await expect(dialog.getByRole("alert")).toContainText(
-          "No feasible candidate found",
-        );
-        await expect(
-          dialog.getByRole("button", { name: "Apply", exact: true }),
-        ).toHaveCount(0);
-        await expect(
-          dialog.getByRole("button", { name: "Keep as alternative" }),
-        ).toHaveCount(0);
-        assert.deepEqual(await saved(), before);
       }
+      await page.keyboard.press("Control+z");
+      await expect
+        .poll(async () => project(await saved()).texts.thickness)
+        .toBe("thickness := 15 mm");
+      const setupButton = study.getByRole("button", {
+        name: "Setup",
+        exact: true,
+      });
+      await setupButton.click();
+      await setup.getByLabel("Maximum for thickness").fill("8 mm");
+      await setup.getByRole("button", { name: "Update maps" }).click();
+      await run.click();
+      await expect(study.getByRole("alert")).toContainText(
+        "No feasible candidate found",
+      );
+      await expect(
+        study.getByRole("button", { name: "Apply", exact: true }),
+      ).toHaveCount(0);
+      assert.deepEqual((await saved()).regions, before.regions);
     }
+    await study.getByRole("button", { name: "Remove study" }).click();
+    await expect(study).toHaveCount(0);
+    await expect.poll(async () => (await saved()).plots.length).toBe(0);
+    await page.keyboard.press("Control+z");
+    await expect(study).toHaveCount(1);
     assert.deepEqual(errors, []);
     await context.close();
   }
   console.log(
-    "Worksheet Actions → Optimize, desktop and 390 px: sampled feasibility, linked response maps, no writes until adoption.",
+    "Worksheet design at desktop and 390 px: one-input scan, portable linked study, shared probe, folded sources, reviewed Apply/alternative and Undo.",
   );
 } finally {
   await browser.close();

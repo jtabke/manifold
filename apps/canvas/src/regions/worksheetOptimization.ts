@@ -114,6 +114,58 @@ export function defaultAxis(
   };
 }
 
+export function studySources(page: Page, spec: DesignSpec) {
+  const p = project(page);
+  const roots = [
+    spec.goal,
+    ...spec.axes.map((a) => a.id),
+    ...spec.requirements,
+    ...spec.reports,
+  ];
+  const included = new Set(roots.flatMap((id) => [id, ...ancestors(p, id)]));
+  return page.regions
+    .filter((r) => included.has(r.id) && p.statements.has(r.id))
+    .map((r) => r.id);
+}
+
+export function defaultStudySpec(page: Page, goal: string): DesignSpec {
+  const { inputs, requirements } = designChoices(page, goal);
+  return {
+    goal,
+    mode: "minimize",
+    axes: inputs
+      .filter((i) => i.related)
+      .slice(0, 2)
+      .map(defaultAxis),
+    requirements: requirements
+      .filter((r) => !r.error)
+      .slice(0, 16)
+      .map((r) => r.id),
+    reports: [],
+  };
+}
+
+/** Validate before publishing a study. Give unitless entries their current axis unit,
+ * so later changes to the source's display unit cannot reinterpret saved ranges. */
+export function captureStudySpec(page: Page, settings: DesignSpec): DesignSpec {
+  assert(settings.axes.length === 2, "Choose two inputs to map.");
+  const { axes, spec } = captureDesignProblem(page, settings);
+  return {
+    ...spec,
+    axes: spec.axes.map((a, i) => {
+      const unit = axes[i].unit;
+      const explicit = (text: string) => {
+        const value = text.trim();
+        return unit &&
+          /^[+−-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+−-]?\d+)?$/i.test(value)
+          ? `${value} ${unit}`
+          : value;
+      };
+      return { id: a.id, low: explicit(a.low), high: explicit(a.high) };
+    }),
+  };
+}
+
 function captureDesignProblem(page: Page, settings: DesignSpec) {
   const spec = structuredClone(settings),
     p = project(page);
@@ -135,7 +187,10 @@ function captureDesignProblem(page: Page, settings: DesignSpec) {
     "Vary one or two distinct assigned inputs.",
   );
   assert(
-    spec.requirements.length <= 16 && spec.reports.length <= 32,
+    spec.requirements.length <= 16 &&
+      spec.reports.length <= 32 &&
+      new Set(spec.requirements).size === spec.requirements.length &&
+      new Set(spec.reports).size === spec.reports.length,
     "Use at most 16 requirements and 32 reported quantities.",
   );
   for (const id of spec.reports)

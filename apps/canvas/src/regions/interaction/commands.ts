@@ -6,6 +6,7 @@ import {
   type ConnectionEdit,
 } from "../document.ts";
 import { makeArtifact, type Artifact } from "../artifacts.ts";
+import { defaultStudySpec } from "../worksheetOptimization.ts";
 
 export type CommandKind =
   | "canvas"
@@ -45,6 +46,7 @@ type SimpleOperation =
   | "quantity.vary"
   | "quantity.trace"
   | "worksheet.optimize"
+  | "response.study"
   | "context.compare"
   | "dataset.inspect"
   | "dataset.connect"
@@ -227,7 +229,9 @@ export function commandSubject({
     const a =
       artifacts.find((a) => a.id === target.view) ||
       page.plots.find((plot) => plot.id === target.view);
-    return `Plot ${name || "response"}${a ? ` against ${p.statements.get(a.input)?.name || "input"}` : ""}`;
+    return a && "study" in a && a.study
+      ? `Response study · ${name || "response"}`
+      : `Plot ${name || "response"}${a && "input" in a ? ` against ${p.statements.get(a.input)?.name || "input"}` : ""}`;
   }
   if (target.kind === "selection") return `${target.ids?.length} selected`;
   if (target.kind === "dataset")
@@ -468,6 +472,38 @@ export function resolveCommands(
           undefined,
           { view: artifact.id, keywords: ["plot", "response", "open"] },
         );
+      for (const plot of page.plots.filter((p) => p.study && p.output === t.id))
+        add("response.open", "Open response study", "plot", undefined, {
+          view: plot.id,
+          keywords: ["plot", "map", "study", "open"],
+        });
+      if (
+        (t.kind === "equation" || t.kind === "result") &&
+        t.id &&
+        p.kinds[t.id] === "equation" &&
+        definition &&
+        !definition.anonymous &&
+        defaultStudySpec(page, t.id).axes.length === 2
+      )
+        add("response.study", "Plot against two inputs", "plot", undefined, {
+          unavailable: c.previewActive
+            ? "Accept or revert the current preview before plotting."
+            : undefined,
+          preview:
+            "Create an on-canvas study with linked response maps and reviewable bounds.",
+          undo: undoEffect(
+            "view",
+            "Undo removes the study without changing the worksheet.",
+          ),
+          keywords: [
+            "plot",
+            "map",
+            "study",
+            "surface",
+            "optimize",
+            "two inputs",
+          ],
+        });
       if (
         (t.kind === "equation" || t.kind === "result") &&
         definition &&

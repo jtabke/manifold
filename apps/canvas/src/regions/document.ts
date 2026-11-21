@@ -16,7 +16,7 @@ export {
 import { sameJson } from "./immutableJson.ts";
 import { PageEdit } from "./pageEdits.ts";
 import { readScene, sceneCommands } from "./sceneRecords.ts";
-import type { CanvasScene } from "./canvasScene.ts";
+import { detachMember, type CanvasScene } from "./canvasScene.ts";
 /** Compatibility authoring commands over the existing arithmetic; accepted Page/history live in the foundation owner. */
 import {
   calculate,
@@ -75,7 +75,7 @@ import {
 } from "./models.ts";
 import {
   captureDesign,
-  mapDesignResponses,
+  captureStudySpec,
   reviewDesign,
   scanDesignRange,
   type DesignExecutor,
@@ -109,16 +109,32 @@ export type Context = {
   base: Record<string, string>;
   overrides: Record<string, string>;
 };
-export type Plot = {
+type PlotFrame = {
   id: string;
   output: string;
-  input: string;
-  low: number;
-  high: number;
   width: number;
   height: number;
   at?: Point;
 };
+export type CurvePlot = PlotFrame & {
+  input: string;
+  low: number;
+  high: number;
+  study?: never;
+};
+export type ResponseStudyPlot = PlotFrame & { study: Omit<DesignSpec, "goal"> };
+export type Plot = CurvePlot | ResponseStudyPlot;
+
+export function plotSources(plot: Plot): string[] {
+  return plot.study
+    ? [
+        plot.output,
+        ...plot.study.axes.map((a) => a.id),
+        ...plot.study.requirements,
+        ...plot.study.reports,
+      ]
+    : [plot.output, plot.input];
+}
 export type Page = {
   title?: string;
   regions: Region[];
@@ -193,7 +209,7 @@ function withoutEmpty(page: Page, retained: readonly string[] = []): Page {
             (c) =>
               !(c.base[r.id] || "").trim() && !(c.overrides[r.id] || "").trim(),
           ) &&
-          !page.plots.some((p) => p.input === r.id || p.output === r.id),
+          !page.plots.some((p) => plotSources(p).includes(r.id)),
       )
       .map((r) => r.id),
   );
@@ -315,13 +331,6 @@ export class RegionSession {
       throw Error("Finish the current preview before scanning a design range.");
     return scanDesignRange(this.state, spec);
   }
-  mapWorksheetDesign(spec: DesignSpec) {
-    if (this.closed || this.staging || this.foundation.preview())
-      throw Error(
-        "Finish the current preview before mapping design responses.",
-      );
-    return mapDesignResponses(this.state, spec);
-  }
   /** A worksheet design is a disposable computation, never an edit or a saved model. */
   optimizeWorksheet(spec: DesignSpec) {
     const execute = this.designExecutor;
@@ -332,7 +341,6 @@ export class RegionSession {
     const page = this.state,
       expected = this.document,
       captured = captureDesign(page, spec);
-    this.designReviews = new WeakMap();
     this.designJob?.cancel();
     const job = this.taskScheduler.submit(async (signal) => {
       const candidate = await execute(captured, signal);
@@ -918,7 +926,7 @@ export class RegionSession {
       next.regions.some(
         (r) => !removed.has(r.id) && r.source && removed.has(r.source.dataset),
       ) ||
-      next.plots.some((p) => removed.has(p.input) || removed.has(p.output)) ||
+      next.plots.some((p) => plotSources(p).some((id) => removed.has(id))) ||
       next.dataRelations?.some((r) =>
         [r.dataset, r.output, ...r.bindings.map((b) => b.quantity)].some(
           (id) => id && removed.has(id),
@@ -1418,6 +1426,58 @@ export class RegionSession {
     if (parent) edit.model(parent)?.members.push(id);
     this.apply(next);
     return id;
+  }
+  addResponseStudy(spec: DesignSpec, at: Point, width: number): string {
+    if (this.foundation.preview())
+      throw Error("Finish the current preview first.");
+    if (this.state.plots.length >= 16)
+      throw Error("This workspace supports up to 16 plots.");
+    const { goal: output, ...study } = captureStudySpec(this.state, spec);
+    const edit = new PageEdit(this.state),
+      next = edit.page;
+    const id = `plot-${crypto.randomUUID()}`;
+    next.plots = [...next.plots, { id, output, study, at, width, height: 540 }];
+    const parent = modelParent(next, output);
+    if (parent) edit.model(parent)?.members.push(id);
+    this.apply(next);
+    return id;
+  }
+  updateResponseStudy(id: string, spec: DesignSpec) {
+    if (this.foundation.preview())
+      throw Error("Finish the current preview first.");
+    const current = this.state.plots.find((p) => p.id === id);
+    if (!current?.study || current.output !== spec.goal)
+      throw Error("This response study is no longer available.");
+    const { goal: _goal, ...study } = captureStudySpec(this.state, spec);
+    if (JSON.stringify(study) === JSON.stringify(current.study)) return;
+    const edit = new PageEdit(this.state);
+    const plot = edit.plot(id) as ResponseStudyPlot;
+    plot.study = study;
+    this.apply(edit.page);
+  }
+  removeResponseStudy(id: string) {
+    if (!this.state.plots.some((p) => p.id === id && p.study)) return;
+    this.atomic((staged) => {
+      staged.setScene((scene) => ({
+        ...scene,
+        groups: detachMember(scene.groups, id),
+        ...(scene.closed && { closed: scene.closed.filter((v) => v !== id) }),
+        ...(scene.pins && {
+          pins: Object.fromEntries(
+            Object.entries(scene.pins).filter(([v]) => v !== id),
+          ),
+        }),
+      }));
+      const edit = new PageEdit(staged.state),
+        next = edit.page;
+      next.plots = next.plots.filter((p) => p.id !== id);
+      const parent = modelParent(next, id);
+      if (parent) {
+        const model = edit.model(parent)!;
+        model.members = model.members.filter((member) => member !== id);
+      }
+      staged.apply(next);
+    });
   }
   branch(): string {
     if (this.state.contexts.length >= 16)

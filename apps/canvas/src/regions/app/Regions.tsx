@@ -35,7 +35,14 @@ import {
   selectionEditReason,
 } from "../selectionOperations";
 import { dispatchCanvasCommand } from "./dispatchCanvasCommand";
-import { executeWorksheetDesign } from "../worksheetOptimization";
+import {
+  defaultStudySpec,
+  executeWorksheetDesign,
+  studySources,
+  type DesignSpec,
+} from "../worksheetOptimization";
+import { modelParent } from "../models";
+import { WorksheetResponseStudy } from "../renderers/WorksheetResponseStudy";
 import { WorksheetOptimizationDialog } from "../renderers/WorksheetOptimizationDialog";
 import { WorksheetLayer } from "../renderers/WorksheetLayer";
 import type { ModelSource } from "../authoredModels";
@@ -954,7 +961,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     if (tool)
       return `${tool.editor} tool · ${p.statements.get(tool.object)?.name || tool.object}`;
     if (plot)
-      return `${p.statements.get(plot.output)?.name || "Result"} vs ${p.statements.get(plot.input)?.name || "input"} · response plot`;
+      return plot.study
+        ? `${p.statements.get(plot.output)?.name || "Result"} · response study`
+        : `${p.statements.get(plot.output)?.name || "Result"} vs ${p.statements.get(plot.input)?.name || "input"} · response plot`;
     if (artifact)
       return `${p.statements.get(artifact.output)?.name || "Result"} · ${artifact.id === id ? artifact.renderer : artifact.views?.find((v) => v.id === id)?.renderer || "view"}`;
     return (
@@ -2165,7 +2174,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       850,
       ...(page.models || []).map((m) => hierarchy.at(m.id).y + 650),
       ...page.regions.map((r) => places[r.id].y + 200),
-      ...page.plots.map((plot) => places[plot.id].y + plot.height + 100),
+      ...page.plots.map(
+        (plot) =>
+          places[plot.id].y +
+          (spatial.frame(plot.id)?.height || plot.height) +
+          100,
+      ),
       ...(page.dataRelations || []).map((r) => places[r.id].y + 600),
       ...artifactFrames.map((a) => a.at.y + a.height + 100),
       ...modelFrames.map((v) => v.y + 740),
@@ -3003,6 +3017,88 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ),
       { block: "nearest", inline: "nearest" },
     );
+  const beforeStudyEdit = () => {
+    if (exploration) {
+      setMessage("Accept or revert the current preview first.");
+      return false;
+    }
+    return finishCommandEdit();
+  };
+  const selectStudy = (id: string, output: string) => {
+    setSelected(id);
+    setCanvasSelection([id]);
+    setSelectionDetail({ kind: "plot", owner: output, view: id });
+    setTerm(undefined);
+    setArtifactFocus(undefined);
+  };
+  const foldStudySources = (spec: DesignSpec) => {
+    const scope = modelParent(page, spec.goal);
+    const members = studySources(page, spec).filter(
+      (id) =>
+        modelParent(page, id) === scope &&
+        !spatial.scene.groups.some((g) => g.members.includes(id)),
+    );
+    if (members.length < 2) return;
+    return () => {
+      if (!beforeStudyEdit()) return;
+      spatial.setScene((scene) => ({
+        ...scene,
+        groups: [
+          ...scene.groups,
+          {
+            id: `group-${crypto.randomUUID()}`,
+            name: `${accepted.statements.get(spec.goal)?.name || "Study"} calculations`.slice(
+              0,
+              80,
+            ),
+            members,
+            layout: "stack",
+            collapsed: true,
+            auto: false,
+          },
+        ],
+      }));
+    };
+  };
+  const openStudySource = (id: string) => {
+    const group = spatial.scene.groups.find(
+      (g) => g.members.includes(id) && spatial.compact(g),
+    );
+    if (group) spatial.focusObject(group.id);
+    if (!hierarchy.visible(id)) hierarchy.reveal(id);
+    begin(id);
+    requestAnimationFrame(() => revealCommandObject(id));
+  };
+  const createResponseStudy = (spec: DesignSpec) => {
+    if (!beforeStudyEdit())
+      throw Error("Finish the worksheet edit or preview first.");
+    const a =
+      readCanvasFrames().find((f) => f.id === spec.goal) || places[spec.goal];
+    const available = (canvas.current?.clientWidth || viewportWidth) / zoom;
+    const savedWidth = 860,
+      shownWidth = Math.min(savedWidth, Math.max(320, available - 36));
+    const side = a.x + 530 + shownWidth + 16 <= available;
+    const at = { x: side ? a.x + 530 : a.x, y: side ? a.y : a.y + 85 };
+    for (const f of readCanvasFrames().sort((a, b) => a.y - b.y))
+      if (
+        at.x < f.x + f.width + 16 &&
+        f.x < at.x + shownWidth + 16 &&
+        at.y < f.y + f.height + 24 &&
+        f.y < at.y + 540
+      )
+        at.y = f.y + f.height + 24;
+    const id = session.addResponseStudy(spec, at, savedWidth);
+    selectStudy(id, spec.goal);
+    setOverlay("none");
+    revealAreaCanvas.current?.();
+    requestAnimationFrame(() => {
+      const node = canvas.current?.querySelector<HTMLElement>(
+        `[data-plot-id="${id}"]`,
+      );
+      revealCanvasElement(node, { block: "start", inline: "center" });
+      node?.focus({ preventScroll: true });
+    });
+  };
   const dispatchCommand = (command: CommandRequest) =>
     dispatchCanvasCommand(command, {
       session,
@@ -3041,6 +3137,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       },
       plots: {
         artifactsEnabled: artifactMode,
+        study: (output) =>
+          createResponseStudy(defaultStudySpec(session.state, output)),
         create: (output, input, request) =>
           createArtifact(request, output, undefined, input),
         reopen: (view) =>
@@ -3370,6 +3468,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             session={session}
             buffers={editBuffers}
             goal={designGoal}
+            onPlot={createResponseStudy}
             close={() => setDesignGoal(undefined)}
             notify={setMessage}
           />
@@ -4125,6 +4224,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   !e.shiftKey &&
                   directObject &&
                   canvasSelection.includes(directObject) &&
+                  !(e.target as Element).closest("[data-response-study]") &&
                   !(e.target as Element).closest(
                     "button,a,summary,input,textarea,select,[role=button]:not(.er-note),[role=slider],[contenteditable],[data-link-source],.er-editable-math,.er-term,.er-note-reference,.er-result",
                   )
@@ -5525,51 +5625,109 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       }}
                     />
                     {page.plots
-                      .filter((plot) => hierarchy.visible(plot.id))
-                      .map((plot) => (
-                        <CurveRegion
-                          key={plot.id}
-                          session={session}
-                          workingPage={working}
-                          zoom={zoom}
-                          layoutCancelVersion={spatial.cancelVersion}
-                          cancelLayout={spatial.cancel}
-                          comparisonContext={comparisonContext}
-                          previewOnMove={trials.scrub}
-                          finishInput={finishValue}
-                          commands={() => paletteOpen("search")}
-                          quiet={quiet}
-                          revert={revertExploration}
-                          plot={{ ...plot, at: places[plot.id] }}
-                          compare={compare}
-                          selected={selected === plot.id}
-                          select={() => {
-                            setSelected(plot.id);
-                            setTerm(undefined);
-                          }}
-                          move={(at) =>
-                            spatial.finishPositions(
-                              { [plot.id]: at },
-                              undefined,
-                              acceptedDocument,
-                            )
-                          }
-                          resize={(w, h) =>
-                            spatial.finishPositions(
-                              {},
-                              (staged) => staged.resize(plot.id, w, h),
-                              acceptedDocument,
-                            )
-                          }
-                          inspect={() => begin(plot.output)}
-                          branch={branch}
-                          reveal={() => {
-                            setSelected(plot.id);
-                            setOverlay("dependencies");
-                          }}
-                          setInput={setInput}
-                        />
-                      ))}
+                      .filter(
+                        (plot) =>
+                          hierarchy.visible(plot.id) &&
+                          (!plot.study || !hiddenObjects.has(plot.id)),
+                      )
+                      .map((plot) =>
+                        plot.study ? (
+                          <WorksheetResponseStudy
+                            key={plot.id}
+                            plot={plot}
+                            page={page}
+                            session={session}
+                            buffers={editBuffers}
+                            at={places[plot.id]}
+                            width={Math.min(
+                              plot.width,
+                              Math.max(
+                                320,
+                                ((canvas.current?.clientWidth ||
+                                  viewportWidth) -
+                                  36) /
+                                  zoom,
+                              ),
+                            )}
+                            zoom={zoom}
+                            selected={selected === plot.id}
+                            cancelVersion={spatial.cancelVersion}
+                            pending={!!exploration}
+                            beforeEdit={beforeStudyEdit}
+                            move={(at) =>
+                              spatial.finishPositions(
+                                { [plot.id]: at },
+                                undefined,
+                                acceptedDocument,
+                              )
+                            }
+                            cancelMove={spatial.cancel}
+                            select={() => selectStudy(plot.id, plot.output)}
+                            source={openStudySource}
+                            trace={() => inspectConnections(plot.output)}
+                            fold={foldStudySources({
+                              goal: plot.output,
+                              ...plot.study,
+                            })}
+                            remove={() => {
+                              try {
+                                if (beforeStudyEdit()) {
+                                  session.removeResponseStudy(plot.id);
+                                  setCanvasSelection([]);
+                                  setSelected(undefined);
+                                  setSelectionDetail(undefined);
+                                }
+                              } catch (e) {
+                                setMessage((e as Error).message);
+                              }
+                            }}
+                            notify={setMessage}
+                          />
+                        ) : (
+                          <CurveRegion
+                            key={plot.id}
+                            session={session}
+                            workingPage={working}
+                            zoom={zoom}
+                            layoutCancelVersion={spatial.cancelVersion}
+                            cancelLayout={spatial.cancel}
+                            comparisonContext={comparisonContext}
+                            previewOnMove={trials.scrub}
+                            finishInput={finishValue}
+                            commands={() => paletteOpen("search")}
+                            quiet={quiet}
+                            revert={revertExploration}
+                            plot={{ ...plot, at: places[plot.id] }}
+                            compare={compare}
+                            selected={selected === plot.id}
+                            select={() => {
+                              setSelected(plot.id);
+                              setTerm(undefined);
+                            }}
+                            move={(at) =>
+                              spatial.finishPositions(
+                                { [plot.id]: at },
+                                undefined,
+                                acceptedDocument,
+                              )
+                            }
+                            resize={(w, h) =>
+                              spatial.finishPositions(
+                                {},
+                                (staged) => staged.resize(plot.id, w, h),
+                                acceptedDocument,
+                              )
+                            }
+                            inspect={() => begin(plot.output)}
+                            branch={branch}
+                            reveal={() => {
+                              setSelected(plot.id);
+                              setOverlay("dependencies");
+                            }}
+                            setInput={setInput}
+                          />
+                        ),
+                      )}
                     {!!modelFrames.length && (
                       <Suspense fallback={null}>
                         <ModelPanels

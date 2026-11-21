@@ -8,7 +8,7 @@ import {
   project,
   positions,
   curve,
-  type Plot,
+  type CurvePlot,
   type Point,
 } from "../document";
 import { useLayoutGesture } from "../interaction/useLayoutGesture";
@@ -49,7 +49,7 @@ export function CurveRegion({
   commands: () => void;
   quiet: boolean;
   revert: () => void;
-  plot: Plot;
+  plot: CurvePlot;
   selected: boolean;
   compare: boolean;
   select: () => void;

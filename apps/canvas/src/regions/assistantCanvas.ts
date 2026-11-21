@@ -316,6 +316,13 @@ export function inspectPlot(session: RegionSession, args: unknown) {
   fields(value, ["id"]);
   const id = text(value.id);
   const plot = session.state.plots.find((plot) => plot.id === id);
+  if (plot?.study)
+    return freeze({
+      documentId: session.document.id,
+      id,
+      status: "study-definition",
+      plot,
+    });
   if (plot) {
     const workspace = bindLiveWorkspace(session);
     try {

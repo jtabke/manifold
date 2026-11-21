@@ -1,0 +1,420 @@
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { GripVertical } from "lucide-react";
+import type { EditBuffers } from "../app/workspaceFiles";
+import { useEditBuffer } from "../app/useEditBuffer";
+import { revealCanvasElement } from "../interaction/canvasViewport";
+import { useLayoutGesture } from "../interaction/useLayoutGesture";
+import {
+  project,
+  type Page,
+  type Point,
+  type RegionSession,
+  type ResponseStudyPlot,
+} from "../document";
+import {
+  designChoices,
+  mapDesignResponses,
+  studySources,
+  type DesignResponseMap,
+  type DesignSpec,
+} from "../worksheetOptimization";
+import {
+  WorksheetResponseMaps,
+  type MapInspection,
+} from "./WorksheetResponseMaps";
+import {
+  DesignCandidate,
+  DesignFields,
+  useWorksheetDesignRun,
+} from "./WorksheetDesignControls";
+import "../styles/worksheetOptimization.css";
+import "../styles/worksheetResponseStudy.css";
+
+export function WorksheetResponseStudy({
+  plot,
+  page,
+  session,
+  buffers,
+  at,
+  width,
+  zoom,
+  selected,
+  cancelVersion,
+  pending,
+  beforeEdit,
+  move,
+  cancelMove,
+  select,
+  source,
+  trace,
+  fold,
+  remove,
+  notify,
+}: {
+  plot: ResponseStudyPlot;
+  page: Page;
+  session: RegionSession;
+  buffers: EditBuffers;
+  at: Point;
+  width: number;
+  zoom: number;
+  selected: boolean;
+  cancelVersion: number;
+  pending: boolean;
+  beforeEdit: () => boolean;
+  move: (at: Point) => void;
+  cancelMove: () => void;
+  select: () => void;
+  source: (id: string) => void;
+  trace: () => void;
+  fold?: () => void;
+  remove: () => void;
+  notify: (message: string) => void;
+}) {
+  const id = useId();
+  const host = useRef<HTMLElement>(null),
+    setup = useRef<HTMLFormElement>(null),
+    outcome = useRef<HTMLHeadingElement>(null);
+  const layout = useLayoutGesture({
+    geometry: { at, width, height: plot.height },
+    zoom,
+    cancelVersion,
+    minWidth: 320,
+    minHeight: 240,
+    cancel: cancelMove,
+    complete: (geometry) => move(geometry.at),
+  });
+  const [inspector, setInspector] = useState<"setup" | "review">();
+  const [draft, setDraft] = useState<{
+    of: ResponseStudyPlot["study"];
+    spec: DesignSpec;
+  }>();
+  // Don't put an input probe or a solver result in the accepted record. Opening a
+  // saved study derives its local grid like a response curve; only Run calls the host.
+  const spec = useMemo(
+    () => ({ goal: plot.output, ...plot.study }),
+    [plot.output, plot.study],
+  );
+  const fields = draft?.of === plot.study ? draft.spec : spec;
+  const dirty = fields !== spec;
+  const [inspection, setInspection] = useState<{
+    map: DesignResponseMap;
+    selected: MapInspection;
+  }>();
+  const search = useWorksheetDesignRun(session, notify);
+  const { map, unavailable } = useMemo(() => {
+    try {
+      return { map: mapDesignResponses(page, spec), unavailable: "" };
+    } catch (e) {
+      return { unavailable: (e as Error).message };
+    }
+    // Canvas positions, groups, and camera don't change the worksheet inputs.
+  }, [page.regions, page.links, page.contexts, page.active, spec]);
+  const p = project(page),
+    name = p.statements.get(plot.output)?.name || "Unresolved objective";
+  const choices = useMemo(
+    () => designChoices(page, plot.output),
+    [p, plot.output],
+  );
+  useEffect(() => {
+    if (search.review) setInspector("review");
+  }, [search.review]);
+  useEffect(() => {
+    if (inspector === "review" && search.review && outcome.current) {
+      revealCanvasElement(outcome.current, {
+        block: "nearest",
+        inline: "nearest",
+      });
+      outcome.current.focus({ preventScroll: true });
+    }
+  }, [inspector, search.review]);
+  useEditBuffer(buffers, `study:${plot.id}`, {
+    read: () => (dirty ? JSON.stringify(fields) : undefined),
+    finish: () => {
+      if (!dirty) return true;
+      openSetup();
+      search.setError(
+        "Update maps or discard these settings before changing files.",
+      );
+      return false;
+    },
+  });
+  function openSetup(addMap = false) {
+    setInspector("setup");
+    requestAnimationFrame(() =>
+      setup.current
+        ?.querySelector<HTMLElement>(
+          addMap ? 'select[aria-label="Add reported quantity"]' : "select",
+        )
+        ?.focus(),
+    );
+  }
+  function update() {
+    search.setError("");
+    if (!beforeEdit()) return;
+    try {
+      session.updateResponseStudy(plot.id, fields);
+      setDraft(undefined);
+      search.clear();
+      setInspector(undefined);
+      requestAnimationFrame(() => {
+        const title = host.current?.querySelector(".study-title");
+        revealCanvasElement(title, { block: "nearest", inline: "nearest" });
+        host.current?.focus({ preventScroll: true });
+      });
+    } catch (e) {
+      search.setError((e as Error).message);
+    }
+  }
+  const currentInspection =
+    inspection?.map === map ? inspection?.selected : undefined;
+  return (
+    <section
+      ref={host}
+      tabIndex={0}
+      className={`er-response-study worksheet-design-controls${selected ? " is-selected" : ""}`}
+      data-plot-id={plot.id}
+      data-response-study=""
+      aria-labelledby={`${id}-title`}
+      style={{
+        left: layout.value.at.x,
+        top: layout.value.at.y,
+        width: layout.value.width,
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={layout.finish}
+      onPointerMove={layout.move}
+      onPointerCancel={layout.cancel}
+      onLostPointerCapture={layout.cancel}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!(e.target as Element).closest("button,summary,input,select,label"))
+          select();
+      }}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) select();
+      }}
+    >
+      <div className="study-header">
+        <button
+          className="study-grip"
+          aria-label="Move response study"
+          onPointerDown={(e) => layout.start(e)}
+        >
+          <GripVertical size={16} />
+        </button>
+        <div className="study-title">
+          <span>Response study</span>
+          <h2 id={`${id}-title`}>{name}</h2>
+        </div>
+        <div className="study-actions">
+          <button
+            type="button"
+            aria-expanded={inspector === "setup"}
+            onClick={() =>
+              inspector === "setup" ? setInspector(undefined) : openSetup()
+            }
+          >
+            Setup{dirty ? " · draft" : ""}
+          </button>
+          <button
+            type="button"
+            className="design-primary"
+            disabled={!!unavailable || pending || dirty || search.running}
+            onClick={() => {
+              if (!beforeEdit()) return;
+              setInspection(undefined);
+              void search.run(spec);
+            }}
+          >
+            Run
+          </button>
+          {search.review && (
+            <button
+              type="button"
+              aria-expanded={inspector === "review"}
+              onClick={() =>
+                setInspector(inspector === "review" ? undefined : "review")
+              }
+            >
+              Review candidate
+            </button>
+          )}
+        </div>
+      </div>
+      <dl className="study-summary" aria-label="Current inputs">
+        {spec.axes.map((axis, k) => {
+          const input = choices.inputs.find((q) => q.id === axis.id);
+          return (
+            <div key={axis.id}>
+              <dt>{k === 0 ? "Horizontal" : "Vertical"}</dt>
+              <dd>
+                <button
+                  type="button"
+                  title="Edit source input"
+                  onClick={() => source(axis.id)}
+                >
+                  {input?.name ||
+                    p.statements.get(axis.id)?.name ||
+                    "Unresolved"}
+                </button>
+                {input && (
+                  <strong>
+                    {Number(input.current.toPrecision(6))} {input.unit}
+                  </strong>
+                )}
+              </dd>
+            </div>
+          );
+        })}
+        <div>
+          <dt>Scenario</dt>
+          <dd>{page.contexts.find((c) => c.id === page.active)?.label}</dd>
+        </div>
+      </dl>
+      {search.running && (
+        <div className="study-feedback" role="status">
+          Searching…{" "}
+          <button type="button" onClick={search.cancel}>
+            Cancel run
+          </button>
+        </div>
+      )}
+      {search.staleReview && (
+        <p role="status">
+          Worksheet changed. Run again for a current candidate.
+        </p>
+      )}
+      {pending && (
+        <p role="status">
+          Maps show accepted inputs. Finish the worksheet preview before running
+          or updating.
+        </p>
+      )}
+      {search.error && (
+        <p className="study-feedback" role="alert">
+          {search.error}
+        </p>
+      )}
+      <div
+        className={`study-body${inspector && (inspector === "setup" || search.review) ? " with-inspector" : ""}`}
+      >
+        {inspector === "setup" && (
+          <section className="study-inspector" aria-label="Study setup">
+            <h3>Study setup</h3>
+            <form
+              ref={setup}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!search.running && !pending && dirty) update();
+              }}
+            >
+              <DesignFields
+                choices={choices}
+                name={name}
+                spec={fields}
+                change={(patch) => {
+                  search.clear();
+                  setDraft({ of: plot.study, spec: { ...fields, ...patch } });
+                }}
+                disabled={search.running || pending}
+                fixedAxes
+              />
+              <button
+                type="submit"
+                className="design-primary"
+                disabled={search.running || pending || !dirty}
+              >
+                Update maps
+              </button>
+              <button
+                type="button"
+                disabled={!dirty}
+                onClick={() => {
+                  setDraft(undefined);
+                  search.setError("");
+                }}
+              >
+                Discard changes
+              </button>
+            </form>
+          </section>
+        )}
+        {inspector === "review" && search.review && (
+          <section className="study-inspector" aria-label="Candidate review">
+            <DesignCandidate
+              review={search.review}
+              heading={outcome}
+              adopt={(alternative) => {
+                if (beforeEdit() && search.adopt(alternative)) {
+                  setInspection(undefined);
+                  setInspector(undefined);
+                  host.current?.focus({ preventScroll: true });
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (map) setInspection({ map, selected: "candidate" });
+                const heading = document.getElementById(`${id}-maps`);
+                revealCanvasElement(heading, {
+                  block: "nearest",
+                  inline: "nearest",
+                });
+                heading?.focus({ preventScroll: true });
+              }}
+            >
+              Locate on maps
+            </button>
+          </section>
+        )}
+        <div className="study-plots">
+          {map ? (
+            <WorksheetResponseMaps
+              map={map}
+              review={search.review}
+              heading={`${id}-maps`}
+              selected={currentInspection}
+              select={(selected) => setInspection({ map, selected })}
+            />
+          ) : (
+            <p role="status">Maps unavailable: {unavailable}</p>
+          )}
+          <div className="study-links">
+            <button type="button" onClick={() => openSetup(true)}>
+              Add map
+            </button>
+            <button type="button" onClick={trace}>
+              Trace calculations
+            </button>
+            {fold && (
+              <button type="button" onClick={fold}>
+                Fold source equations
+              </button>
+            )}
+            <button type="button" onClick={remove}>
+              Remove study
+            </button>
+          </div>
+          <details className="study-sources">
+            <summary>Worksheet sources</summary>
+            <ul>
+              {studySources(page, spec).map((id) => (
+                <li key={id}>
+                  <button
+                    type="button"
+                    onClick={() => source(id)}
+                    aria-label={`Edit source: ${p.texts[id]}`}
+                  >
+                    {p.texts[id]}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      </div>
+    </section>
+  );
+}

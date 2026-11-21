@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { RegionSession, project } from "../src/regions/document.ts";
+import { archive, decodeWorkspace } from "../src/regions/artifacts.ts";
 import {
   captureDesign,
   designChoices,
@@ -212,7 +213,7 @@ const run = async () => {
   assert.equal(result.status, "success", result.reason);
   return result.value;
 };
-assert.equal(session.mapWorksheetDesign(railMapSpec).points.length, 625);
+assert.equal(mapDesignResponses(session.state, railMapSpec).points.length, 625);
 assert.equal(session.document, before, "Mapping is not an edit or a receipt");
 const first = await run();
 assert.equal(
@@ -242,6 +243,56 @@ session.adoptWorksheetDesign(await run(), false);
 assert.equal(project(session.state).texts.thickness, "thickness := 12 mm");
 session.undo();
 assert.equal(project(session.state).texts.thickness, "thickness := 15 mm");
+let runs = 0;
+const studyOwner = new RegionSession(
+  page,
+  undefined,
+  undefined,
+  [],
+  false,
+  undefined,
+  {
+    worksheetOptimizer: async () => {
+      runs++;
+      return checked();
+    },
+  },
+);
+const studyId = studyOwner.addResponseStudy(
+  railMapSpec,
+  { x: 560, y: 100 },
+  860,
+);
+const stored = studyOwner.state.plots[0];
+assert.equal(stored.id, studyId);
+assert.deepEqual(stored.study.axes[1], {
+  id: "thickness",
+  low: "5 mm",
+  high: "20 mm",
+});
+assert.deepEqual(
+  (await decodeWorkspace(archive(studyOwner.native()))).page.plots,
+  [stored],
+);
+assert.throws(
+  () => studyOwner.deleteRegions(["cost"]),
+  /plot or artifact references/,
+);
+assert.deepEqual(project(studyOwner.state).texts, project(page).texts);
+studyOwner.updateResponseStudy(studyId, { ...railMapSpec, reports: [] });
+assert.deepEqual(studyOwner.state.plots[0].study.reports, []);
+studyOwner.undo();
+assert.deepEqual(studyOwner.state.plots[0].study.reports, ["cost"]);
+studyOwner.removeResponseStudy(studyId);
+assert.equal(studyOwner.state.plots.length, 0);
+studyOwner.undo();
+assert.equal(studyOwner.state.plots[0].id, studyId);
+assert.equal(
+  runs,
+  0,
+  "Study creation, settings, archive and Undo never run optimization",
+);
+studyOwner.dispose();
 session.dispose();
 
 const py = (code, input) =>

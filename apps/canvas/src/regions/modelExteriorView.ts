@@ -1,5 +1,5 @@
 /** Source-backed exterior choices. These queries never change containment or bindings. */
-import { project, type Page } from "./document.ts";
+import { project, type Page, type CurvePlot } from "./document.ts";
 import {
   modelContents,
   type NestedModel,
@@ -19,10 +19,12 @@ export function exteriorSources(
 ) {
   const p = project(page),
     inside = modelContents(page, model.members);
-  const plots = page.plots.map((plot) => ({
-    id: plot.id,
-    label: `${p.statements.get(plot.output)?.name || "Unresolved output"} against ${p.statements.get(plot.input)?.name || "Unresolved input"}`,
-  }));
+  const plots = page.plots
+    .filter((plot): plot is CurvePlot => !plot.study)
+    .map((plot) => ({
+      id: plot.id,
+      label: `${p.statements.get(plot.output)?.name || "Unresolved output"} against ${p.statements.get(plot.input)?.name || "Unresolved input"}`,
+    }));
   if (kind === "response")
     return plots.filter((plot) => {
       const definition = page.plots.find((p) => p.id === plot.id)!;

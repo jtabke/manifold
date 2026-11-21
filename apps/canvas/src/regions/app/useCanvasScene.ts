@@ -217,8 +217,8 @@ export function useCanvasScene(o: Options) {
         id: p.id,
         kind: "plot" as const,
         ...(p.at || o.places[p.id]),
-        width: p.width,
-        height: p.height,
+        width: (p.study && cache.current.get(p.id)?.width) || p.width,
+        height: (p.study && cache.current.get(p.id)?.height) || p.height,
       })),
       ...o.artifacts
         .flatMap((a) => [a, ...(a.views || [])])

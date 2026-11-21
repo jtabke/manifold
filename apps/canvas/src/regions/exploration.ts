@@ -6,7 +6,7 @@ import {
   semanticKey,
   ancestors,
   type Page,
-  type Plot,
+  type CurvePlot,
 } from "./document.ts";
 export type Exploration = {
   input: string;
@@ -86,7 +86,7 @@ export function responseFor(
   page: Page,
   focus: string,
   symbol?: string,
-): Plot | undefined {
+): CurvePlot | undefined {
   const p = project(page),
     source =
       symbol && p.sources[symbol]?.length === 1 ? p.sources[symbol][0] : focus;

@@ -554,10 +554,12 @@ function BalanceCurve({
   const p = project(page),
     s = p.statements.get(input)!,
     q = p.solved.values.get(s.name)!;
-  const existing = page.plots.find((plot) => plot.input === input),
+  const existing = page.plots.find(
+      (plot) => !plot.study && plot.input === input,
+    ),
     delta = Math.abs(q.value) * 0.65 || 1,
-    low = existing?.low ?? q.value - delta,
-    high = existing?.high ?? q.value + delta;
+    low = existing && !existing.study ? existing.low : q.value - delta,
+    high = existing && !existing.study ? existing.high : q.value + delta;
   const points = useMemo(
     () => sampleBalance(page, balance, input, low, high),
     [page, balance.output, input, low, high],

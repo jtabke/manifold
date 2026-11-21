@@ -1,12 +1,12 @@
 import { useMemo, type ReactNode } from "react";
-import { curve, project, type Page, type Plot } from "../document";
+import { curve, project, type Page, type CurvePlot } from "../document";
 import { display, unitLabel } from "../../notebook/math";
 import { readCsv } from "../dataSources";
 import type { NestedModel } from "../models";
 import { exteriorSource } from "../modelExteriorView";
 import { ExternalReferenceView } from "./ExternalReferenceView";
 
-function ResponsePreview({ page, plot }: { page: Page; plot: Plot }) {
+function ResponsePreview({ page, plot }: { page: Page; plot: CurvePlot }) {
   const p = project(page),
     input = p.statements.get(plot.input),
     output = p.statements.get(plot.output);
@@ -108,7 +108,7 @@ export function ModelExteriorPreview({
       className={`mx-preview mx-${view.kind}`}
       data-exterior-source={source.id}
     >
-      {plot ? (
+      {plot && !plot.study ? (
         <ResponsePreview page={page} plot={plot} />
       ) : region?.external ? (
         <ExternalReferenceView

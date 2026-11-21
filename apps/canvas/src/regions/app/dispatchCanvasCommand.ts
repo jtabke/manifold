@@ -60,6 +60,7 @@ type CommandPorts = {
   };
   plots: {
     artifactsEnabled: boolean;
+    study: (output: string) => void;
     create: (
       output: string,
       input: string,
@@ -199,6 +200,9 @@ export function dispatchCanvasCommand(
           "Explore without changing the baseline. Accept the value, keep an alternative, or cancel.",
         );
       }
+      return;
+    case "response.study":
+      if (id) plots.study(id);
       return;
     case "response.plot":
       if (plots.artifactsEnabled)
