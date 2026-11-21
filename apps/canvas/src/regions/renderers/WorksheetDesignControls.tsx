@@ -215,6 +215,9 @@ export function DesignCandidate({
   adopt: (alternative: boolean) => void;
   heading?: Ref<HTMLHeadingElement>;
 }) {
+  const goal = review.rows.find((row) => row.id === review.goal);
+  const atBounds = review.rows.filter((row) => row.atBound);
+  const atLimits = review.limits.filter((limit) => limit.active);
   return (
     <section className="design-result">
       <h3 ref={heading} tabIndex={-1}>
@@ -274,10 +277,44 @@ export function DesignCandidate({
         </>
       )}
       <div className="design-adopt">
-        <button className="design-primary" onClick={() => adopt(false)}>
+        <section className="design-tradeoff" aria-label="Candidate trade-off">
+          <h4>Candidate trade-off</h4>
+          <ul>
+            {goal && (
+              <li>
+                <strong>{goal.name}</strong>: {goal.current} →{" "}
+                <strong>{goal.proposed}</strong>
+              </li>
+            )}
+            {atBounds.map((row) => (
+              <li key={row.id}>
+                <strong>{row.name}</strong> {row.atBound?.toLowerCase()} ·{" "}
+                {row.proposed}
+              </li>
+            ))}
+            {atLimits.map((limit) => (
+              <li key={limit.id}>
+                <strong>
+                  {limit.label.replaceAll("<=", "≤").replaceAll(">=", "≥")}
+                </strong>{" "}
+                · {limit.proposed} margin
+              </li>
+            ))}
+            {review.limits.length > 0 && !atLimits.length && (
+              <li>No selected requirement is at its limit.</li>
+            )}
+          </ul>
+        </section>
+        <button
+          type="button"
+          className="design-primary"
+          onClick={() => adopt(false)}
+        >
           Apply
         </button>
-        <button onClick={() => adopt(true)}>Keep as alternative</button>
+        <button type="button" onClick={() => adopt(true)}>
+          Keep as alternative
+        </button>
       </div>
     </section>
   );

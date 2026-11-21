@@ -32,6 +32,7 @@ export function WorksheetMapComparison({
   map,
   candidate,
   pins,
+  inspected,
   inspect,
   remove,
 }: {
@@ -39,15 +40,17 @@ export function WorksheetMapComparison({
   map: DesignResponseMap;
   candidate?: DesignMapPoint;
   pins: readonly MapPin[];
+  inspected?: MapPin;
   inspect: (pin: MapPin) => void;
   remove: (pin: MapPin) => void;
 }) {
-  const columns = [
+  const columns: { title: string; point: DesignMapPoint; pin?: MapPin }[] = [
     { title: "Current", point: map.current },
     ...(candidate ? [{ title: "Checked candidate", point: candidate }] : []),
     ...pins.map((pin) => ({
       title: `Sample ${pin.label}`,
       point: map.points[pin.index],
+      pin,
     })),
   ];
   const [goal, ...otherOutputs] = map.outputs.map((output, k) => ({
@@ -71,12 +74,12 @@ export function WorksheetMapComparison({
     return (
       <tr key={key + id}>
         <th scope="row">{name}</th>
-        {columns.map(({ title, point }, i) => {
+        {columns.map(({ title, point, pin }, i) => {
           const value = read(point);
           const delta =
             value === null || baseline === null ? NaN : value - baseline;
           return (
-            <td key={title}>
+            <td key={title} data-inspected={pin === inspected && !!pin}>
               {value === null ? "Undefined" : unitValue(value, unit)}
               {i > 0 && Number.isFinite(delta) && delta !== 0 && (
                 <small className="design-map-delta">
@@ -95,32 +98,28 @@ export function WorksheetMapComparison({
       id={id}
       aria-label="Compare designs"
     >
-      <div className="design-comparison-toolbar">
-        <p>Δ shows change from Current in the same units.</p>
-        <div className="design-map-buttons">
-          {pins.map((pin) => (
-            <div key={pin.label} className="design-pin-actions">
-              <button type="button" onClick={() => inspect(pin)}>
-                Inspect {pin.label}
-              </button>
-              <button
-                type="button"
-                aria-label={`Remove sample ${pin.label}`}
-                onClick={() => remove(pin)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
+      <p className="design-comparison-guide">
+        Δ shows change from Current in the same units.
+      </p>
       <table aria-label="Pinned design comparison">
         <thead>
           <tr>
             <th scope="col">Quantity</th>
-            {columns.map((c) => (
-              <th key={c.title} scope="col">
-                {c.title}
+            {columns.map(({ title, pin }) => (
+              <th key={title} scope="col" aria-label={title}>
+                {pin ? (
+                  <button
+                    type="button"
+                    className="design-compare-inspect"
+                    aria-label={`Inspect sample ${pin.label}`}
+                    aria-pressed={inspected === pin}
+                    onClick={() => inspect(pin)}
+                  >
+                    {title}
+                  </button>
+                ) : (
+                  title
+                )}
               </th>
             ))}
           </tr>
@@ -133,10 +132,10 @@ export function WorksheetMapComparison({
                 {label}
                 <small>Margin</small>
               </th>
-              {columns.map(({ title, point }) => {
+              {columns.map(({ title, point, pin }) => {
                 const margin = point.margins[k];
                 return (
-                  <td key={title}>
+                  <td key={title} data-inspected={pin === inspected && !!pin}>
                     <span data-pass={point.checks[k] ?? "unknown"}>
                       {requirementStatus(point, k)}
                     </span>
@@ -149,6 +148,25 @@ export function WorksheetMapComparison({
           {axes.map((quantity) => quantityRow(quantity, "axis:"))}
           {otherOutputs.map((quantity) => quantityRow(quantity, "output:"))}
         </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Pinned samples</th>
+            {columns.map(({ title, pin }) => (
+              <td key={title}>
+                {pin && (
+                  <button
+                    type="button"
+                    className="design-compare-remove"
+                    aria-label={`Remove sample ${pin.label}`}
+                    onClick={() => remove(pin)}
+                  >
+                    Remove
+                  </button>
+                )}
+              </td>
+            ))}
+          </tr>
+        </tfoot>
       </table>
     </section>
   );

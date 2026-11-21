@@ -80,6 +80,9 @@ export function useCanvasNavigation(
     | undefined
   >(undefined);
   const touches = useRef(new Map<number, { x: number; y: number }>());
+  const touchTap = useRef<
+    { pointer: number; target: Element; x: number; y: number } | undefined
+  >(undefined);
   const ignoreClick = useRef(false);
   const pending = useRef<
     { zoom: number; at?: { x: number; y: number } } | undefined
@@ -177,6 +180,7 @@ export function useCanvasNavigation(
   const end = useCallback(() => {
     const g = gesture.current;
     gesture.current = undefined;
+    touchTap.current = undefined;
     if (g) middleTap.current = undefined;
     if (g && canvas.current?.hasPointerCapture(g.pointer))
       canvas.current.releasePointerCapture(g.pointer);
@@ -331,6 +335,13 @@ export function useCanvasNavigation(
         return false;
       e.preventDefault();
       e.stopPropagation();
+      const target =
+        !hand && !held.current && !touches.current.size
+          ? (e.target as Element).closest("[data-canvas-tap]")
+          : null;
+      touchTap.current = target
+        ? { pointer: e.pointerId, target, x: e.clientX, y: e.clientY }
+        : undefined;
       touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       ignoreClick.current = true;
       setPanning(true);
@@ -379,6 +390,11 @@ export function useCanvasNavigation(
     if (touches.current.has(e.pointerId)) {
       e.preventDefault();
       e.stopPropagation();
+      const tap = touchTap.current;
+      if (tap?.pointer === e.pointerId) {
+        if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) <= 5) return true;
+        touchTap.current = undefined;
+      }
       const before = [...touches.current.values()].slice(0, 2);
       touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const after = [...touches.current.values()].slice(0, 2);
@@ -432,6 +448,26 @@ export function useCanvasNavigation(
       e.preventDefault();
       e.stopPropagation();
       setPanning(touches.current.size > 0);
+      const tap = touchTap.current;
+      touchTap.current = undefined;
+      // The canvas keeps pointer capture for swipes and pinches. Only forward
+      // a short, single-contact release that still hits the opted-in surface.
+      if (
+        tap?.pointer === e.pointerId &&
+        e.type === "pointerup" &&
+        Math.hypot(e.clientX - tap.x, e.clientY - tap.y) <= 5 &&
+        e.currentTarget.ownerDocument
+          .elementFromPoint(e.clientX, e.clientY)
+          ?.closest("[data-canvas-tap]") === tap.target
+      ) {
+        tap.target.dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            clientX: e.clientX,
+            clientY: e.clientY,
+          }),
+        );
+      }
       return true;
     }
     const g = gesture.current;

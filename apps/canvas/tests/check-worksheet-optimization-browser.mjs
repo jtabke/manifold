@@ -17,6 +17,7 @@ try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({
       viewport: { width, height: width === 390 ? 844 : 1000 },
+      hasTouch: width === 390,
     });
     const page = await context.newPage(),
       errors = [],
@@ -252,14 +253,22 @@ try {
       });
     const checkMobileFooters = async () => {
       for (const key of await localKeys.all()) {
-        await key.evaluate((legend) => {
+        const output = await key.evaluate(async (legend) => {
+          // Let any deferred comparison reveal settle before we move the camera.
+          await new Promise(requestAnimationFrame);
           const canvas = legend.closest(".er-canvas");
           const { top, height } = canvas.getBoundingClientRect();
           canvas.scrollTop +=
             legend.getBoundingClientRect().top - top - height / 2;
+          return legend.closest(".design-map-card").querySelector("h4")
+            .textContent;
         });
         await expect(maps.locator("[data-probe-stuck]")).toHaveCount(1);
-        await expect.poll(() => footerIsClear(key)).toBe(true);
+        await expect
+          .poll(() => footerIsClear(key), {
+            message: `${output} footer clears the sticky probe`,
+          })
+          .toBe(true);
       }
     };
     const inputs = study.getByRole("region", { name: "Study inputs" });
@@ -280,9 +289,48 @@ try {
         title.y < action.y + action.height && title.y + title.height > action.y,
         "Run shares the study identity row",
       );
+      await expect(maps.locator(".design-map-guide-compact")).toBeVisible();
+      await expect(maps.locator(".design-map-guide-compact")).toContainText(
+        "Tap to inspect",
+      );
       await expect.poll(() => footerIsClear(localKeys.first())).toBe(true);
     }
     await capture("worksheet-study-compact");
+    const massMap = maps.getByRole("img", { name: "mass response map" });
+    await expect(massMap).toHaveAccessibleDescription(
+      /use arrow keys to inspect/,
+    );
+    if (width === 390) {
+      const massHit = massMap.locator(".design-map-hit");
+      await massHit.tap();
+      await expect(maps.getByRole("status")).toContainText("Sampled design");
+      await expect(pin).toBeEnabled();
+      await maps.getByRole("button", { name: "Current", exact: true }).tap();
+      const top = await canvas.evaluate((el) => el.scrollTop);
+      const { x, y, width: w, height: h } = await massHit.boundingBox();
+      const center = { x: Math.round(x + w / 2), y: Math.round(y + h / 2) };
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [center],
+      });
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ ...center, y: center.y - 50 }],
+      });
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+      await cdp.detach();
+      await expect
+        .poll(() => canvas.evaluate((el) => el.scrollTop))
+        .toBeGreaterThan(top + 30);
+      await expect(maps.getByRole("status")).toContainText("Current design");
+      await canvas.evaluate((el, top) => {
+        el.scrollTop = top;
+      }, top);
+    }
     await fixedToggle.click();
     await expect(fixed).toContainText("span1 m");
     await expect(fixed).toContainText("force100 N");
@@ -417,6 +465,27 @@ try {
       "Sample A",
       "Sample B",
     ]);
+    const inspectA = comparisons.getByRole("button", {
+      name: "Inspect sample A",
+      exact: true,
+    });
+    const inspectB = comparisons.getByRole("button", {
+      name: "Inspect sample B",
+      exact: true,
+    });
+    const sampleBCoordinates = await cursors.first().getAttribute("d");
+    await expect(inspectB).toHaveAttribute("aria-pressed", "true");
+    if (width === 390) await inspectA.tap();
+    else await inspectA.press("Enter");
+    await expect(inspectA).toHaveAttribute("aria-pressed", "true");
+    await expect(inspectB).toHaveAttribute("aria-pressed", "false");
+    await expect(maps.locator(".design-map-probe")).toContainText("Sample A");
+    await expect(cursors.first()).toHaveAttribute("d", coordinates);
+    if (width === 390) await inspectB.tap();
+    else await inspectB.press("Enter");
+    await expect(inspectB).toHaveAttribute("aria-pressed", "true");
+    await expect(maps.locator(".design-map-probe")).toContainText("Sample B");
+    await expect(cursors.first()).toHaveAttribute("d", sampleBCoordinates);
     const massComparison = comparisons.getByRole("row").filter({
       has: page.getByRole("rowheader", { name: "mass", exact: true }),
     });
@@ -435,6 +504,10 @@ try {
     ]);
     assert(
       await comparisons.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    );
+    await expect(massComparison.getByRole("cell").last()).toHaveAttribute(
+      "data-inspected",
+      "true",
     );
     await capture("worksheet-map-comparison");
     const beforeTrial = await saved();
@@ -518,7 +591,7 @@ try {
     );
     await expect(hatch).toHaveAttribute("d", originalHatch);
     await expect(run).toBeEnabled();
-    await maps.getByRole("button", { name: "Inspect A", exact: true }).click();
+    await inspectA.click();
     await expect(maps.getByRole("status")).toContainText("Sample A");
     await expect(cursors.first()).toHaveAttribute("d", coordinates);
     await maps.getByRole("button", { name: "Remove sample A" }).click();
@@ -632,6 +705,18 @@ try {
           has: page.getByRole("rowheader", { name: "width", exact: true }),
         }),
       ).toContainText("25 mm");
+      const tradeoff = review.getByRole("region", {
+        name: "Candidate trade-off",
+      });
+      await expect(tradeoff.getByRole("listitem")).toHaveText([
+        /mass: 4\.68 kg → 2\.6465\d kg/,
+        "width at minimum · 25 mm",
+        "deflection ≤ 2 mm · ≈0 mm margin",
+      ]);
+      const apply = review.getByRole("button", { name: "Apply", exact: true });
+      await apply.scrollIntoViewIfNeeded();
+      await expect(tradeoff).toBeInViewport();
+      await capture("worksheet-candidate-tradeoff");
       await expect(outputs).toHaveText([
         "2.647 kg",
         "2 mm",

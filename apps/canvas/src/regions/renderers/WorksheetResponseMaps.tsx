@@ -571,6 +571,7 @@ export function WorksheetResponseMaps({
           map={map}
           candidate={candidate}
           pins={view.pins}
+          inspected={pinned}
           inspect={(pin) => select(pin.index)}
           remove={(pin) => {
             const pins = view.pins.filter((p) => p !== pin);
@@ -585,9 +586,12 @@ export function WorksheetResponseMaps({
       )}
       <div className="design-map-reading">
         <small className="design-map-guide" id={`${id}-guide`}>
-          {map.size} × {map.size} samples · Approximate boundaries
-          <span className="design-map-gesture">
-            . Select a point or use arrow keys to inspect.
+          <span className="design-map-guide-full">
+            {map.size} × {map.size} samples · Approximate boundaries. Select a
+            point or use arrow keys to inspect.
+          </span>
+          <span className="design-map-guide-compact" aria-hidden="true">
+            {map.size} × {map.size} · Approx. boundaries · Tap to inspect
           </span>
         </small>
         <MapMarkings requirements={map.requirements.length > 0} />
@@ -794,6 +798,7 @@ export function WorksheetResponseMaps({
                   height={plot.height}
                   fill="transparent"
                   className="design-map-hit"
+                  data-canvas-tap=""
                   onClick={pick}
                 />
               </svg>

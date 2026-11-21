@@ -858,6 +858,6 @@ export function reviewDesign(page: Page, c: Capture, candidate: Candidate) {
       value: next.value,
     };
   });
-  return immutable({ writes, rows, limits });
+  return immutable({ goal: c.spec.goal, writes, rows, limits });
 }
 export type DesignReview = ReturnType<typeof reviewDesign>;

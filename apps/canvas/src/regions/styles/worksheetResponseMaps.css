@@ -167,8 +167,7 @@
   display: none;
 }
 .design-map-inspect button,
-.design-limit-actions button,
-.design-pin-actions button {
+.design-limit-actions button {
   font-size: 0.82em;
 }
 .worksheet-design-controls
@@ -193,16 +192,8 @@
   border-radius: 6px;
   font-size: 0.8em;
 }
-.design-comparison-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin-bottom: 4px;
-}
-.design-comparison-toolbar p {
-  margin: 0;
+.design-comparison-guide {
+  margin: 0 0 4px;
   color: var(--canvas-muted);
 }
 .design-map-comparison table {
@@ -217,6 +208,9 @@
   vertical-align: top;
   overflow-wrap: anywhere;
 }
+.worksheet-design-controls .design-map-comparison thead th {
+  vertical-align: middle;
+}
 .worksheet-design-controls .design-map-comparison td:last-child {
   font-weight: inherit;
 }
@@ -226,12 +220,34 @@
 .design-map-comparison .design-margin-row {
   background: var(--canvas-bg);
 }
-.design-pin-actions {
-  display: flex;
-  gap: 2px;
+.worksheet-design-controls
+  .design-map-comparison
+  :is(.design-compare-inspect, .design-compare-remove) {
+  box-sizing: border-box;
+  max-width: 100%;
+  width: 100%;
+  padding-inline: 2px;
+  font: inherit;
+  overflow-wrap: anywhere;
 }
-.design-pin-actions button:last-child {
-  min-width: 30px;
+.worksheet-design-controls .design-map-comparison .design-compare-inspect {
+  border-color: var(--canvas-border);
+}
+.worksheet-design-controls
+  .design-map-comparison
+  .design-compare-inspect[aria-pressed="true"] {
+  background: var(--canvas-accent-tint);
+  border-color: var(--canvas-accent);
+  color: var(--canvas-accent);
+}
+.design-map-comparison td[data-inspected="true"] {
+  background: var(--canvas-accent-tint);
+}
+.design-map-comparison tfoot td {
+  border-bottom: 0;
+}
+.design-compare-remove {
+  color: var(--canvas-muted);
 }
 .design-map-announcement {
   position: absolute;
@@ -277,6 +293,9 @@
 .design-map-reading {
   gap: 3px 12px;
   margin: 10px 0 8px;
+}
+.design-map-guide-compact {
+  display: none;
 }
 .design-map-grid {
   display: grid;
@@ -457,13 +476,16 @@
   .design-map-reading {
     margin: 5px 0;
   }
-  .design-map-gesture {
+  .design-map-guide-full {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  .design-map-guide-compact {
+    display: inline;
   }
   .design-map-reading .design-map-key {
     display: none;

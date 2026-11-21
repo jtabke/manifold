@@ -132,6 +132,25 @@
   gap: 8px;
   margin-top: 12px;
 }
+.design-tradeoff {
+  box-sizing: border-box;
+  flex: 1 0 100%;
+  min-width: 0;
+  padding: 6px 9px;
+  border-inline-start: 3px solid var(--canvas-accent);
+  border-radius: 6px;
+  background: var(--canvas-bg);
+}
+.design-adopt .design-tradeoff h4 {
+  margin: 0 0 4px;
+}
+.design-tradeoff ul {
+  margin: 0;
+  padding-inline-start: 1.15em;
+  font-size: max(1em, 1rem);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
 :is(.worksheet-optimization, .worksheet-design-controls) [role="alert"] {
   color: var(--canvas-danger);
 }
