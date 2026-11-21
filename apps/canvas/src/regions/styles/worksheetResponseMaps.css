@@ -1,14 +1,7 @@
 .design-maps {
-  --design-map-low: color-mix(
-    in oklab,
-    var(--canvas-bg) 78%,
-    var(--canvas-success)
-  );
-  --design-map-high: color-mix(
-    in oklab,
-    var(--canvas-warning) 60%,
-    var(--canvas-text)
-  );
+  /* Value scale, independent of the pass/fail overlays. */
+  --design-map-low: #3267c6;
+  --design-map-high: #e76568;
   padding: 12px 0;
   border-bottom: 1px solid var(--canvas-border);
 }
