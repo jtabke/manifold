@@ -13,6 +13,7 @@ export type WorkspaceMemory = ModelLocation & {
   document: string;
   selected?: string;
   selection: string[];
+  pinnedResults?: string[];
   cameras: Record<string, Camera>;
   history: ModelLocation[];
   system?: {
@@ -88,8 +89,9 @@ export function restoreMemory(
       !scope(value.scope)
     )
       return;
+    const regions = new Set(page.regions.map((r) => r.id));
     const ids = new Set([
-      ...page.regions.map((r) => r.id),
+      ...regions,
       ...page.plots.map((p) => p.id),
       ...(page.models || []).map((m) => m.id),
       ...(page.dataRelations || []).map((r) => r.id),
@@ -109,6 +111,17 @@ export function restoreMemory(
             .filter((id: unknown) => typeof id === "string" && ids.has(id))
             .slice(0, 256)
         : [],
+      ...(Array.isArray(value.pinnedResults)
+        ? {
+            pinnedResults: [
+              ...new Set<string>(
+                value.pinnedResults.filter(
+                  (id: unknown) => typeof id === "string" && regions.has(id),
+                ),
+              ),
+            ].slice(0, 256),
+          }
+        : {}),
       cameras: Object.fromEntries(
         Object.entries(value.cameras || {}).filter(
           ([key, c]) => (key === "root" || scope(key)) && camera(c as Camera),

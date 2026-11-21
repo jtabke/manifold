@@ -13,11 +13,13 @@ import {
   display,
   references,
   relationGlyph,
+  quantityLiteral,
   type Statement,
   type Expression,
 } from "../../notebook/math";
 import { project } from "../document";
 import type { Quantity } from "../../notebook/math";
+import type { TraceRow } from "../worksheetTrace";
 import {
   numberScrubAttributes,
   useNumberScrub,
@@ -26,6 +28,7 @@ import {
 } from "../interaction/useNumberScrub";
 import { mathSource, caretInSpan, type SourceSpan } from "../editing";
 import { sourceSpans } from "../editing";
+import { WorksheetRadical } from "./WorksheetRadical";
 
 const m = (
   tag: string,
@@ -106,12 +109,15 @@ export function MathLine(props: MathLineProps) {
     props.selectOnClick,
     props.inspectSymbols,
     props.highlightExpression,
+    props.trace,
+    props.traceValues,
     describeScrub(props.scrub),
     names.map((name) => {
       const id =
-        props.resolved?.sources[name]?.length === 1
+        props.trace?.terms[name]?.id ??
+        (props.resolved?.sources[name]?.length === 1
           ? props.resolved.sources[name][0]
-          : undefined;
+          : undefined);
       return [
         name,
         props.highlight === name || !!props.highlights?.has(name),
@@ -126,7 +132,8 @@ export function MathLine(props: MathLineProps) {
   return useMemo(() => {
     const controls = new Map(
       names.flatMap((name) => {
-        const id = props.resolved?.sources[name]?.[0],
+        const id =
+            props.trace?.terms[name]?.id ?? props.resolved?.sources[name]?.[0],
           q = id && props.scrubSource?.(id)?.quantity;
         return id && q ? [[id, q] as const] : [];
       }),
@@ -183,6 +190,8 @@ function MathLineContent({
   scrub,
   resolved,
   scrubSource,
+  trace,
+  traceValues,
   highlight,
   highlightExpression,
   highlights,
@@ -199,6 +208,8 @@ function MathLineContent({
   edit: (span?: { start: number; end: number }) => void;
   scrub?: Scrub;
   resolved?: ReturnType<typeof project>;
+  trace?: TraceRow;
+  traceValues?: boolean;
   scrubSource?: (id: string) => Scrub | undefined;
   highlight?: string;
   highlights?: Set<string>;
@@ -302,6 +313,57 @@ function MathLineContent({
     substitute = true,
     span?: SourceSpan,
   ): ReactNode => {
+    const term =
+      (substitute || statement.relation !== "=") && trace?.terms[name];
+    if (term && span) {
+      const active = trace?.active === term.id;
+      const attrs = {
+        ...sourceProps(span),
+        "data-trace-use": active ? term.id : undefined,
+        "data-symbol": name,
+      };
+      const scrub =
+        active && term.editable && traceValues
+          ? scrubSource?.(term.id)
+          : undefined;
+      if (scrub)
+        return m(
+          "mrow",
+          numberControl(
+            `trace:${term.id}:${span.start}`,
+            `Vary ${name} in ${statement.name}: ${display(term.value)}`,
+            display(term.value),
+            { scrub, edit: () => choose(name) },
+            "Drag to vary its source · arrow keys to nudge",
+          ),
+          attrs,
+        );
+      return m(
+        "mrow",
+        traceValues ? m("mtext", display(term.value)) : notation(name),
+        {
+          ...attrs,
+          className: "er-term",
+          role: "button",
+          tabIndex: 0,
+          "aria-label": `Trace ${name} in ${statement.name}: ${display(term.value)}`,
+          onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            choose(name);
+          },
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              choose(name);
+            }
+          },
+        },
+      );
+    }
+    // Resolved names can switch focus; an unresolved name must never jump
+    // to a guessed definition.
+    if (trace) return m("mrow", notation(name), sourceProps(span));
     const id =
       resolved?.sources[name]?.length === 1
         ? resolved.sources[name][0]
@@ -387,6 +449,22 @@ function MathLineContent({
     const mapped = source.expressions.get(e)!;
     if (e.kind === "number") {
       const span = spans[number++];
+      if (trace) {
+        const port = trace.definition;
+        if (!port?.editable || number !== 1 || !scrub)
+          return m("mn", e.value, sourceProps(mapped.span));
+        return m(
+          "mrow",
+          numberControl(
+            "trace-source",
+            `Vary ${port.name}: ${display(port.value)}`,
+            e.value,
+            { scrub, edit: () => choose(port.name) },
+            "Drag to vary its source · arrow keys to nudge",
+          ),
+          sourceProps(mapped.span),
+        );
+      }
       return m(
         "mrow",
         numberControl(`literal:${number}`, `Edit value ${e.value}`, e.value, {
@@ -408,7 +486,12 @@ function MathLineContent({
       // Keep the transformed operator linked to its authored function name;
       // arguments retain their own precise source spans and interactions.
       const operator = sourceProps(mapped.operator);
-      if (e.name === "sqrt") return m("msqrt", expression(e.args[0]), operator);
+      if (e.name === "sqrt")
+        return (
+          <WorksheetRadical source={operator}>
+            {expression(e.args[0])}
+          </WorksheetRadical>
+        );
       if (e.name === "cbrt")
         return m("mroot", [expression(e.args[0]), m("mn", "3")], operator);
       if (e.name === "abs")
@@ -485,7 +568,10 @@ function MathLineContent({
                 (e.left.kind === "binary" ||
                   e.left.kind === "unary" ||
                   (e.left.kind === "call" && e.left.name === "exp") ||
-                  (e.left.kind === "number" && e.left.value < 0)),
+                  (e.left.kind === "number" && e.left.value < 0) ||
+                  (!!traceValues &&
+                    e.left.kind === "name" &&
+                    !!trace?.terms[e.left.name])),
             ),
             { key: "l" },
           ),
@@ -538,6 +624,13 @@ function MathLineContent({
         key: "e",
         className: highlightExpression ? "er-linked-expression" : "",
         "data-expression-for": statement.name,
+        // Literal assignments have no separate result badge.
+        "data-trace-origin":
+          trace?.definition &&
+          !statement.anonymous &&
+          quantityLiteral(statement.expression)
+            ? trace.definition.id
+            : undefined,
       }),
     ]),
     {
@@ -631,10 +724,11 @@ function MathLineContent({
         if (drag.current?.pointer === event.pointerId) cancelSelection();
       },
       onDoubleClick: (event: React.MouseEvent) => {
-        if (selectOnClick && directEdit) event.stopPropagation();
+        if (trace || (selectOnClick && directEdit)) event.stopPropagation();
       },
       onClick: (event: React.MouseEvent) => {
-        if (selectOnClick && !event.altKey && event.detail < 2) return;
+        if (!trace && selectOnClick && !event.altKey && event.detail < 2)
+          return;
         if (directEdit) event.stopPropagation();
         if (drag.current) return;
         if (suppressClick.current) {

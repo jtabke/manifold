@@ -1,0 +1,129 @@
+.er-trace-host {
+  position: sticky;
+  left: 0;
+  bottom: 0;
+  height: 0;
+  width: 100%;
+  z-index: 22;
+  pointer-events: none;
+}
+/* A traced line is its actual notation and result, not the default writing width.
+   The user can pan long working; the selection outline must enclose all of it. */
+.er-region[data-trace-row],
+.er-region[data-trace-row] > .er-math-line,
+.er-region[data-trace-row] > .er-math-line math {
+  width: max-content;
+  max-width: none;
+}
+.er-trace-wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.er-trace-wires :is([data-trace-wire], [data-trace-trunk], [data-trace-lead]) {
+  fill: none;
+  stroke: var(--canvas-accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.er-app .er-region :is([data-trace-use], [data-trace-origin]) {
+  color: var(--canvas-accent);
+  background: var(--canvas-accent-tint);
+  border-radius: 3px;
+  box-shadow: inset 0 -1px currentColor;
+}
+.er-region[data-trace-row].is-selected .er-result:not([data-trace-origin]) {
+  color: var(--canvas-text);
+}
+.er-trace-tray {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: min(310px, calc(100% - 24px));
+  box-sizing: border-box;
+  max-height: min(310px, 40dvh);
+  overflow: auto;
+  pointer-events: auto;
+  border: 1px solid var(--canvas-border);
+  border-radius: 9px;
+  background: var(--canvas-surface);
+  box-shadow: 0 4px 18px var(--canvas-shadow);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.er-trace-tray header,
+.er-trace-modes,
+.er-trace-inputs,
+.er-trace-source,
+.er-trace-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.er-trace-tray h2 {
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+}
+.er-trace-tray header span,
+.er-trace-inputs > span,
+.er-trace-tray small {
+  font-weight: 400;
+  color: var(--canvas-muted);
+  overflow-wrap: anywhere;
+}
+.er-trace-tray header h2 + button {
+  margin-left: auto;
+}
+.er-trace-host button {
+  font-size: 12px;
+}
+.er-trace-inputs button {
+  border: 1px solid var(--canvas-border);
+  border-radius: 1em;
+  padding: 3px 9px;
+}
+.er-trace-tray button[aria-pressed="true"] {
+  background: var(--canvas-accent-tint);
+  color: var(--canvas-accent);
+}
+.er-trace-inputs button[aria-pressed="true"] {
+  border-color: var(--canvas-accent);
+}
+.er-trace-source {
+  min-height: 28px;
+}
+.er-trace-tray .er-trace-value {
+  font-size: 14px;
+  padding: 3px 6px;
+  color: var(--canvas-accent);
+  overflow-wrap: anywhere;
+}
+.er-trace-tray button.er-trace-value {
+  border-bottom: 1px dotted currentColor;
+  cursor: ew-resize;
+  touch-action: pan-y;
+  user-select: none;
+}
+.er-trace-value b {
+  font-variant-numeric: tabular-nums;
+}
+.er-trace-links button,
+.er-trace-tray details {
+  font-size: 12px;
+  color: var(--canvas-muted);
+}
+.er-trace-tray details button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.er-trace-tray summary {
+  cursor: pointer;
+}

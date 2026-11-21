@@ -321,6 +321,54 @@ provide keyboard/touch access. The chosen item is exposed temporarily so its nor
 are usable; Escape restores normal paint order. Panning keeps that attention intact. Search offers supported plot inputs, existing response
 views and recent commands for the current session, along with engineering objects.
 
+### Trace worksheet values
+
+Click a calculated result, or choose **Trace values** from a worksheet region’s commands.
+Trace opens on **Symbols** with one direct input selected. Pick another input in the
+inspector or click its symbol without replacing the equation. The wire runs through clear
+space to the actual term, approaching from above or below as the notation allows. For
+example, a source above a fraction can point down to its numerator. A wire breaks briefly
+at a square-root bar instead of painting over it. Repeated terms such as `I × I` share
+a trunk where they enter from the same side. If there is no clear approach, the term
+stays highlighted without a wire or a duplicate label.
+
+Choose **Values** for the numeric working, **Definition** to follow a calculated input,
+or **Show uses** for the places a source feeds directly. Connections stay in the list
+when offscreen or when no clear route fits. Unresolved names never get guessed wires.
+
+Drag a literal input in the inspector or its highlighted value in the equation to vary the
+source. Left and right arrows nudge it; Shift makes finer adjustments. On the default
+canvas, release to accept once, or press Escape during the gesture to cancel. One Undo
+restores the original value. Calculated results and CSV measurements are read-only here.
+Closing the inspector restores ordinary equation editing; tracing creates no links.
+
+### Live values in notes
+
+In a worksheet note, type `@` and a quantity name. Choose **Show value of …** instead of
+inserting its name, or press Alt+Enter with the quantity highlighted. To convert an
+existing name reference, edit the note, put the caret on the reference and choose
+**Show value**; **Show name** reverses it. Search for `@requirement` and choose the
+specific inequality to insert its bound and its **met / not met** status.
+
+For example, a Venturi note can read “At **7.5 kPa**, predicted flow is **7.697 L/s**.
+Minimum flow: **Q ≥ 6 L/s · met**.” Click a live reading to trace its worksheet source.
+During exploration, affected notes show **Preview**; canceling restores the accepted
+readings. An invalid source shows **Unavailable**, not its previous value.
+
+The editor shows `{{Q}}` for a value and, for example, `{{?Q_check}}` for a requirement.
+The note and its explicit identity links travel with the workspace, not copied numbers.
+Typing an unlinked name in braces does not run code or look up an object by name.
+Compact units such as kPa and L/s in these summaries do not change the worksheet source.
+
+### Pin a result while working elsewhere
+
+Choose **Pin in Results** from the value trace or the worksheet object’s commands.
+In **View → Panels → Results**, **Pin a value or requirement…** can add more. Pins
+stay visible as you pan or select another object, follow the active scenario, and
+mark previews. Click a reading to trace it or use its **Unpin** button to remove it.
+Pins are personal to this document in this browser: they resume on reload but are
+not saved into exported workspaces and don’t add document Undo entries.
+
 ## Explore alternatives
 
 Choose **Vary** on an assigned quantity to explore without changing saved values.

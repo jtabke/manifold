@@ -8,6 +8,7 @@ import type { ArtifactRuntime } from "../artifactComputations";
 import type { Area } from "../areaLayout";
 import type { EditBuffers } from "../app/workspaceFiles";
 import { useEditBuffer } from "../app/useEditBuffer";
+import { ReferencedNote } from "./ReferencedNote";
 export type MathRenderer = (
   statement: Statement,
   text: string,
@@ -19,6 +20,8 @@ export type EditorProps = {
   area: Area;
   page: Page;
   current: Page;
+  previewInput?: string;
+  traceValues?: (id: string) => void;
   artifacts: Artifact[];
   selection?: string;
   session: RegionSession;
@@ -226,7 +229,23 @@ function EquationEditor(props: EditorProps & { bound: Page; notes: boolean }) {
               </div>
             ) : (
               <p className="mw-note" onClick={() => start(r.id)}>
-                {p.texts[r.id] || "Write a thought or equation…"}
+                {p.texts[r.id] ? (
+                  <ReferencedNote
+                    text={p.texts[r.id]}
+                    links={bound.links?.[r.id] ?? {}}
+                    projection={p}
+                    labelFor={(id) =>
+                      p.statements.get(id)?.name ??
+                      bound.regions.find((r) => r.id === id)?.data?.name ??
+                      "Unavailable reference"
+                    }
+                    previewInput={readonly ? undefined : props.previewInput}
+                    open={select}
+                    trace={readonly ? undefined : props.traceValues}
+                  />
+                ) : (
+                  "Write a thought or equation…"
+                )}
               </p>
             )}
             {p.errors.has(r.id) && (

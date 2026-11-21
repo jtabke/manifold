@@ -42,6 +42,8 @@ type SimpleOperation =
   | "mathematics.enable-v3"
   | "quantity.vary"
   | "quantity.trace"
+  | "quantity.trace-values"
+  | "quantity.pin-result"
   | "context.compare"
   | "dataset.inspect"
   | "dataset.connect"
@@ -489,6 +491,22 @@ export function resolveCommands(
           keywords: ["inspect", "trace", "source", "uses"],
         },
       );
+      if (definition && t.kind !== "plot")
+        add("quantity.pin-result", "Pin in Results", "inspect", undefined, {
+          keywords: ["watch", "pin", "result", "requirement"],
+          preview:
+            "Keep this value or requirement in the Results panel while working elsewhere.",
+        });
+      if (t.kind !== "plot")
+        add("quantity.trace-values", "Trace values", "inspect", undefined, {
+          unavailable: !p.statements.has(
+            (t.kind === "term" ? t.owner : t.id) ?? "",
+          )
+            ? "Choose a parsed worksheet expression to trace."
+            : undefined,
+          preview: "Follow scalar definitions to the terms that use them.",
+          keywords: ["values", "dependencies", "inputs", "uses"],
+        });
       add("context.compare", "Try alternative", "compare", undefined, {
         toolbar: ["result", "plot"].includes(t.kind) ? "Compare" : undefined,
         unavailable: c.previewActive

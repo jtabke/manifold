@@ -12,6 +12,7 @@ import { ancestors, type Page, type Point, type Projection } from "../document";
 import type { DataSelection } from "../dataFeedback";
 import type { DatasetComputation, DatasetStates } from "../datasetModel";
 import { matchesMeasurementText } from "../dataSources";
+import type { WorksheetTrace } from "../worksheetTrace";
 import type { Scrub } from "../interaction/useNumberScrub";
 import {
   commandSubject,
@@ -145,6 +146,10 @@ type SheetProps = {
     maxWidth: number;
   };
   math: {
+    trace?: {
+      plan: WorksheetTrace;
+      inspect: (id: string) => void;
+    };
     scrubFor: (id: string) => Scrub | undefined;
     highlight?: string;
     expressionTarget?: string;
@@ -166,6 +171,7 @@ type SheetProps = {
     chooseTerm: (id: string, name: string) => void;
     inspectResult: (id: string, name: string) => void;
     navigateLink: (id: string) => void;
+    traceValues: (id: string) => void;
     revealSource: (id: string) => void;
   };
   data: SheetData;
@@ -259,6 +265,9 @@ export function WorksheetLayer({
       condition = p.solved.constraints.get(id),
       other = s && original?.solved.values.get(s.name),
       kind = p.kinds[id],
+      linkedNote =
+        !s && page.links?.[id] && Object.keys(page.links[id]).length > 0,
+      traceRow = math.trace?.plan.rows.get(id),
       effectiveText = p.texts[id],
       previewDependent =
         !!attention.previewInput &&
@@ -267,6 +276,7 @@ export function WorksheetLayer({
       <section
         key={id}
         data-region-id={id}
+        data-trace-row={traceRow ? "" : undefined}
         data-kind={kind}
         data-interaction={
           editing === id ? "editing" : selected === id ? "selected" : "idle"
@@ -282,7 +292,9 @@ export function WorksheetLayer({
           actions.select(
             id,
             e.shiftKey,
-            !(e.target as Element).closest("button,[role=button],math"),
+            !(e.target as Element).closest(
+              "button,[role=button],.er-note,math",
+            ),
           )
         }
       >
@@ -383,12 +395,14 @@ export function WorksheetLayer({
               statement={s}
               text={effectiveText}
               inputVersion={version}
-              directEdit={attention.directEdit}
+              trace={traceRow}
+              traceValues={traceRow && math.trace?.plan.values}
+              directEdit={attention.directEdit && !traceRow}
               selectOnClick
               inspectSymbols={(page.dataRelations || []).some(
                 (r) => r.output === id,
               )}
-              linkSources={sources}
+              linkSources={traceRow ? undefined : sources}
               onSymbol={(name) => {
                 const r = (page.dataRelations || []).find(
                   (r) => r.output === id,
@@ -424,8 +438,18 @@ export function WorksheetLayer({
                 const source = sources[name]?.[0];
                 if (source) return actions.inspectSymbol(source);
               }}
-              choose={(name) => actions.chooseTerm(id, name)}
-              scrub={scrubFor(id)}
+              choose={(name) => {
+                const port =
+                  traceRow?.terms[name] ??
+                  (s.name === name ? traceRow?.definition : undefined);
+                if (port && math.trace) math.trace.inspect(port.id);
+                else actions.chooseTerm(id, name);
+              }}
+              scrub={
+                !traceRow || traceRow.definition?.editable
+                  ? scrubFor(id)
+                  : undefined
+              }
               resolved={
                 expansionId === id && kind === "equation" ? p : undefined
               }
@@ -454,6 +478,7 @@ export function WorksheetLayer({
                 <button
                   className={`er-result ${math.resultTarget === id ? "is-linked" : ""}`}
                   data-result-for={s.name}
+                  data-trace-origin={traceRow?.definition?.id}
                   aria-label={`Inspect result ${s.anonymous ? "expression" : s.name}`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -490,10 +515,15 @@ export function WorksheetLayer({
         ) : (
           <div
             className={`er-note ${kind === "draft" ? "er-draft" : ""}`}
-            role="button"
+            role={linkedNote ? "group" : "button"}
             tabIndex={0}
+            aria-keyshortcuts={linkedNote ? "Enter Space" : undefined}
             aria-label={
-              effectiveText ? `Edit thought: ${effectiveText}` : "Write here"
+              linkedNote
+                ? "Worksheet note. Press Enter to edit."
+                : effectiveText
+                  ? `Edit thought: ${effectiveText}`
+                  : "Write here"
             }
             onDoubleClick={() => editor.begin(id)}
             onKeyDown={(e) => {
@@ -508,8 +538,11 @@ export function WorksheetLayer({
               <ReferencedNote
                 text={effectiveText}
                 links={page.links?.[id] || {}}
-                labels={labels}
+                projection={p}
+                labelFor={(source) => labels[source] ?? "Unavailable reference"}
+                previewInput={attention.previewInput}
                 open={actions.navigateLink}
+                trace={actions.traceValues}
               />
             ) : (
               <span>Continue writing…</span>

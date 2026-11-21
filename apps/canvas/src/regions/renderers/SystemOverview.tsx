@@ -28,11 +28,10 @@ import {
   arrangeSystem,
   spaceArrangedModels,
   placeInvestigation,
-  routeConnection,
   routeLabel,
-  pathData,
   type ModelRect,
 } from "../systemPresentation";
+import { routeConnection, pathData } from "../orthogonalRoute";
 import type { AppearanceChange } from "./ModelAppearance";
 import { systemAssessment } from "../systemAssessment";
 import { planConnection } from "../linking";

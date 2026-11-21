@@ -1,0 +1,75 @@
+/* Inline results read like prose; focus, not a permanent card, exposes navigation. */
+.er-app .er-note-live {
+  display: inline;
+  padding: 0 0.12em;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--canvas-accent);
+  border: 0;
+  border-bottom: 1px dotted currentColor;
+  border-radius: 0;
+}
+.er-app button.er-note-live {
+  cursor: pointer;
+}
+.er-app :is(.er-note-live, .er-pinned-reading b)[data-pass="true"] {
+  color: var(--canvas-success);
+}
+.er-app :is(.er-note-live, .er-pinned-reading b)[data-pass="false"] {
+  color: var(--canvas-danger);
+}
+.er-readout-preview {
+  font: 11px sans-serif;
+  color: var(--canvas-muted);
+  margin-inline-start: 0.45em;
+}
+.er-reference-menu .er-note-format {
+  color: var(--canvas-accent);
+  justify-content: space-between;
+}
+.er-pinned-results {
+  padding: 8px 6px 14px;
+  border-bottom: 1px solid var(--canvas-border);
+  margin-bottom: 10px;
+}
+.er-pinned-results header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.er-pinned-results h3 {
+  font-size: 14px;
+  margin: 0;
+}
+.er-pinned-results ul {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+}
+.er-pinned-results li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-top: 1px solid var(--canvas-border);
+}
+.er-pinned-results .er-pinned-reading {
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  text-align: start;
+  padding: 7px 0;
+}
+.er-pinned-reading b {
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: auto;
+}
+.er-pinned-results select {
+  max-width: 100%;
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid var(--canvas-border);
+  background: var(--canvas-surface);
+  border-radius: 4px;
+  padding: 5px;
+}

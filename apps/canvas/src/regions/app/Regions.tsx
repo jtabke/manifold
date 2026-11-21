@@ -100,6 +100,8 @@ import {
   type Point,
   type ConnectionEdit,
 } from "../document";
+import { noteReferences } from "../noteReferences";
+import { mathematical } from "../worksheetProjection";
 import { responseFor } from "../exploration";
 import { ExplorationControls } from "../renderers/ExplorationControls";
 import {
@@ -142,6 +144,9 @@ import {
   type DataSelection,
 } from "../renderers/DatasetViews";
 import { useDatasetStates } from "./useDatasetStates";
+import { worksheetTrace, type TraceRequest } from "../worksheetTrace";
+import { PinnedResults } from "../renderers/PinnedResults";
+import { WorksheetTraceView } from "../renderers/WorksheetTrace";
 import { placeDataResult } from "../dataFeedback";
 import { DataRelationshipOverlay } from "../renderers/DataRelationshipOverlay";
 import { useRelationshipNavigation } from "../interaction/useRelationshipNavigation";
@@ -345,6 +350,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       return;
     }
   });
+  const [pinnedResults, setPinnedResults] = useState<string[]>(
+    () => resume?.pinnedResults ?? [],
+  );
   const csvFile = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (artifactMode && !saved.blocked && !session.isSaved) void saveLocal();
@@ -354,6 +362,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const trial = params.get("trial");
   const quiet = trial !== "baseline";
   const explicit = params.get("interaction") === "A";
+  const [traceRequest, setTraceRequest] = useState<TraceRequest>();
+  const traceSource = (source?: string, uses?: boolean) =>
+    setTraceRequest((t) => {
+      if (!t) return t;
+      const nextUses = uses ?? (source === t.source && !!t.uses);
+      return t.symbol === undefined &&
+        t.source === source &&
+        !!t.uses === nextUses
+        ? t
+        : { ...t, source, symbol: undefined, uses: nextUses };
+    });
   const {
     exploration,
     variation,
@@ -379,7 +398,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     explicit,
     scrubEnabled: !trial || trial === "scrub",
     select: (id) => {
-      if (!expansionId) setSelected(id);
+      if (traceRequest) traceSource(id);
+      else if (!expansionId) setSelected(id);
     },
     message: (text) => setMessage(text),
     compare: (value) => setComparison(value),
@@ -537,6 +557,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     | undefined
   >(undefined);
   const suppressCanvasClick = useRef(false);
+  const tracePress = useRef<Element | null>(null);
   const directDrag = useRef<number | undefined>(undefined);
   const [term, setTerm] = useState<string>(),
     [overlay, setOverlay] = useState<"none" | "dependencies" | "requirements">(
@@ -676,7 +697,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           ? page.contexts.at(-1)?.id
           : undefined;
   const expansionId =
-    trials.expand && !editing
+    trials.expand && !editing && !traceRequest
       ? term
         ? selectedId
         : overlay === "dependencies"
@@ -1005,6 +1026,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setTerm(undefined);
       setOverlay("none");
       setLinkMenu(undefined);
+      setTraceRequest(undefined);
       setModelTrace(undefined);
     },
     select: setSelected,
@@ -1138,6 +1160,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     if (!members.length) return;
     setModelReview({ members });
   };
+  const traceAvailable = !editing && !systemActive && areaCanvasVisible;
+  const valueTrace = useMemo(
+    () =>
+      traceAvailable && traceRequest
+        ? worksheetTrace(page, p, traceRequest)
+        : undefined,
+    [traceAvailable, traceRequest, page, p],
+  );
+  useEffect(() => {
+    if (traceRequest && !valueTrace) setTraceRequest(undefined);
+  }, [traceRequest, valueTrace]);
   const hiddenObjects = new Set(
     spatial.objectFrames
       .filter((f) => spatial.hidden.has(f.id) || !hierarchy.visible(f.id))
@@ -1475,7 +1508,18 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const commit = (continuation = false) => {
     if (!editing) return true;
     const draft = writing.text,
-      draftLinks = writing.links;
+      links = writing.links;
+    // An @ suggestion deleted before the first commit is not a new binding.
+    const draftLinks =
+      Object.keys(links).length &&
+      !mathematical(
+        draft,
+        page.regions.find((r) => r.id === editing)?.mathVersion ?? 1,
+      )
+        ? Object.fromEntries(
+            noteReferences(draft, links).map((r) => [r.alias, r.id]),
+          )
+        : links;
     let result: ReturnType<RegionSession["write"]>;
     try {
       result = session.atomic((staged) => {
@@ -1734,7 +1778,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   });
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if (isCanvasControlEvent(event)) return;
+      // Trace has no private edit history: configured workspace shortcuts (in
+      // particular Undo) still apply, but object keys like Delete must not.
+      const inTrace =
+        event.target instanceof Element &&
+        !!event.target.closest(".er-trace-tray");
+      if (!inTrace && isCanvasControlEvent(event)) return;
       const active = (event.target as HTMLElement).closest(
         "input,textarea,select,[role=separator],[contenteditable=true]",
       );
@@ -1745,6 +1794,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         performShortcut(shortcut);
         return;
       }
+      if (inTrace) return;
       if (
         !active &&
         ((event.shiftKey &&
@@ -1933,6 +1983,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             canvas.current.releasePointerCapture(gesture.pointerId);
           return;
         }
+        if (valueTrace && !exploration && !palette) {
+          setTraceRequest(undefined);
+          return;
+        }
         if (canvasSelection.length) {
           setCanvasSelection([]);
           setSelected(undefined);
@@ -1999,6 +2053,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     scope: hierarchy.scope,
     selected,
     selection: canvasSelection,
+    pinnedResults,
     cameras: hierarchy.cameras,
     history: hierarchy.history,
     initial:
@@ -2536,6 +2591,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     );
   };
   const inspectConnections = (source: string, at?: Point) => {
+    setTraceRequest(undefined);
     revealAreaCanvas.current?.();
     setSelected(source);
     setTerm(undefined);
@@ -2719,6 +2775,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     editBuffers,
     page,
     current: working,
+    previewInput: exploration?.input,
+    traceValues: (id) => openValueTrace(id),
     artifacts,
     selection: areaSelection || selectedId,
     session,
@@ -2951,6 +3009,46 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       ),
       { block: "nearest", inline: "nearest" },
     );
+  const openValueTrace = (id: string, symbol?: string) => {
+    if (!p.statements.has(id) || !finishCommandEdit()) return;
+    if (spatial.hidden.has(id)) {
+      setMessage("Expand the group to reveal this definition.");
+      return;
+    }
+    revertExploration();
+    setLinkMenu(undefined);
+    setTerm(undefined);
+    setOverlay("none");
+    setDataSelection(undefined);
+    setArtifactFocus(undefined);
+    revealAreaCanvas.current?.();
+    setCanvasSelection([]);
+    setAreaSelection(id);
+    setSelected(id);
+    if (systemActive) followSystemQuantity(id);
+    else revealCommandObject(id);
+    setTraceRequest((old) => ({
+      root: id,
+      symbol,
+      context: page.active,
+      values: old?.values ?? false,
+    }));
+  };
+  const pinResult = (id: string) => {
+    if (!accepted.statements.has(id)) return;
+    const side = panelSide(chrome.preferences.layout, "response"),
+      group = side && chrome.preferences.layout.groups[side];
+    if (
+      (!group || group.collapsed || group.active !== "response") &&
+      !chrome.show("response", true)
+    )
+      return;
+    setPinnedResults((ids) =>
+      ids.includes(id)
+        ? ids
+        : [...ids.filter((key) => page.regions.some((r) => r.id === key)), id],
+    );
+  };
   const dispatchCommand = (command: CommandRequest) =>
     dispatchCanvasCommand(command, {
       session,
@@ -2971,6 +3069,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           startVariation(id);
         },
         trace: inspectConnections,
+        traceValues: openValueTrace,
+        pinResult,
         compare: branchFor,
         reviewLink: (source, region, symbol, at) =>
           setLinkMenu({
@@ -3050,6 +3150,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     }
     setPalette(undefined);
     setActionMenu(undefined);
+    if (command.id !== "quantity.trace-values") setTraceRequest(undefined);
     try {
       command.run();
       setRecentCommands((recent) =>
@@ -3787,10 +3888,28 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               />
             ),
             response: (
-              <AreaEditor
-                {...canvasEditors}
-                area={{ id: "dock-response", editor: "response", weight: 1 }}
-              />
+              <>
+                {panelSide(chrome.preferences.layout, "response") && (
+                  <PinnedResults
+                    ids={pinnedResults}
+                    projection={p}
+                    previewInput={exploration?.input}
+                    add={pinResult}
+                    remove={(id) =>
+                      setPinnedResults((ids) => ids.filter((x) => x !== id))
+                    }
+                    trace={openValueTrace}
+                  />
+                )}
+                <AreaEditor
+                  {...canvasEditors}
+                  area={{
+                    id: "dock-response",
+                    editor: "response",
+                    weight: 1,
+                  }}
+                />
+              </>
             ),
             table: (
               <AreaEditor
@@ -3984,8 +4103,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               }}
               onAuxClickCapture={navigation.click}
               onPointerDownCapture={(e) => {
+                // Cancelling a scrub releases capture. A later pointer-up on the
+                // paper can retarget its click to the canvas, not to the control.
+                tracePress.current = (e.target as Element).closest(
+                  ".er-trace-tray, [data-trace-row] math",
+                );
                 // Portalled toolbars are React descendants, not canvas gestures.
-                if (!e.currentTarget.contains(e.target as Node)) return;
+                if (
+                  !e.currentTarget.contains(e.target as Node) ||
+                  (e.target as Element).closest(".er-trace-tray")
+                )
+                  return;
                 // Connection input is idle or owned by exactly one pointer, across both kinds.
                 if (dataGesture.current || linkGesture.current) {
                   e.preventDefault();
@@ -4031,7 +4159,16 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   e.stopPropagation();
                   return;
                 }
-                if (navigation.down(e)) return;
+                if (
+                  !(
+                    e.pointerType === "touch" &&
+                    (e.target as Element).closest(
+                      "[data-trace-use],[data-trace-origin]",
+                    )
+                  ) &&
+                  navigation.down(e)
+                )
+                  return;
                 lastCanvasPress.current = press;
                 if (overlaps.picked && object !== overlaps.picked)
                   overlaps.clear();
@@ -4143,7 +4280,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     "[data-region-id],[data-plot-id],[data-view-id],[data-tool-id],[data-data-relation-id],[data-model-id]",
                   )
                 ) {
-                  if (e.shiftKey) {
+                  if (
+                    e.shiftKey &&
+                    !target.closest("[data-trace-use],[data-trace-origin]")
+                  ) {
                     e.preventDefault();
                     if (editing) {
                       skipBlur.current = true;
@@ -4153,6 +4293,17 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 }
               }}
               onClickCapture={(e) => {
+                const traceStart = tracePress.current;
+                tracePress.current = null;
+                if (
+                  e.detail &&
+                  traceStart &&
+                  !traceStart.contains(e.target as Node)
+                ) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
                 if (navigation.click(e)) return;
                 if (suppressCanvasClick.current) {
                   suppressCanvasClick.current = false;
@@ -4163,7 +4314,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 if (
                   !e.shiftKey ||
                   (e.target as Element).closest(
-                    "input,textarea,[contenteditable],[data-source-row],[data-measurement-row],[data-calculated-row]",
+                    "input,textarea,[contenteditable],[data-source-row],[data-measurement-row],[data-calculated-row],[data-trace-use],[data-trace-origin]",
                   )
                 )
                   return;
@@ -4905,6 +5056,16 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                                 <p className="er-link-definition">
                                   {accepted.texts[linkMenu.source]}
                                 </p>
+                                {menuSource && (
+                                  <button
+                                    className="er-link-row"
+                                    onClick={() =>
+                                      openValueTrace(linkMenu.source)
+                                    }
+                                  >
+                                    Trace values <ArrowUpRight size={14} />
+                                  </button>
+                                )}
                                 {connectionNodes.map((node) => (
                                   <button
                                     className="er-link-row"
@@ -5337,6 +5498,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                         maxWidth: (viewportWidth - 24) / zoom,
                       }}
                       math={{
+                        trace: valueTrace
+                          ? {
+                              plan: valueTrace,
+                              inspect: traceSource,
+                            }
+                          : undefined,
                         scrubFor,
                         highlight:
                           linkedName ||
@@ -5384,6 +5551,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                       }}
                       actions={{
                         select: (id, shift, clearDetail) => {
+                          if (
+                            valueTrace &&
+                            id !== valueTrace.root &&
+                            !valueTrace.rows.has(id)
+                          )
+                            setTraceRequest(undefined);
                           if (!shift) setCanvasSelection([id]);
                           setSelected(id);
                           setAreaSelection(id);
@@ -5413,9 +5586,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                             setArtifactFocus({ id: a.id, target: "context" });
                             setSelected(id);
                             setTerm(undefined);
-                          } else chooseTerm(id, name);
+                          } else if (trials.expand) openValueTrace(id);
+                          else chooseTerm(id, name);
                         },
                         navigateLink,
+                        traceValues: openValueTrace,
                         revealSource: revealWorksheetObject,
                       }}
                       commands={{
@@ -5837,6 +6012,25 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   </div>
                 </div>
               </div>
+              {valueTrace && (
+                <WorksheetTraceView
+                  trace={valueTrace}
+                  canvas={canvas}
+                  mode={(values) =>
+                    setTraceRequest((t) => t && { ...t, values })
+                  }
+                  focus={traceSource}
+                  follow={openValueTrace}
+                  pin={() => pinResult(valueTrace.root)}
+                  close={() => {
+                    revertExploration();
+                    setTraceRequest(undefined);
+                  }}
+                  scrubFor={scrubFor}
+                  version={acceptedDocument}
+                  nameFor={(id) => p.statements.get(id)?.name ?? id}
+                />
+              )}
             </div>
             {selectionBounds && !editing && !marquee && !spatial.moving() && (
               <CanvasSelectionToolbar

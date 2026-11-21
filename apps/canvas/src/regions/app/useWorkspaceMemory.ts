@@ -20,6 +20,7 @@ export function useWorkspaceMemory(o: {
   scope?: string;
   selected?: string;
   selection: string[];
+  pinnedResults: string[];
   cameras: Map<string, Camera>;
   history: WorkspaceMemory["history"];
   initial?: WorkspaceMemory;
@@ -64,6 +65,9 @@ export function useWorkspaceMemory(o: {
         },
         selected: next.selected,
         selection: next.selection,
+        ...(next.pinnedResults.length
+          ? { pinnedResults: next.pinnedResults }
+          : {}),
         cameras: Object.fromEntries(next.cameras),
         history: next.history,
         ...(next.system ? { system: next.system } : {}),
@@ -112,6 +116,7 @@ export function useWorkspaceMemory(o: {
       o.scope,
       o.selected,
       o.selection,
+      o.pinnedResults,
       o.history,
       o.stable,
       o.system?.open,

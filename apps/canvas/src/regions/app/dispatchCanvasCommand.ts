@@ -47,6 +47,8 @@ type CommandPorts = {
     edit: (id: string, span?: { start: number; end: number }) => void;
     vary: (id: string) => void;
     trace: (id: string, at?: Point) => void;
+    traceValues: (id: string, symbol?: string) => void;
+    pinResult: (id: string) => void;
     compare: (id?: string) => void;
     reviewLink: (
       source: string,
@@ -224,6 +226,19 @@ export function dispatchCanvasCommand(
           worksheet.pickLink(id);
         else worksheet.pickLink(undefined, id);
       }
+      return;
+    }
+    case "quantity.pin-result":
+      if (id) worksheet.pinResult(id);
+      return;
+    case "quantity.trace-values": {
+      // Start at the consuming expression, not a possibly broken term binding.
+      const root = target.kind === "term" ? target.owner : id;
+      if (root)
+        worksheet.traceValues(
+          root,
+          target.kind === "term" ? target.symbol : undefined,
+        );
       return;
     }
     case "quantity.trace":

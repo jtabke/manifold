@@ -14,6 +14,7 @@ export {
   type Projection,
 } from "./worksheetProjection.ts";
 import { sameJson } from "./immutableJson.ts";
+import { noteReferences } from "./noteReferences.ts";
 import { PageEdit } from "./pageEdits.ts";
 import { readScene, sceneCommands } from "./sceneRecords.ts";
 import type { CanvasScene } from "./canvasScene.ts";
@@ -804,7 +805,10 @@ export class RegionSession {
       if (Object.keys(bindings).length)
         (next.links ||= {})[id] = Object.fromEntries(
           Object.entries(bindings).map(([alias, target]) => [
-            names.get(target) || alias,
+            // Prose aliases are authored text, not mathematical variable names.
+            projection.kinds[region.id] === "note"
+              ? alias
+              : names.get(target) || alias,
             mapping.get(target) || target,
           ]),
         );
@@ -837,6 +841,16 @@ export class RegionSession {
           "Other regions depend on this selection. Select the dependent regions too, or disconnect them first.",
         );
     }
+    if (
+      Object.entries(next.links ?? {}).some(
+        ([owner, bindings]) =>
+          !removed.has(owner) &&
+          Object.values(bindings).some((id) => removed.has(id)),
+      )
+    )
+      throw Error(
+        "Other regions reference this selection. Remove the references or select those regions too.",
+      );
     if (
       next.regions.some(
         (r) => !removed.has(r.id) && r.source && removed.has(r.source.dataset),
@@ -1118,6 +1132,31 @@ export class RegionSession {
       }
     }
     if (bindings) Object.assign(edit.links(id), clone(bindings));
+    // Removing the last authored occurrence releases its old prose link. Keep
+    // links still present in a frozen scenario, and never discard unchecked input.
+    const priorLinks = this.state.links?.[id];
+    if (
+      priorLinks &&
+      !unchanged &&
+      !mathematical(text, region.mathVersion ?? 1)
+    ) {
+      const used = new Set(
+        [
+          region.text,
+          ...next.contexts.flatMap((c) => [c.base[id], c.overrides[id]]),
+        ].flatMap((t) =>
+          t ? noteReferences(t, priorLinks).map((r) => r.alias) : [],
+        ),
+      );
+      for (const [alias, target] of Object.entries(priorLinks))
+        if (!used.has(alias) && next.links?.[id]?.[alias] === target)
+          delete edit.links(id)[alias];
+      if (
+        !Object.keys(next.links![id]).length &&
+        next.links !== this.state.links
+      )
+        delete next.links![id];
+    }
     try {
       const after = parse(text, id, region.mathVersion ?? 1);
       const before = project(this.state).statements.get(id);
@@ -1139,6 +1178,9 @@ export class RegionSession {
             after.name,
           );
         for (const r of next.regions) {
+          // Prose displays the current source name by ID; rewriting its aliases
+          // could capture an unrelated word or an unlinked {{token}} on rename.
+          if (previous.kinds[r.id] === "note") continue;
           const aliases = new Set(
             Object.entries({
               ...previous.bindings[r.id],

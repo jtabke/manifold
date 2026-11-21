@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 import { display } from "../../notebook/math";
+import { noteReferences, noteToken, freeNoteAlias } from "../noteReferences";
+import { worksheetReadout } from "../worksheetReadout";
+import { mathematical } from "../worksheetProjection";
 import { type Page, project } from "../document";
 import { sourceSpans } from "../editing";
 import { quantityDescription } from "../linking";
@@ -66,24 +69,41 @@ export function RegionEditor({
   const mention = !mentionDismissed
     ? /@([A-Za-z_0-9 ]*)$/.exec(draft.slice(0, caret))
     : null;
+  const prose = !mathematical(
+    mention
+      ? draft.slice(0, caret - mention[0].length) + "x" + draft.slice(caret)
+      : draft,
+    page.regions.find((r) => r.id === id)?.mathVersion ?? 1,
+  );
+  const atReference =
+    !mention && prose && Object.keys(draftLinks).length
+      ? noteReferences(draft, draftLinks).find(
+          (r) => r.start <= caret && caret <= r.end,
+        )
+      : undefined;
+  const atReading = atReference && worksheetReadout(accepted, atReference.id);
   const mentionCandidates = mention
     ? page.regions
         .filter((r) => {
           const s = accepted.statements.get(r.id);
-          if (
-            r.data &&
-            !/^\s*[A-Za-z_][A-Za-z_0-9]*\s*(?::=|=|<=|>=|<|>|≤|≥)/.test(draft)
-          )
+          if (r.id === id) return false;
+          if (prose && s && s.relation !== "=")
+            return ("requirement " + accepted.texts[r.id])
+              .toLowerCase()
+              .includes(mention[1].toLowerCase().trim());
+          if (r.data && prose)
             return r.data.name
               .toLowerCase()
               .includes(mention[1].toLowerCase().trim());
           return (
-            r.id !== id &&
             s?.relation === "=" &&
             accepted.sources[s.name]?.length === 1 &&
             !accepted.errors.has(r.id) &&
             accepted.solved.values.has(s.name) &&
-            `${s.name} ${quantityDescription(s.name)}`
+            (s.anonymous && prose
+              ? `expression ${accepted.texts[r.id]}`
+              : `${s.name} ${quantityDescription(s.name)}`
+            )
               .toLowerCase()
               .includes(mention[1].toLowerCase().trim())
           );
@@ -91,26 +111,48 @@ export function RegionEditor({
         .slice(0, 8)
     : [];
   useEffect(() => setMentionIndex(0), [mention?.[1]]);
-  const insertReference = (source: string) => {
-    if (!mention) return;
-    const evidence = page.regions.find((r) => r.id === source)?.data;
-    let name =
-      accepted.statements.get(source)?.name ||
-      `data_${(evidence?.name || "source").replace(/\.csv$/i, "").replace(/[^A-Za-z_0-9]/g, "_")}`;
-    if (evidence) {
-      const base = name;
-      let n = 2;
-      while (draftLinks[name] && draftLinks[name] !== source)
-        name = `${base}_${n++}`;
-    }
-    const start = caret - mention[0].length,
-      end = start + name.length;
-    setDraft(draft.slice(0, start) + name + draft.slice(caret));
-    setDraftLinks((bindings) => ({ ...bindings, [name]: source }));
-    setCaret(end);
-    setSelectionSpan({ start: end, end });
+  const replaceText = (start: number, end: number, token: string) => {
+    const next = start + token.length;
+    setDraft(draft.slice(0, start) + token + draft.slice(end));
+    setCaret(next);
+    setSelectionSpan({ start: next, end: next });
     setMentionDismissed(false);
   };
+  const changeReference = () => {
+    if (atReference && atReading)
+      replaceText(
+        atReference.start,
+        atReference.end,
+        noteToken(
+          atReference.alias,
+          atReference.mode === "name" ? atReading.kind : "name",
+        ),
+      );
+  };
+  const insertReference = (source: string, live = false) => {
+    if (!mention) return;
+    const evidence = page.regions.find((r) => r.id === source)?.data;
+    const reading = worksheetReadout(accepted, source);
+    const base =
+      reading?.kind === "status"
+        ? reading.name + "_check"
+        : prose && accepted.statements.get(source)?.anonymous
+          ? "result"
+          : accepted.statements.get(source)?.name ||
+            `data_${(evidence?.name || "source").replace(/\.csv$/i, "").replace(/[^A-Za-z_0-9]/g, "_")}`;
+    const name = prose ? freeNoteAlias(base, source, draftLinks) : base;
+    const mode =
+      prose && reading && (live || reading.kind === "status")
+        ? reading.kind
+        : "name";
+    replaceText(caret - mention[0].length, caret, noteToken(name, mode));
+    setDraftLinks((bindings) => ({ ...bindings, [name]: source }));
+  };
+  const highlighted = mentionCandidates[mentionIndex];
+  const canInsertValue =
+    prose &&
+    highlighted &&
+    accepted.statements.get(highlighted.id)?.relation === "=";
 
   return (
     <>
@@ -146,6 +188,12 @@ export function RegionEditor({
           // Let the input method finish its text before treating
           // Enter, Escape or arrows as canvas commands.
           if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+          if (e.altKey && e.key === "Enter" && (canInsertValue || atReading)) {
+            e.preventDefault();
+            if (canInsertValue) insertReference(highlighted.id, true);
+            else changeReference();
+            return;
+          }
           if (
             mention &&
             (e.key === "Escape" ||
@@ -217,45 +265,93 @@ export function RegionEditor({
       </small>
       {mention && (
         <div
-          id="er-reference-options"
           className="er-reference-menu"
-          role="listbox"
-          aria-label="Reference an object"
           onPointerDown={(e) => e.preventDefault()}
         >
-          {mentionCandidates.map((candidate, index) => {
-            const definition = accepted.statements.get(candidate.id),
-              value = definition && accepted.solved.values.get(definition.name);
-            return (
-              <button
-                id={`er-reference-${candidate.id}`}
-                key={candidate.id}
-                role="option"
-                aria-selected={index === mentionIndex}
-                onClick={() => insertReference(candidate.id)}
-              >
-                <strong>{definition?.name || candidate.data?.name}</strong>
-                <span>
-                  {definition
-                    ? quantityDescription(definition.name)
-                    : "Evidence reference"}
-                </span>
-                <small>
-                  {value
-                    ? display(value)
-                    : candidate.data
-                      ? "Not a calculation input"
-                      : ""}
-                </small>
-              </button>
-            );
-          })}
-          {!mentionCandidates.length && (
-            <small role="status">
-              No matching resolved quantities. Keep writing or press Esc to
-              dismiss.
-            </small>
+          <div
+            id="er-reference-options"
+            role="listbox"
+            aria-label="Reference an object"
+          >
+            {mentionCandidates.map((candidate, index) => {
+              const definition = accepted.statements.get(candidate.id),
+                value =
+                  definition?.relation === "=" &&
+                  accepted.solved.values.get(definition.name),
+                requirement = definition && definition.relation !== "=";
+              return (
+                <button
+                  id={`er-reference-${candidate.id}`}
+                  key={candidate.id}
+                  role="option"
+                  aria-selected={index === mentionIndex}
+                  onClick={() => insertReference(candidate.id)}
+                >
+                  <strong>
+                    {requirement || (prose && definition?.anonymous)
+                      ? accepted.texts[candidate.id]
+                      : definition?.name || candidate.data?.name}
+                  </strong>
+                  <span>
+                    {requirement
+                      ? "Show status"
+                      : definition
+                        ? prose
+                          ? accepted.kinds[candidate.id] === "quantity"
+                            ? "Assigned value"
+                            : "Calculated value"
+                          : quantityDescription(definition.name)
+                        : "Evidence reference"}
+                  </span>
+                  <small>
+                    {value
+                      ? display(value)
+                      : candidate.data
+                        ? "Not a calculation input"
+                        : ""}
+                  </small>
+                </button>
+              );
+            })}
+            {!mentionCandidates.length && (
+              <small role="status">
+                No matching resolved quantities. Keep writing or press Esc to
+                dismiss.
+              </small>
+            )}
+          </div>
+          {canInsertValue && (
+            <button
+              type="button"
+              className="er-note-format"
+              onClick={() => insertReference(highlighted.id, true)}
+            >
+              Show value of{" "}
+              {accepted.statements.get(highlighted.id)?.anonymous
+                ? accepted.texts[highlighted.id]
+                : accepted.statements.get(highlighted.id)?.name}{" "}
+              <small>Alt+Enter</small>
+            </button>
           )}
+        </div>
+      )}
+      {atReference && atReading && (
+        <div
+          className="er-reference-menu"
+          onPointerDown={(e) => e.preventDefault()}
+        >
+          <button
+            type="button"
+            className="er-note-format"
+            onClick={changeReference}
+          >
+            {atReference.mode === "name"
+              ? atReading.kind === "status"
+                ? "Show status"
+                : "Show value"
+              : "Show name"}{" "}
+            <small>Alt+Enter</small>
+          </button>
         </div>
       )}
     </>

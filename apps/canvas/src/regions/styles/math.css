@@ -18,6 +18,19 @@
   flex-shrink: 0;
 }
 
+/* Native fallback remains available before measurement, in print and in forced colors. */
+@media screen and (forced-colors: none) {
+  .er-typeset-math msqrt[data-radical-painted] {
+    color: transparent;
+    background-image: var(--er-radical-image);
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+  }
+  .er-typeset-math msqrt[data-radical-painted] > [data-radicand] {
+    color: var(--er-radical-ink);
+  }
+}
+
 /* Results stay quieter than the authored equation and don't compete for space.
    Rows grow with tall notation; long expressions wrap the result, not the math. */
 .er-math-line:has(.er-typeset-math) {
