@@ -5,9 +5,11 @@ import {
   defaultAxis,
   type DesignSpec,
   type DesignReview,
+  type DesignRange,
 } from "../worksheetOptimization";
 import type { EditBuffers } from "../app/workspaceFiles";
 import { useEditBuffer } from "../app/useEditBuffer";
+import { WorksheetFeasibility } from "./WorksheetFeasibility";
 import "../styles/worksheetOptimization.css";
 
 export function WorksheetOptimizationDialog({
@@ -36,6 +38,7 @@ export function WorksheetOptimizationDialog({
     requirements: requirements.filter((r) => !r.error).map((r) => r.id),
     reports: [],
   }));
+  const [range, setRange] = useState<DesignRange>();
   const [review, setReview] = useState<DesignReview>(),
     [error, setError] = useState(""),
     [running, setRunning] = useState(false);
@@ -63,6 +66,12 @@ export function WorksheetOptimizationDialog({
       if (dialog.current) dialog.current.scrollTop = 0;
     }
   }, [review]);
+  useEffect(() => {
+    if (range)
+      dialog.current
+        ?.querySelector<HTMLElement>(".design-feasibility h3")
+        ?.focus();
+  }, [range]);
   useEditBuffer(buffers, id, {
     read: () => JSON.stringify(spec),
     finish: () => {
@@ -72,6 +81,7 @@ export function WorksheetOptimizationDialog({
   });
   const stale = session.document !== opened.document;
   const change = (next: Partial<DesignSpec>) => {
+    setRange(undefined);
     setReview(undefined);
     setError("");
     setSpec({ ...spec, ...next });
@@ -94,6 +104,16 @@ export function WorksheetOptimizationDialog({
         throw Error(result.reason.replace(/^Error: /, ""));
       setReview(result.value);
     } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  function scan() {
+    setError("");
+    try {
+      if (stale) throw Error("Worksheet changed. Close and reopen Optimize.");
+      setRange(session.scanWorksheetDesign(spec));
+    } catch (e) {
+      setRange(undefined);
       setError((e as Error).message);
     }
   }
@@ -204,6 +224,7 @@ export function WorksheetOptimizationDialog({
           </div>
         </section>
       )}
+      {range && !stale && <WorksheetFeasibility range={range} />}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -374,6 +395,11 @@ export function WorksheetOptimizationDialog({
         >
           Run
         </button>
+        {spec.axes.length === 1 && (
+          <button type="button" onClick={scan} disabled={running || stale}>
+            Scan range
+          </button>
+        )}
         {running && (
           <>
             <span role="status">Searching…</span>

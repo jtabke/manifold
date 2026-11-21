@@ -284,10 +284,12 @@ for (const lines of [
     maps(referenceCurve(input, plot)),
   );
   const stale = { ...input, links: { r2: { y: "missing" } } };
-  assert.deepEqual(
-    maps(engine.curve(stale, plot)),
-    maps(referenceCurve(stale, plot)),
-  );
+  // A broken explicit requirement link must not appear as a passing limit.
+  const { points, unit } = referenceCurve(input, plot);
+  assert.deepEqual(maps(engine.curve(stale, plot)), {
+    points: points.map(({ x, y }) => (y === undefined ? { x } : { x, y })),
+    unit: maps(unit),
+  });
 }
 // Every legal point shares preparation; no parser calls for any of 81 samples or repeated reads.
 page = make(["x = 2 m", "y = 3*x", "y <= 10 m", ...rows.slice(3)]);

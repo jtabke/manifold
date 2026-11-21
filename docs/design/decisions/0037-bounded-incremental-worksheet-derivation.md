@@ -38,6 +38,17 @@ substituted quantities and exploration metadata. Event delegates use latest comm
 scalar fallback data avoids retaining previous Page callbacks. It does not ignore handler changes
 behind a shallow React comparator. Other canvas coordination/rendering remains outside this boundary.
 
+### Scalar worksheet analysis
+
+Response plots and worksheet design search share a disposable bound scalar problem. It identifies
+inputs, outputs and requirements by worksheet ID and resolves them against the active scenario.
+The local probes reuse an admitted prepared calculation and compile its index once per series.
+A broken requirement link stays unavailable in a sweep; the plot does not silently read a
+same-named quantity. **Scan range** uses the same 81-point grid as a response plot, combining only
+the selected worksheet requirements. The numerical optimizer lowers the captured bindings to its
+existing closed graph; the worksheet still checks the proposed literal edit before adoption.
+No new authored record or stored result is needed.
+
 ### Row-aligned datasets
 
 A dataset selector keeps one result, diagnostic or pending task per current relation. A changed

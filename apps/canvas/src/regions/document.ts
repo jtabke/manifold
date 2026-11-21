@@ -76,6 +76,7 @@ import {
 import {
   captureDesign,
   reviewDesign,
+  scanDesignRange,
   type DesignExecutor,
   type DesignReview,
   type DesignSpec,
@@ -308,6 +309,11 @@ export class RegionSession {
   private readonly designExecutor?: DesignExecutor;
   private designJob?: { cancel: () => void };
   private designReviews = new WeakMap<DesignReview, FoundationDocument>();
+  scanWorksheetDesign(spec: DesignSpec) {
+    if (this.closed || this.staging || this.foundation.preview())
+      throw Error("Finish the current preview before scanning a design range.");
+    return scanDesignRange(this.state, spec);
+  }
   /** A worksheet design is a disposable computation, never an edit or a saved model. */
   optimizeWorksheet(spec: DesignSpec) {
     const execute = this.designExecutor;

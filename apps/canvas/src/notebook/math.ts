@@ -477,8 +477,27 @@ export function solvePrepared(
   overrides: Readonly<Record<string, Quantity>> = {},
   before?: CalculationState,
 ): CalculationState {
-  const index = indexPrepared(rows),
-    { statements, byName, errors, users } = index;
+  return solveIndexed(rows, indexPrepared(rows), overrides, before);
+}
+
+/** Repeated probes against the same admitted preparation don't rebuild its binding index. */
+export function compilePreparedSeries(baseline: CalculationState) {
+  const { rows } = baseline,
+    index = indexPrepared(rows);
+  let prior = baseline;
+  return (overrides: CalculationState["overrides"]): Solved => {
+    prior = solveIndexed(rows, index, overrides, prior);
+    return prior.solved;
+  };
+}
+
+function solveIndexed(
+  rows: readonly PreparedCalculation[],
+  index: ReturnType<typeof indexPrepared>,
+  overrides: CalculationState["overrides"],
+  before?: CalculationState,
+): CalculationState {
+  const { statements, byName, errors, users } = index;
   // Error paths and reordered definitions use a full pass to retain deterministic diagnostics.
   const reuse =
     before &&

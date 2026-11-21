@@ -14,6 +14,11 @@ import {
 import { immutable, readMap } from "../notebook/immutable.ts";
 import { deeplyFrozen } from "./immutableJson.ts";
 import type { Page, Region, Plot } from "./document.ts";
+import {
+  compileScalarProblem,
+  sampleScalarAxis,
+  type ScalarSelection,
+} from "./worksheetScalarProblem.ts";
 export type Projection = Readonly<{
   solved: Solved;
   statements: ReadonlyMap<string, Statement>;
@@ -72,7 +77,6 @@ type Snapshot = {
 function sample(
   p: Projection,
   state: CalculationState,
-  rows: readonly PreparedCalculation[],
   plot: { input: string; output: string; low: number; high: number },
   count: (n: number) => void,
 ): {
@@ -85,37 +89,37 @@ function sample(
   unit: Quantity | undefined;
 } {
   const input = p.statements.get(plot.input),
-    output = p.statements.get(plot.output),
-    quantity = input && p.solved.values.get(input.name);
+    output = p.statements.get(plot.output);
+  // A stale plot stays visible but has no data until its sources are resolved.
   if (
     !input ||
     !output ||
-    !quantity ||
+    input.relation !== "=" ||
     p.errors.has(plot.input) ||
     p.errors.has(plot.output) ||
-    p.sources[input.name]?.length !== 1
-  )
-    return immutable({
-      points: [] as { x: number; y?: number; limit?: number; pass?: boolean }[],
-      unit: undefined as Quantity | undefined,
-    });
+    p.sources[input.name]?.length !== 1 ||
+    p.sources[output.name]?.length !== 1 ||
+    !p.solved.values.has(input.name) ||
+    !p.solved.values.has(output.name)
+  ) {
+    return immutable({ points: [], unit: undefined });
+  }
   const condition = [...p.statements].find(
     ([, s]) => s.name === output.name && s.relation !== "=",
-  );
+  )?.[0];
+  const problem = compileScalarProblem(p, state, {
+    inputs: [plot.input],
+    outputs: [plot.output],
+    requirements: condition ? [condition] : [],
+  });
   let unit: Quantity | undefined;
-  const points = Array.from({ length: 81 }, (_, i) => {
-    const x = plot.low + ((plot.high - plot.low) * i) / 80;
-    state = solvePrepared(
-      rows,
-      { [input.name]: { ...quantity, value: x } },
-      state,
-    );
+  const points = sampleScalarAxis(plot.low, plot.high, (x) => {
+    const result = problem.at([x]),
+      q = result.values.get(plot.output);
     count(1);
-    const result = state.solved,
-      q = result.values.get(output.name);
-    if (!q || result.errors.has(plot.output)) return { x };
+    if (!q) return { x };
     unit = q;
-    const c = condition && result.constraints.get(condition[0]);
+    const c = condition ? result.requirements.get(condition) : undefined;
     return {
       x,
       y: q.absolute ? q.value - 273.15 : q.value,
@@ -406,6 +410,14 @@ export function createWorksheetProjection() {
           .sort(([a], [b]) => String(a).localeCompare(String(b))),
       ));
     },
+    scalarProblem(
+      page: Page,
+      selection: ScalarSelection,
+      context = page.active,
+    ) {
+      const { projection, state } = get(page, context);
+      return compileScalarProblem(projection, state, selection);
+    },
     curve(
       page: Page,
       plot: { input: string; output: string; low: number; high: number },
@@ -418,7 +430,6 @@ export function createWorksheetProjection() {
       const value = sample(
         entry.projection,
         entry.state,
-        entry.rows.filter((r) => r.kind !== "note").map((r) => r.semantic!),
         plot,
         (n) => (curveSamples += n),
       );
@@ -453,6 +464,7 @@ export function createWorksheetProjection() {
 }
 export const worksheetProjection = createWorksheetProjection();
 export const project = worksheetProjection.project;
+export const scalarProblem = worksheetProjection.scalarProblem;
 export const semanticKey = worksheetProjection.semanticKey;
 export const curve = (page: Page, plot: Plot, context = page.active) =>
   worksheetProjection.curve(page, plot, context);

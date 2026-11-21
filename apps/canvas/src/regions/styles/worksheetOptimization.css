@@ -133,3 +133,52 @@
 .worksheet-optimization [role="alert"] {
   color: var(--canvas-danger);
 }
+.worksheet-optimization .design-feasibility {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--canvas-border);
+}
+.worksheet-optimization .design-feasibility h3 {
+  scroll-margin-top: 55px;
+}
+.worksheet-optimization .design-feasibility p {
+  margin: 4px 0 8px;
+  color: var(--canvas-muted);
+}
+.worksheet-optimization .design-feasibility ul {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.worksheet-optimization .design-feasibility svg {
+  display: block;
+  width: 100%;
+  height: 12px;
+  margin: 4px 0;
+}
+.worksheet-optimization .design-sample-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.86em;
+}
+.worksheet-optimization .design-sample-key i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  background: currentColor;
+}
+.worksheet-optimization .sample-pass {
+  fill: var(--canvas-success);
+  color: var(--canvas-success);
+}
+.worksheet-optimization .sample-fail {
+  fill: var(--canvas-danger);
+  color: var(--canvas-danger);
+}
+.worksheet-optimization .sample-unknown {
+  fill: var(--canvas-muted);
+  color: var(--canvas-muted);
+}

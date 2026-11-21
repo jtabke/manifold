@@ -18,7 +18,12 @@ import {
   type Statement,
 } from "../notebook/math.ts";
 import { immutable } from "../notebook/immutable.ts";
-import { ancestors, project, type Page, type Projection } from "./document.ts";
+import { ancestors, project, type Page } from "./document.ts";
+import { scalarProblem } from "./worksheetProjection.ts";
+import {
+  resolvedScalar as resolved,
+  sampleScalarAxis,
+} from "./worksheetScalarProblem.ts";
 import { worksheetInputUnit } from "./worksheetInputUnit.ts";
 import { measurementUnit } from "./dataSources.ts";
 import { optimizationQuantity } from "./optimizationQuantities.ts";
@@ -45,15 +50,6 @@ export type DesignSpec = {
   requirements: string[];
   reports: string[];
 };
-function resolved(p: Projection, id: string) {
-  const s = p.statements.get(id),
-    q = s && p.solved.values.get(s.name);
-  assert(
-    s && q && !p.errors.has(id) && p.sources[s.name]?.length === 1,
-    `Resolve ${s?.name || "the selected quantity"} before optimizing.`,
-  );
-  return { s, q };
-}
 export function designChoices(page: Page, goal: string) {
   const p = project(page),
     related = new Set(ancestors(p, goal));
@@ -118,7 +114,7 @@ export function defaultAxis(
   };
 }
 
-export function captureDesign(page: Page, settings: DesignSpec) {
+function captureDesignProblem(page: Page, settings: DesignSpec) {
   const spec = structuredClone(settings),
     p = project(page);
   const goal = resolved(p, spec.goal);
@@ -164,20 +160,44 @@ export function captureDesign(page: Page, settings: DesignSpec) {
     return {
       id,
       name: s.name,
+      unit: unit.label,
       scale: unit.scale,
       suffix: unit.suffix,
       current: unit.fromBase(q.value),
       bounds,
     };
   });
+  for (const id of spec.requirements)
+    assert(
+      p.solved.constraints.has(id),
+      "Resolve the selected worksheet inequality before analysis.",
+    );
+  const problem = scalarProblem(page, {
+    inputs: axes.map((a) => a.id),
+    outputs: [spec.goal, ...spec.reports],
+    requirements: spec.requirements,
+  });
+  assert(
+    axes.every((a) =>
+      [spec.goal, ...spec.requirements].some(
+        (id) => id !== a.id && ancestors(p, id).includes(a.id),
+      ),
+    ),
+    "Each varied input must affect the goal or a selected requirement.",
+  );
+  return { spec, axes, problem };
+}
+
+export function captureDesign(page: Page, settings: DesignSpec) {
+  const { spec, axes, problem } = captureDesignProblem(page, settings);
   const { nodes, put } = numericDag(),
     cache = new Map<string, number>(),
     constant = (value: number) => put({ op: "const", value });
-  const varies = (id: string) =>
-    axes.some((a) => a.id === id || ancestors(p, id).includes(a.id));
+  const varies = (id: string | undefined) =>
+    id !== undefined && problem.varies(id);
   function row(id: string): number {
     if (cache.has(id)) return cache.get(id)!;
-    const { s, q } = resolved(p, id),
+    const { s, q } = problem.baselineValue(id),
       axis = axes.findIndex((a) => a.id === id);
     let index: number;
     if (axis >= 0) {
@@ -193,12 +213,12 @@ export function captureDesign(page: Page, settings: DesignSpec) {
     return index;
   }
   function expression(e: Expression, id: string, s: Statement): number {
-    const ref = (name: string) => p.bindings[id]?.[name];
+    const ref = (name: string) => problem.binding(id, name);
     const deps = references(e);
-    if (!deps.some((name) => ref(name) && varies(ref(name)))) {
+    if (!deps.some((name) => varies(ref(name)))) {
       const fixed = evaluate(
         e,
-        (name) => resolved(p, ref(name)).q,
+        (name) => problem.baselineValue(ref(name)!).q,
         s.mathVersion ?? 1,
       ).value;
       // Preserve the cap on wire literals without turning a valid product (48 * E) into an oversized literal.
@@ -211,7 +231,7 @@ export function captureDesign(page: Page, settings: DesignSpec) {
       )
         return constant(fixed);
     }
-    if (e.kind === "name") return row(ref(e.name));
+    if (e.kind === "name") return row(ref(e.name)!);
     if (e.kind === "unary")
       return put({ op: "neg", args: [expression(e.expression, id, s)] });
     if (e.kind === "call")
@@ -239,22 +259,11 @@ export function captureDesign(page: Page, settings: DesignSpec) {
     });
   }
   const output = row(spec.goal),
-    requirements = spec.requirements.map((id) => {
-      const { s } = resolved(p, id);
-      assert(
-        s.relation !== "=" && p.solved.constraints.has(id),
-        "Resolve the selected worksheet inequality before running.",
-      );
-      return {
-        left: row(p.bindings[id][s.name]),
-        right: expression(s.expression, id, s),
-        relation: s.relation,
-      };
-    });
-  assert(
-    axes.every((a) => cache.has(a.id)),
-    "Each varied input must affect the goal or a selected requirement.",
-  );
+    requirements = problem.requirements.map(({ id, s, subject, relation }) => ({
+      left: row(subject),
+      right: expression(s.expression, id, s),
+      relation,
+    }));
   const program: DesignProgram = { nodes, output, requirements },
     request = {
       version: DESIGN_VERSION,
@@ -269,6 +278,36 @@ export function captureDesign(page: Page, settings: DesignSpec) {
     };
   return immutable({ spec, axes, request });
 }
+export function scanDesignRange(page: Page, settings: DesignSpec) {
+  assert(settings.axes.length === 1, "Scan a single input range.");
+  const {
+    axes: [axis],
+    spec,
+    problem,
+  } = captureDesignProblem(page, settings);
+  const points = sampleScalarAxis(axis.bounds[0], axis.bounds[1], (x) => {
+    const result = problem.at([x * axis.scale]);
+    const checks = problem.requirements.map(
+      ({ id }) => result.requirements.get(id)?.pass ?? null,
+    );
+    const goalDefined = !!result.values.get(spec.goal);
+    // A known failure remains a failure even if another equation is undefined.
+    const pass = checks.includes(false)
+      ? false
+      : !goalDefined || checks.includes(null)
+        ? null
+        : true;
+    return { x, checks, pass };
+  });
+  return immutable({
+    input: axis.name,
+    unit: axis.unit,
+    labels: problem.requirements.map(({ s }) => s.raw),
+    points,
+  });
+}
+export type DesignRange = ReturnType<typeof scanDesignRange>;
+
 type Capture = ReturnType<typeof captureDesign>;
 type Candidate = { x: number[]; output: number };
 export type DesignExecutor = (

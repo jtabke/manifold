@@ -5,9 +5,11 @@ import {
   captureDesign,
   designChoices,
   reviewDesign,
+  scanDesignRange,
   decodeDesign,
 } from "../src/regions/worksheetOptimization.ts";
 import { shelfRail, railSpec, sagThickness } from "./shelf-rail.mjs";
+import { curve } from "../src/regions/worksheetProjection.ts";
 
 const page = shelfRail(),
   inputs = designChoices(page, "mass").inputs;
@@ -51,6 +53,71 @@ assert.throws(
       axes: [railSpec.axes[0], railSpec.axes[0]],
     }),
   /distinct/,
+);
+
+// The scan and worksheet response plot use the same point semantics.
+const range = scanDesignRange(page, railSpec);
+assert.equal(range.unit, "mm");
+assert.equal(range.points.length, 81);
+assert.deepEqual(
+  range.points.map((p) => p.pass),
+  range.points.map((p) => p.x >= sagThickness(40, 2)),
+);
+const response = curve(page, {
+  input: "thickness",
+  output: "deflection",
+  low: 0.005,
+  high: 0.02,
+});
+assert.deepEqual(
+  response.points.map((p) => p.pass),
+  range.points.map((p) => p.checks[0]),
+);
+const tighterRange = scanDesignRange(shelfRail("1 mm"), railSpec);
+assert.deepEqual(
+  tighterRange.points.map((p) => p.pass),
+  tighterRange.points.map((p) => p.x >= sagThickness(40, 1)),
+);
+assert(
+  scanDesignRange(shelfRail("0.01 mm"), railSpec).points.every(
+    (p) => p.pass === false,
+  ),
+);
+const sheet = {
+  ...page,
+  regions: [
+    ["input", "input := 3"],
+    ["response", "response := 1 / (input - 2)"],
+    ["limit", "response >= input - 3"],
+    ["other", "response < 0"],
+  ].map(([id, text]) => ({ id, text, mathVersion: 3 })),
+};
+const responseRange = scanDesignRange(sheet, {
+  goal: "response",
+  mode: "minimize",
+  axes: [{ id: "input", low: "1", high: "4" }],
+  requirements: ["limit"],
+  reports: [],
+});
+assert(
+  responseRange.points.some((p) => p.pass === true),
+  "Unselected failed requirements are not enforced",
+);
+const singular = scanDesignRange(sheet, {
+  goal: "response",
+  mode: "minimize",
+  axes: [{ id: "input", low: "0", high: "4" }],
+  requirements: ["limit", "other"],
+  reports: [],
+});
+assert.deepEqual(singular.points[40], {
+  x: 2,
+  checks: [null, null],
+  pass: null,
+});
+assert(singular.points.some((p) => p.pass === false));
+assert(
+  Object.isFrozen(singular) && Object.isFrozen(singular.points[40].checks),
 );
 
 const session = new RegionSession(

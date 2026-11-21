@@ -82,6 +82,39 @@ try {
       "Opening or configuring must not probe or run",
     );
     const before = await saved();
+    const scan = dialog.getByRole("button", {
+        name: "Scan range",
+        exact: true,
+      }),
+      feasibility = dialog.getByRole("region", { name: "Sampled feasibility" });
+    await scan.click();
+    await expect(feasibility.getByRole("heading")).toBeFocused();
+    await expect(feasibility).toContainText("11.5625 mm and 11.75 mm");
+    await expect(
+      feasibility.locator("li").filter({ hasText: "stress <= allowable" }),
+    ).toContainText("75 of 81 samples pass");
+    assert.equal(
+      requests.length,
+      0,
+      "Feasibility uses the worksheet, not the optimizer",
+    );
+    assert.deepEqual(await saved(), before);
+    assert(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth));
+    await captureEvidence(page, {
+      path: new URL(
+        `../screenshots/worksheet-feasibility-${width}.png`,
+        import.meta.url,
+      ).pathname,
+      animations: "disabled",
+    });
+    await dialog.getByLabel("Maximum for thickness").fill("8 mm");
+    await expect(feasibility).toHaveCount(0);
+    await scan.click();
+    await expect(feasibility.locator("li").first()).toContainText(
+      "0 of 81 samples pass",
+    );
+    await dialog.getByLabel("Maximum for thickness").fill("2 cm");
+    await expect(feasibility).toHaveCount(0);
     await dialog.getByRole("button", { name: "Run", exact: true }).click();
     const capability = await context.request.get(
       base + "/api/optimizer/capability",
@@ -165,6 +198,7 @@ try {
         );
       } else {
         await dialog.getByRole("button", { name: "Add second input" }).click();
+        await expect(scan).toHaveCount(0);
         await expect(preview).toHaveCount(
           0,
           "Editing settings invalidates the preview",
@@ -222,7 +256,7 @@ try {
     await context.close();
   }
   console.log(
-    "Worksheet Actions → Optimize, desktop and 390 px: explicit review before adoption.",
+    "Worksheet Actions → Optimize, desktop and 390 px: local feasibility scan, no writes until adoption.",
   );
 } finally {
   await browser.close();

@@ -625,7 +625,13 @@ is needed. For example, to find the lightest simply supported shelf rail for a f
    A positive requirement margin is room to spare; **At limit** identifies a near-binding
    requirement, not permission to exceed it. A tighter sag limit can mean a thicker rail.
 
-This is a bounded local search using the [optional SciPy runtime](../development/README.md#optional-numerical-runtime),
+With one varied input, **Scan range** checks 81 points across the same bounds using worksheet
+math. It shows combined feasibility and a separate strip for each checked requirement, including
+where the first sampled pass/fail change falls. Undefined points do not count as passing.
+The scan works without SciPy, does not offer a design to apply, and does not certify the intervals
+between points. Editing a setting clears the old scan.
+
+Optimization is a bounded local search using the [optional SciPy runtime](../development/README.md#optional-numerical-runtime),
 not a proof of a global optimum or of physical safety. **No feasible candidate found** means
 this search did not find one, not that none exists. No result changes the worksheet by itself.
 **Apply** changes the varied inputs together; **Keep as alternative** activates a new scenario
