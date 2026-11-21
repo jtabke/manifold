@@ -295,7 +295,7 @@ export function WorksheetResponseStudy({
       {fixed.length > 0 && (
         <details className="study-fixed">
           <summary>Fixed inputs ({fixed.length})</summary>
-          <dl className="study-summary" aria-label="Fixed inputs">
+          <dl className="study-fixed-values" aria-label="Fixed inputs">
             {fixed.map(({ id, name, value }) => (
               <div key={id}>
                 <dt>

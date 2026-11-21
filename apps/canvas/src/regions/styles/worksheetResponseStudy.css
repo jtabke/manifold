@@ -84,12 +84,42 @@
   width: fit-content;
   cursor: pointer;
 }
-.study-fixed .study-summary {
-  margin-top: 2px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12ch), 1fr));
+.study-fixed-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 2px 0 0;
+  font-size: 0.78rem;
 }
-.study-fixed dd {
-  padding-inline: 4px;
+.study-fixed-values > div {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 8px 0 3px;
+  border-radius: 5px;
+  background: var(--canvas-bg);
+}
+.study-fixed-values :is(dt, dd) {
+  min-width: 0;
+  margin: 0;
+}
+.study-fixed-values dd {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.er-response-study .study-fixed-values button {
+  min-height: 28px;
+  max-width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  color: var(--canvas-muted);
+  font: inherit;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .study-body {
   display: grid;

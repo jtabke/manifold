@@ -196,6 +196,24 @@ try {
     await expect(
       fixed.getByRole("button", { name: /width|thickness/ }),
     ).toHaveCount(0);
+    const fixedLayout = await fixed.evaluate((list) => {
+      const rect = list.getBoundingClientRect();
+      const entries = [...list.children].map((entry) =>
+        entry.getBoundingClientRect(),
+      );
+      return {
+        rows: new Set(entries.map((entry) => entry.top)).size,
+        compact: entries.every((entry) => entry.height <= 32),
+        fits: entries.every(
+          (entry) => entry.left >= rect.left && entry.right <= rect.right,
+        ),
+      };
+    });
+    assert.deepEqual(fixedLayout, {
+      rows: width === 390 ? 2 : 1,
+      compact: true,
+      fits: true,
+    });
     await capture("worksheet-fixed-inputs");
     await fixed
       .getByRole("button", { name: "Edit fixed input force", exact: true })
