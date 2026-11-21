@@ -11,6 +11,7 @@ import {
   evaluate,
   references,
   quantityLiteral,
+  passes,
   same,
   display,
   type Expression,
@@ -25,7 +26,7 @@ import {
   sampleScalarAxis,
 } from "./worksheetScalarProblem.ts";
 import { worksheetInputUnit } from "./worksheetInputUnit.ts";
-import { measurementUnit } from "./dataSources.ts";
+import { measurementUnit, parseLiteralQuantity } from "./dataSources.ts";
 import { optimizationQuantity } from "./optimizationQuantities.ts";
 import {
   numericDag,
@@ -400,13 +401,13 @@ function requirementUnits(p: ReturnType<typeof project>, id: string) {
     { bound } = p.solved.constraints.get(id)!;
   const source =
     s.expression.kind === "name" && p.bindings[id][s.expression.name];
-  const { label, scale } = worksheetInputUnit(
+  const units = worksheetInputUnit(
     source
       ? p.statements.get(source)
       : { ...s, raw: s.raw.replace(/<=|>=|≤|≥|<|>/, ":=") },
     bound,
   );
-  return { label, scale, marginUnit: bound.absolute ? "K" : label };
+  return { ...units, marginUnit: bound.absolute ? "K" : units.label };
 }
 
 export type DesignMargin = {
@@ -447,8 +448,15 @@ export type DesignMapPoint = {
   pass: boolean | null;
 };
 
-/** A bounded grid of actual worksheet probes, not a solver run or a persisted artifact. */
-export function mapDesignResponses(page: Page, settings: DesignSpec) {
+export type DesignLimitPreview = { id: string; text: string };
+
+/** A bounded grid of actual worksheet probes, not a solver run or a persisted artifact.
+ * An optional fixed-limit preview changes the comparison, never the worksheet values. */
+export function mapDesignResponses(
+  page: Page,
+  settings: DesignSpec,
+  preview?: DesignLimitPreview,
+) {
   assert(settings.axes.length === 2, "Choose two inputs to map.");
   const {
     axes: [xAxis, yAxis],
@@ -460,11 +468,44 @@ export function mapDesignResponses(page: Page, settings: DesignSpec) {
     ({ id, s, relation, subject }) => ({
       id,
       label: s.raw,
+      name: s.name,
       relation,
       subject,
       units: requirementUnits(p, id),
+      bound: p.solved.constraints.get(id)!.bound,
+      fixed: !references(s.expression).some((name) =>
+        problem.varies(problem.binding(id, name) ?? ""),
+      ),
     }),
   );
+  let trial:
+    | { id: string; bound: Quantity; label: string; text: string }
+    | undefined;
+  if (preview) {
+    const requirement = requirements.find((r) => r.id === preview.id);
+    assert(requirement?.fixed, "Choose a requirement with a fixed limit.");
+    const input = preview.text.trim();
+    assert(
+      input.length > 0 && input.length <= 256,
+      "Enter a limit with compatible units.",
+    );
+    const text = /^[+−-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+−-]?\d+)?$/i.test(input)
+      ? `${input} ${requirement.units.suffix}`.trim()
+      : input;
+    const bound = parseLiteralQuantity(text);
+    assert(
+      Number.isFinite(bound.value) &&
+        same(bound.dimension, requirement.bound.dimension) &&
+        !!bound.absolute === !!requirement.bound.absolute,
+      `Enter a finite limit compatible with ${requirement.units.label || "a dimensionless value"}.`,
+    );
+    trial = {
+      id: preview.id,
+      bound,
+      text,
+      label: `${requirement.name} ${requirement.relation} ${text}`,
+    };
+  }
   const defaults = [
     ...new Set([spec.goal, ...problem.requirements.map((r) => r.subject)]),
   ];
@@ -514,7 +555,18 @@ export function mapDesignResponses(page: Page, settings: DesignSpec) {
         return Number.isFinite(value) ? value : null;
       },
     );
-    const checked = requirements.map(({ id }) => constraint(id));
+    const checked = requirements.map(({ id, subject, relation }) => {
+      if (trial?.id !== id) return constraint(id);
+      const actual = values(subject),
+        { bound } = trial;
+      if (
+        !actual ||
+        !same(actual.dimension, bound.dimension) ||
+        !!actual.absolute !== !!bound.absolute
+      )
+        return undefined;
+      return { bound, pass: passes(relation, actual.value, bound.value) };
+    });
     const checks = checked.map((c) => c?.pass ?? null);
     const margins = requirements.map(({ subject, relation, units }, k) => {
       const bound = checked[k]?.bound,
@@ -554,11 +606,18 @@ export function mapDesignResponses(page: Page, settings: DesignSpec) {
     size,
     points,
     outputs,
-    requirements: requirements.map(({ id, label, units }) => ({
-      id,
-      label,
-      unit: units.marginUnit,
-    })),
+    requirements: requirements.map(
+      ({ id, label, name, units, fixed, bound }) => ({
+        id,
+        name,
+        label: trial?.id === id ? trial.label : label,
+        unit: units.marginUnit,
+        fixedValue: fixed
+          ? `${units.fromBase(bound.value)} ${units.label}`.trim()
+          : undefined,
+      }),
+    ),
+    preview: trial && { id: trial.id, label: trial.label, text: trial.text },
     current: makePoint(
       xAxis.current,
       yAxis.current,

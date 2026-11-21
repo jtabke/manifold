@@ -1,10 +1,12 @@
 import {
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
+  type ReactNode,
 } from "react";
 import type {
   DesignMapPoint,
@@ -19,6 +21,7 @@ import {
   unitValue,
   type MapPin,
 } from "./WorksheetMapComparison";
+import { canvasZoom, revealCanvasElement } from "../interaction/canvasViewport";
 import "../styles/worksheetResponseMaps.css";
 
 const plot = { left: 46, top: 10, width: 222, height: 132 };
@@ -153,17 +156,74 @@ function candidatePoint(
   };
 }
 
+// The canvas scroll surface uses a translated origin and a scaled paper. Native
+// sticky resolves against its untranslated boxes, not the visible study.
+function usePinnedProbe() {
+  const slot = useRef<HTMLDivElement>(null);
+  const schedule = useRef<() => void>(null);
+  useLayoutEffect(() => {
+    const frame = slot.current;
+    const canvas = frame?.closest<HTMLElement>(".er-canvas");
+    const maps = frame?.closest<HTMLElement>(".design-maps");
+    const study = frame?.closest<HTMLElement>(".er-response-study");
+    if (!frame || !canvas || !maps || !study) return;
+    const mobile = matchMedia("(max-width: 560px) and (min-height: 480px)");
+    let tick = 0;
+    const place = () => {
+      tick = 0;
+      if (!mobile.matches) return;
+      const home = frame.getBoundingClientRect();
+      const lift = Math.max(
+        0,
+        Math.min(
+          canvas.getBoundingClientRect().top - home.top,
+          maps.getBoundingClientRect().bottom - home.bottom,
+        ),
+      );
+      frame.style.setProperty(
+        "--map-probe-offset",
+        `${lift / canvasZoom(canvas, 1)}px`,
+      );
+    };
+    const refresh = () => {
+      if (mobile.matches && !tick) tick = requestAnimationFrame(place);
+    };
+    schedule.current = refresh;
+    const observer = new ResizeObserver(refresh);
+    for (const node of [frame, canvas, maps, study]) observer.observe(node);
+    canvas.addEventListener("scroll", refresh, { passive: true });
+    canvas.addEventListener("canvaszoom", refresh);
+    mobile.addEventListener("change", refresh);
+    place();
+    return () => {
+      schedule.current = null;
+      observer.disconnect();
+      canvas.removeEventListener("scroll", refresh);
+      canvas.removeEventListener("canvaszoom", refresh);
+      mobile.removeEventListener("change", refresh);
+      cancelAnimationFrame(tick);
+    };
+  }, []);
+  // Dragging the study changes its position without resizing it or scrolling.
+  useLayoutEffect(() => schedule.current?.());
+  return slot;
+}
+
 export type MapInspection = number | "current" | "candidate";
 
 export function WorksheetResponseMaps({
   map,
+  grid,
   review,
+  limits,
   heading,
   selected,
   select,
 }: {
   map: DesignResponseMap;
+  grid: DesignResponseMap;
   review?: DesignReview;
+  limits: ReactNode;
   heading: string;
   selected?: MapInspection;
   select: (value: MapInspection) => void;
@@ -171,13 +231,14 @@ export function WorksheetResponseMaps({
   const { failed, contours, layers } = useMemo(() => prepareMaps(map), [map]);
   const candidate = useMemo(() => candidatePoint(map, review), [map, review]);
   const [local, setLocal] = useState<{
-    map: DesignResponseMap;
+    grid: DesignResponseMap;
     pins: readonly MapPin[];
     comparing?: boolean;
     boundary?: number;
   }>();
   // A sample index is only meaningful within the grid that produced it.
-  const view = local?.map === map ? local : { map, pins: [] };
+  const view = local?.grid === grid ? local : { grid, pins: [] };
+  const probeSlot = usePinnedProbe();
   const pinButton = useRef<HTMLButtonElement>(null);
   const compareButton = useRef<HTMLButtonElement>(null);
   const active =
@@ -242,6 +303,25 @@ export function WorksheetResponseMaps({
     );
   };
   const id = useId();
+  function toggleComparison() {
+    setLocal({ ...view, comparing: !view.comparing });
+    if (!view.comparing)
+      requestAnimationFrame(() => {
+        const panel = document.getElementById(`${id}-compare`),
+          header = compareButton.current?.closest(".design-map-inspect"),
+          canvas = panel?.closest(".er-canvas");
+        if (!panel || !header || !canvas) return;
+        const top = panel.getBoundingClientRect().top;
+        if (
+          top < header.getBoundingClientRect().bottom ||
+          top > canvas.getBoundingClientRect().bottom - 110
+        )
+          revealCanvasElement(document.getElementById(heading), {
+            block: "start",
+            inline: "nearest",
+          });
+      });
+  }
   const axisLabel = ({ name, unit }: DesignResponseMap["xAxis"]) =>
     unit ? `${name} (${unit})` : name;
   return (
@@ -273,41 +353,107 @@ export function WorksheetResponseMaps({
           )}
         </div>
       </div>
-      <div className="design-map-probe" role="status">
-        <div>
-          <strong>
-            {active === "current"
-              ? "Current design"
-              : active === "candidate"
-                ? "Checked candidate"
-                : pinned
-                  ? `Sample ${pinned.label}`
-                  : "Sampled design"}
-          </strong>
-          {" · "}
-          {axisX.name} {unitValue(point.x, axisX.unit)} · {axisY.name}{" "}
-          {unitValue(point.y, axisY.unit)}
-        </div>
-        <span data-pass={point.pass ?? "unknown"}>
-          {!onPlot(point) && "Outside map · "}
-          {point.pass === null
-            ? "Feasibility undefined"
-            : point.pass === false
-              ? "Fails selected requirements"
-              : map.requirements.length
-                ? "Passes selected requirements"
-                : "No requirements selected"}
-        </span>
-        <span className="design-map-announcement">
-          {map.outputs.map(
-            (o, k) =>
-              `${o.name}: ${point.values[k] === null ? "undefined" : unitValue(point.values[k], o.unit)}. `,
+      {limits}
+      <div ref={probeSlot}>
+        <div className="design-map-inspect">
+          <div className="design-map-probe" role="status">
+            <div>
+              <strong>
+                {active === "current"
+                  ? "Current design"
+                  : active === "candidate"
+                    ? "Checked candidate"
+                    : pinned
+                      ? `Sample ${pinned.label}`
+                      : "Sampled design"}
+              </strong>
+              {" · "}
+              {axisX.name} {unitValue(point.x, axisX.unit)} · {axisY.name}{" "}
+              {unitValue(point.y, axisY.unit)}
+            </div>
+            <span data-pass={point.pass ?? "unknown"}>
+              {map.preview && "Limit preview · "}
+              {!onPlot(point) && "Outside map · "}
+              {point.pass === null
+                ? "Feasibility undefined"
+                : point.pass === false
+                  ? "Fails selected requirements"
+                  : map.requirements.length
+                    ? "Passes selected requirements"
+                    : "No requirements selected"}
+            </span>
+            <span className="design-map-announcement">
+              {map.outputs.map(
+                (o, k) =>
+                  `${o.name}: ${point.values[k] === null ? "undefined" : unitValue(point.values[k], o.unit)}. `,
+              )}
+              {map.requirements.map(({ label, unit }, k) => {
+                const margin = point.margins[k];
+                return `${label}: ${requirementStatus(point, k)}${margin ? `, margin ${marginText(margin, unit)}` : ""}. `;
+              })}
+            </span>
+          </div>
+          {map.requirements.length > 0 && (
+            <div className="design-map-quick-margins" aria-hidden="true">
+              {map.requirements
+                .map((r, k) => ({ ...r, k }))
+                .sort((a, b) => Number(highlight(b.k)) - Number(highlight(a.k)))
+                .slice(0, 2)
+                .map(({ id, name, label, unit, k }) => {
+                  const margin = point.margins[k];
+                  return (
+                    <span
+                      key={id}
+                      data-pass={point.checks[k] ?? "unknown"}
+                      title={label}
+                    >
+                      {name}:{" "}
+                      {margin
+                        ? marginText(margin, unit)
+                        : requirementStatus(point, k)}
+                    </span>
+                  );
+                })}
+              {map.requirements.length > 2 && (
+                <span>+{map.requirements.length - 2} more</span>
+              )}
+            </div>
           )}
-          {map.requirements.map(({ label, unit }, k) => {
-            const margin = point.margins[k];
-            return `${label}: ${requirementStatus(point, k)}${margin ? `, margin ${marginText(margin, unit)}` : ""}. `;
-          })}
-        </span>
+          <div className="design-map-buttons">
+            <button
+              ref={pinButton}
+              type="button"
+              aria-disabled={
+                typeof active !== "number" || !!pinned || view.pins.length >= 2
+              }
+              title={
+                typeof active !== "number"
+                  ? "Inspect a map sample to pin it"
+                  : view.pins.length >= 2
+                    ? "Remove a sample to free a pin"
+                    : undefined
+              }
+              onClick={pin}
+            >
+              {pinned
+                ? `Sample ${pinned.label} pinned`
+                : view.pins.length >= 2
+                  ? "2 samples pinned"
+                  : "Pin sample"}
+            </button>
+            {view.pins.length > 0 && (
+              <button
+                type="button"
+                ref={compareButton}
+                aria-expanded={!!view.comparing}
+                aria-controls={view.comparing ? `${id}-compare` : undefined}
+                onClick={toggleComparison}
+              >
+                Compare ({view.pins.length})
+              </button>
+            )}
+          </div>
+        </div>
       </div>
       {map.requirements.length > 0 && (
         <div>
@@ -365,54 +511,18 @@ export function WorksheetResponseMaps({
           </ul>
         </div>
       )}
-      <div className="design-map-tools">
-        <div className="design-map-buttons">
-          <button
-            ref={pinButton}
-            type="button"
-            aria-disabled={
-              typeof active !== "number" || !!pinned || view.pins.length >= 2
-            }
-            title={
-              typeof active !== "number"
-                ? "Inspect a map sample to pin it"
-                : view.pins.length >= 2
-                  ? "Remove a sample to free a pin"
-                  : undefined
-            }
-            onClick={pin}
-          >
-            {pinned
-              ? `Sample ${pinned.label} pinned`
-              : view.pins.length >= 2
-                ? "2 samples pinned"
-                : "Pin sample"}
-          </button>
-          {view.pins.length > 0 && (
-            <button
-              type="button"
-              ref={compareButton}
-              aria-expanded={!!view.comparing}
-              aria-controls={view.comparing ? `${id}-compare` : undefined}
-              onClick={() => setLocal({ ...view, comparing: !view.comparing })}
-            >
-              Compare ({view.pins.length})
-            </button>
-          )}
-        </div>
-        <ul className="design-map-key" aria-label="Map legend">
-          {map.requirements.length > 0 && (
-            <li>
-              <i className="design-map-failed" />
-              Fails a limit
-            </li>
-          )}
+      <ul className="design-map-key" aria-label="Map legend">
+        {map.requirements.length > 0 && (
           <li>
-            <i className="design-map-unknown" />
-            Undefined
+            <i className="design-map-failed" />
+            Fails a limit
           </li>
-        </ul>
-      </div>
+        )}
+        <li>
+          <i className="design-map-unknown" />
+          Undefined
+        </li>
+      </ul>
       {view.comparing && view.pins.length > 0 && (
         <WorksheetMapComparison
           id={`${id}-compare`}

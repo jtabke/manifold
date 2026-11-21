@@ -16,6 +16,7 @@ import {
   mapDesignResponses,
   studyFixedInputs,
   studySources,
+  type DesignLimitPreview,
   type DesignResponseMap,
   type DesignSpec,
 } from "../worksheetOptimization";
@@ -28,6 +29,7 @@ import {
   DesignFields,
   useWorksheetDesignRun,
 } from "./WorksheetDesignControls";
+import { WorksheetLimitPreview } from "./WorksheetLimitPreview";
 import "../styles/worksheetOptimization.css";
 import "../styles/worksheetResponseStudy.css";
 
@@ -103,6 +105,10 @@ export function WorksheetResponseStudy({
     selected: MapInspection;
   }>();
   const search = useWorksheetDesignRun(session, notify);
+  const [previewState, setPreviewState] = useState<{
+    of: DesignResponseMap;
+    trial: DesignResponseMap;
+  }>();
   const { map, unavailable } = useMemo(() => {
     try {
       return { map: mapDesignResponses(page, spec), unavailable: "" };
@@ -111,9 +117,19 @@ export function WorksheetResponseStudy({
     }
     // Canvas positions, groups, and camera don't change the worksheet inputs.
   }, [page.regions, page.links, page.contexts, page.active, spec]);
+  const preview = previewState?.of === map ? previewState?.trial : undefined;
+  const review = preview ? undefined : search.review;
   const p = project(page),
     name = p.statements.get(plot.output)?.name || "Unresolved objective";
   const fixed = useMemo(() => studyFixedInputs(page, spec), [p, spec]);
+  function previewLimit(limit?: DesignLimitPreview) {
+    if (!limit) setPreviewState(undefined);
+    else if (map && !dirty && !pending && !search.running)
+      setPreviewState({
+        of: map,
+        trial: mapDesignResponses(page, spec, limit),
+      });
+  }
   const choices = useMemo(
     () => designChoices(page, plot.output),
     [p, plot.output],
@@ -222,7 +238,9 @@ export function WorksheetResponseStudy({
           <button
             type="button"
             className="design-primary"
-            disabled={!!unavailable || pending || dirty || search.running}
+            disabled={
+              !!unavailable || pending || dirty || search.running || !!preview
+            }
             onClick={() => {
               if (!beforeEdit()) return;
               setInspection(undefined);
@@ -231,7 +249,7 @@ export function WorksheetResponseStudy({
           >
             Run
           </button>
-          {search.review && (
+          {review && (
             <button
               type="button"
               aria-expanded={inspector === "review"}
@@ -320,7 +338,7 @@ export function WorksheetResponseStudy({
         </p>
       )}
       <div
-        className={`study-body${inspector && (inspector === "setup" || search.review) ? " with-inspector" : ""}`}
+        className={`study-body${inspector && (inspector === "setup" || review) ? " with-inspector" : ""}`}
       >
         {inspector === "setup" && (
           <section className="study-inspector" aria-label="Study setup">
@@ -363,10 +381,10 @@ export function WorksheetResponseStudy({
             </form>
           </section>
         )}
-        {inspector === "review" && search.review && (
+        {inspector === "review" && review && (
           <section className="study-inspector" aria-label="Candidate review">
             <DesignCandidate
-              review={search.review}
+              review={review}
               heading={outcome}
               adopt={(alternative) => {
                 if (beforeEdit() && search.adopt(alternative)) {
@@ -395,8 +413,17 @@ export function WorksheetResponseStudy({
         <div className="study-plots">
           {map ? (
             <WorksheetResponseMaps
-              map={map}
-              review={search.review}
+              map={preview ?? map}
+              grid={map}
+              review={review}
+              limits={
+                <WorksheetLimitPreview
+                  map={map}
+                  preview={preview?.preview}
+                  disabled={pending || dirty || search.running}
+                  change={previewLimit}
+                />
+              }
               heading={`${id}-maps`}
               selected={currentInspection}
               select={(selected) => setInspection({ map, selected })}

@@ -647,6 +647,15 @@ only approximate the sampled boundaries. Neither the grid nor the contours certi
 A positive margin is room to spare; a negative margin is a shortfall. A strict inequality can
 fail at zero margin. Failing or near-limit boundaries are highlighted across all maps; select a
 requirement to highlight just its boundary, and select it again to return to automatic highlighting.
+On narrow screens, the selected point, a compact margin readout, and pin controls stay in view
+while you scroll the maps. The full requirement list remains above the plots.
+
+Choose **Preview limit** to try a different value for one selected requirement whose limit is
+fixed over the study range. For example, try `1 mm` instead of `2 mm` for deflection. The
+boundaries, hatching, and pinned comparisons update at the same sample coordinates. This does
+not edit the worksheet or run the solver. **Reset limit** restores the worksheet limit and
+re-enables **Run** and any still-current candidate review. A limit that varies with the plotted
+inputs is not offered in the preview picker.
 
 Use **Pin sample** to mark up to two sampled designs, then open **Compare** to see them alongside
 **Current** and, after **Run**, the checked candidate. The table shows input and output changes

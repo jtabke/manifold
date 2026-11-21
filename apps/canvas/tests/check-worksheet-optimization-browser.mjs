@@ -231,6 +231,30 @@ try {
     );
     await strength.click();
     await expect(highlighted).toHaveCount(8);
+    if (width === 390) {
+      const stressMap = maps.getByRole("img", { name: "stress response map" });
+      await stressMap.evaluate((target) => {
+        const canvas = target.closest(".er-canvas");
+        const root = canvas.getBoundingClientRect();
+        const card = target
+          .closest(".er-response-study")
+          .getBoundingClientRect();
+        canvas.scrollLeft +=
+          card.left - root.left - (root.width - card.width) / 2;
+        canvas.scrollTop += target.getBoundingClientRect().top - root.top - 170;
+      });
+      await expect(stressMap).toBeInViewport();
+      await expect(pin).toBeInViewport();
+      await expect
+        .poll(async () => {
+          const sticky = await maps
+            .locator(".design-map-inspect")
+            .boundingBox();
+          return Math.abs(sticky.y - viewport.y);
+        })
+        .toBeLessThan(2);
+      await capture("worksheet-sticky-probe");
+    }
     await pin.press("Enter");
     await expect(
       maps.getByRole("button", { name: "Sample A pinned" }),
@@ -289,6 +313,76 @@ try {
       await comparisons.evaluate((el) => el.scrollWidth <= el.clientWidth),
     );
     await capture("worksheet-map-comparison");
+    const beforeTrial = await saved();
+    const preview = maps.getByRole("button", {
+      name: "Preview limit",
+      exact: true,
+    });
+    const previewForm = maps.getByRole("form", {
+      name: "Preview a fixed requirement",
+    });
+    const previewValue = previewForm.getByLabel("Preview value");
+    const resetLimit = maps.getByRole("button", {
+      name: "Reset limit",
+      exact: true,
+    });
+    const hatch = deflection.locator('path[fill$="-fail)"]');
+    const originalHatch = await hatch.getAttribute("d");
+    await preview.click();
+    await expect(previewValue).toHaveValue("2 mm");
+    await previewValue.fill("1 N");
+    await previewForm.getByRole("button", { name: "Show preview" }).click();
+    await expect(previewForm.getByRole("alert")).toContainText(
+      "compatible with mm",
+    );
+    await expect(hatch).toHaveAttribute("d", originalHatch);
+    await previewValue.fill("1 mm");
+    await previewForm.getByRole("button", { name: "Show preview" }).click();
+    await expect(
+      maps.getByText("Preview only: deflection <= 1 mm", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      study.getByRole("button", { name: "Run", exact: true }),
+    ).toBeDisabled();
+    await expect(hatch).not.toHaveAttribute("d", originalHatch);
+    await expect(maps.locator(".design-map-pin")).toHaveCount(8);
+    await expect(maps.locator(".design-map-probe")).toContainText("Sample B");
+    const previewSag = comparisons.getByRole("row").filter({
+      has: page.getByRole("rowheader", { name: /deflection <= 1 mm/ }),
+    });
+    await expect(previewSag.getByRole("cell").last()).toHaveText(
+      /Fails−0\.793\d* mm/,
+    );
+    assert.deepEqual(
+      await saved(),
+      beforeTrial,
+      "Preview has no accepted edit",
+    );
+    if (process.env.MANIFOLD_TEST_EVIDENCE === "1") {
+      await compareTwo.click();
+      const anchor =
+        width === 390
+          ? deflection
+          : maps.getByRole("heading", { name: "Response maps" });
+      await anchor.evaluate(
+        (target, inset) => {
+          const c = target.closest(".er-canvas");
+          c.scrollTop +=
+            target.getBoundingClientRect().top -
+            c.getBoundingClientRect().top -
+            inset;
+        },
+        width === 390 ? 170 : 8,
+      );
+      await expect(deflection).toBeInViewport();
+      await capture("worksheet-limit-preview");
+      await compareTwo.click();
+    }
+    await resetLimit.click();
+    await expect(sagComparison.getByRole("cell").last()).toHaveText(
+      /Passes\+0.207 mm/,
+    );
+    await expect(hatch).toHaveAttribute("d", originalHatch);
     await maps.getByRole("button", { name: "Inspect A", exact: true }).click();
     await expect(maps.getByRole("status")).toContainText("Sample A");
     await expect(cursors.first()).toHaveAttribute("d", coordinates);
@@ -396,9 +490,11 @@ try {
       await expect(
         review.getByRole("heading", { name: "Candidate preview" }),
       ).toBeInViewport();
-      const preview = review.getByRole("table", { name: "Design comparison" });
+      const candidateComparison = review.getByRole("table", {
+        name: "Design comparison",
+      });
       await expect(
-        preview.getByRole("row").filter({
+        candidateComparison.getByRole("row").filter({
           has: page.getByRole("rowheader", { name: "width", exact: true }),
         }),
       ).toContainText("25 mm");
@@ -438,6 +534,29 @@ try {
         await saved(),
         configured,
         "Run does not change worksheet or study settings",
+      );
+      const jobs = requests.length;
+      await preview.click();
+      await previewValue.fill("1");
+      await previewForm.getByRole("button", { name: "Show preview" }).click();
+      await expect(review).toHaveCount(0);
+      await expect(
+        maps.getByRole("button", { name: "Candidate", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        comparisons.getByRole("columnheader", {
+          name: "Checked candidate",
+          exact: true,
+        }),
+      ).toHaveCount(0);
+      await resetLimit.click();
+      await expect(
+        review.getByRole("button", { name: "Apply", exact: true }),
+      ).toBeVisible();
+      assert.equal(
+        requests.length,
+        jobs,
+        "Limit preview did not run the solver",
       );
       await review
         .getByRole("button", {
@@ -501,7 +620,7 @@ try {
     await context.close();
   }
   console.log(
-    "Worksheet design at desktop and 390 px: scan, linked margins and boundary focus, pinned comparison, folded sources, reviewed Apply/alternative and Undo.",
+    "Worksheet design at desktop and 390 px: sticky probe, fixed inputs and source links, map-only limit preview, pinned comparison, candidate review and Undo.",
   );
 } finally {
   await browser.close();

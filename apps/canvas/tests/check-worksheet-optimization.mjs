@@ -169,6 +169,33 @@ for (const p of mapped.points) {
 }
 assert(Object.isFrozen(mapped.points[0].values));
 assert(Object.isFrozen(mapped.points[0].margins[0]));
+const tightened = mapDesignResponses(page, railMapSpec, {
+  id: "sag",
+  text: "0.1 cm",
+});
+assert.equal(tightened.preview.label, "deflection <= 0.1 cm");
+assert.equal(tightened.requirements[0].fixedValue, "2 mm");
+assert(
+  tightened.points.filter((p) => p.pass).length <
+    mapped.points.filter((p) => p.pass).length,
+);
+assert.deepEqual(tightened.current.values, mapped.current.values);
+near(tightened.current.margins[0].value, mapped.current.margins[0].value - 1);
+for (const [i, p] of tightened.points.entries()) {
+  const original = mapped.points[i];
+  assert.deepEqual(p.values, original.values);
+  assert.deepEqual(p.margins[1], original.margins[1]);
+  assert.equal(p.checks[0], original.values[1] <= 1);
+  near(p.margins[0].value, 1 - p.values[1]);
+}
+assert.throws(
+  () => mapDesignResponses(page, railMapSpec, { id: "sag", text: "1 N" }),
+  /compatible with mm/,
+);
+assert.throws(
+  () => mapDesignResponses(page, railMapSpec, { id: "cost", text: "1" }),
+  /fixed limit/,
+);
 assert.deepEqual(
   studyFixedInputs(page, railMapSpec).map(({ id }) => id),
   ["span", "force", "modulus", "density", "allowable"],
@@ -231,34 +258,48 @@ assert.deepEqual(domainMap.points.at(-1).margins[0], {
 assert.equal(domainMap.points[0].margins[0], null);
 near(domainMap.points[1].margins[0].value, 24);
 near(domainMap.points.at(-2).margins[0].value, 24 / 23 - 1);
+assert.equal(domainMap.requirements[0].fixedValue, undefined);
 
-const thermalMap = mapDesignResponses(
-  {
-    ...page,
-    regions: [
-      ["ambient", "ambient := 20 degC"],
-      ["rise", "rise := 5 K"],
-      ["extra", "extra := 3 K"],
-      ["temperature", "temperature := ambient + rise + extra"],
-      ["limit", "temperature <= 30 degC"],
-    ].map(([id, text]) => ({ id, text, mathVersion: 3 })),
-  },
-  {
-    goal: "temperature",
-    mode: "minimize",
-    reports: [],
-    requirements: ["limit"],
-    axes: [
-      { id: "rise", low: "0", high: "10" },
-      { id: "extra", low: "0", high: "4" },
-    ],
-  },
-);
+const thermalSheet = {
+  ...page,
+  regions: [
+    ["ambient", "ambient := 20 degC"],
+    ["rise", "rise := 5 K"],
+    ["extra", "extra := 3 K"],
+    ["temperature", "temperature := ambient + rise + extra"],
+    ["limit", "temperature < 30 degC"],
+  ].map(([id, text]) => ({ id, text, mathVersion: 3 })),
+};
+const thermalSpec = {
+  goal: "temperature",
+  mode: "minimize",
+  reports: [],
+  requirements: ["limit"],
+  axes: [
+    { id: "rise", low: "0", high: "10" },
+    { id: "extra", low: "0", high: "4" },
+  ],
+};
+const thermalMap = mapDesignResponses(thermalSheet, thermalSpec);
 assert.equal(thermalMap.outputs[0].unit, "°C");
 assert.equal(thermalMap.requirements[0].unit, "K");
 near(thermalMap.current.values[0], 28);
 near(thermalMap.current.margins[0].value, 2);
 near(thermalMap.points.at(-1).margins[0].value, -4);
+const equalTemperature = mapDesignResponses(thermalSheet, thermalSpec, {
+  id: "limit",
+  text: "28",
+});
+assert.equal(equalTemperature.current.checks[0], false);
+assert.equal(equalTemperature.current.margins[0].value, 0);
+assert.throws(
+  () =>
+    mapDesignResponses(thermalSheet, thermalSpec, {
+      id: "limit",
+      text: "28 K",
+    }),
+  /compatible with °C/,
+);
 
 const session = new RegionSession(
   page,
@@ -276,7 +317,12 @@ const run = async () => {
   return result.value;
 };
 assert.equal(mapDesignResponses(session.state, railMapSpec).points.length, 625);
-assert.equal(session.document, before, "Mapping is not an edit or a receipt");
+mapDesignResponses(session.state, railMapSpec, { id: "sag", text: "1" });
+assert.equal(
+  session.document,
+  before,
+  "Mapping and previewing a limit are not edits or receipts",
+);
 const first = await run();
 assert.equal(
   session.document,
