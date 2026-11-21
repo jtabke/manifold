@@ -28,50 +28,53 @@ export function WorksheetLimitPreview({
   if (!limits.length) return null;
   return (
     <div className="design-limit-preview">
-      <div className="design-limit-actions">
-        <button
-          type="button"
-          ref={toggle}
-          disabled={disabled}
-          aria-expanded={!!draft}
-          onClick={() => {
-            const first = limits[0];
-            setEdit(
-              draft
-                ? undefined
-                : {
-                    map,
-                    id: preview?.id ?? first.id,
-                    text: preview?.text ?? first.fixedValue!,
-                  },
-            );
-          }}
-        >
-          Preview limit
-        </button>
+      <div className={`design-limit-actions${preview ? " is-previewing" : ""}`}>
         {preview && (
+          <div className="design-limit-current" role="status">
+            <strong>
+              Map preview ·{" "}
+              {preview.label.replaceAll("<=", "≤").replaceAll(">=", "≥")}
+            </strong>
+            <small>Worksheet unchanged. Reset the preview to run.</small>
+          </div>
+        )}
+        <div className="design-limit-buttons">
           <button
             type="button"
+            ref={toggle}
+            disabled={disabled}
+            aria-expanded={!!draft}
             onClick={() => {
-              change(undefined);
-              setEdit(undefined);
-              toggle.current?.focus({ preventScroll: true });
+              const first = limits[0];
+              setEdit(
+                draft
+                  ? undefined
+                  : {
+                      map,
+                      id: preview?.id ?? first.id,
+                      text: preview?.text ?? first.fixedValue!,
+                    },
+              );
             }}
           >
-            Reset limit
+            {preview ? "Edit preview" : "Preview limit"}
           </button>
-        )}
+          {preview && (
+            <button
+              type="button"
+              onClick={() => {
+                change(undefined);
+                setEdit(undefined);
+                toggle.current?.focus({ preventScroll: true });
+              }}
+            >
+              Reset limit
+            </button>
+          )}
+        </div>
       </div>
-      {preview && (
-        <strong className="design-limit-current" role="status">
-          Preview only: {preview.label}
-        </strong>
-      )}
-      {(preview || draft) && (
-        <small>
-          Map-only preview. The worksheet is unchanged. Reset the preview to run
-          against worksheet limits.
-        </small>
+      {draft && !preview && (
+        <small>Map-only preview. This does not change the worksheet.</small>
       )}
       {draft && (
         <form

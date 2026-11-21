@@ -218,6 +218,32 @@ function usePinnedProbe() {
   return slot;
 }
 
+function MapMarkings({
+  requirements,
+  perChart = false,
+}: {
+  requirements: boolean;
+  perChart?: boolean;
+}) {
+  return (
+    <ul
+      className={`design-map-key${perChart ? " is-local" : ""}`}
+      aria-label="Sample markings"
+    >
+      {requirements && (
+        <li>
+          <i className="design-map-failed" aria-hidden="true" />
+          Fails a limit
+        </li>
+      )}
+      <li>
+        <i className="design-map-unknown" aria-hidden="true" />
+        Undefined
+      </li>
+    </ul>
+  );
+}
+
 export type MapInspection = number | "current" | "candidate";
 
 export function WorksheetResponseMaps({
@@ -388,7 +414,11 @@ export function WorksheetResponseMaps({
               </span>
             </div>
             <span data-pass={point.pass ?? "unknown"}>
-              {map.preview && "Limit preview · "}
+              {map.preview && (
+                <span className="design-probe-preview-marker">
+                  Map preview ·{" "}
+                </span>
+              )}
               {!onPlot(point) && "Outside map · "}
               {point.pass === null
                 ? "Feasibility undefined"
@@ -419,14 +449,16 @@ export function WorksheetResponseMaps({
                   const margin = point.margins[k];
                   return (
                     <span
+                      className="design-map-quick-margin"
                       key={id}
-                      data-pass={point.checks[k] ?? "unknown"}
                       title={label}
                     >
-                      {name}:{" "}
-                      {margin
-                        ? marginText(margin, unit)
-                        : requirementStatus(point, k)}
+                      <span>{name}</span>
+                      <strong data-pass={point.checks[k] ?? "unknown"}>
+                        {margin
+                          ? marginText(margin, unit)
+                          : requirementStatus(point, k)}
+                      </strong>
                     </span>
                   );
                 })}
@@ -556,20 +588,11 @@ export function WorksheetResponseMaps({
           {map.size} × {map.size} worksheet samples. Click, tap, or use arrow
           keys to inspect. Boundaries are approximate.
         </small>
-        <ul className="design-map-key" aria-label="Map legend">
-          {map.requirements.length > 0 && (
-            <li>
-              <i className="design-map-failed" />
-              Fails a limit
-            </li>
-          )}
-          <li>
-            <i className="design-map-unknown" />
-            Undefined
-          </li>
-        </ul>
+        <MapMarkings requirements={map.requirements.length > 0} />
       </div>
-      <div className="design-map-grid">
+      <div
+        className={`design-map-grid${map.outputs.length === 4 ? " is-paired" : ""}`}
+      >
         {map.outputs.map((output, k) => {
           const layer = layers[k],
             key = `${id}-${k}`,
@@ -777,16 +800,20 @@ export function WorksheetResponseMaps({
                   className="design-map-scale"
                   aria-label={`${output.name} color scale${layer.log ? ", logarithmic" : ""}`}
                 >
+                  <i aria-hidden="true" />
                   <span>{unitValue(layer.low, output.unit)}</span>
-                  <i />
+                  <span>{layer.log && "Log scale"}</span>
                   <span>{unitValue(layer.high, output.unit)}</span>
-                  {layer.log && (
-                    <span className="design-map-log">Log scale</span>
-                  )}
                 </div>
               ) : (
-                <small>No defined samples</small>
+                <small className="design-map-empty-scale">
+                  No defined samples
+                </small>
               )}
+              <MapMarkings
+                requirements={map.requirements.length > 0}
+                perChart
+              />
             </div>
           );
         })}

@@ -189,6 +189,49 @@ try {
     assert.deepEqual((await saved()).regions, before.regions);
     const scenario = study.locator(".study-header .study-scenario");
     await expect(scenario).toHaveText("Scenario: Original");
+    assert(
+      await scenario.evaluate((el) => {
+        const name = getComputedStyle(el.querySelector("strong"));
+        const objective = getComputedStyle(
+          el.closest(".study-title").querySelector("h2"),
+        );
+        return (
+          name.fontSize === objective.fontSize &&
+          name.fontWeight === objective.fontWeight
+        );
+      }),
+    );
+    const chartRhythm = await maps
+      .locator(".design-map-card")
+      .evaluateAll((cards) => {
+        const rows = new Map();
+        for (const card of cards) {
+          const gradient = card
+            .querySelector(".design-map-scale i")
+            .getBoundingClientRect();
+          const bars = rows.get(card.offsetTop) ?? [];
+          bars.push(gradient.top);
+          rows.set(card.offsetTop, bars);
+        }
+        return [...rows.values()].map((bars) => ({
+          count: bars.length,
+          aligned: Math.max(...bars) - Math.min(...bars) < 1,
+        }));
+      });
+    assert.deepEqual(
+      chartRhythm,
+      (width === 390 ? [1, 1, 1, 1] : [2, 2]).map((count) => ({
+        count,
+        aligned: true,
+      })),
+    );
+    const globalKey = maps.locator(".design-map-reading .design-map-key");
+    const localKeys = maps.locator(
+      ".design-map-card .design-map-key.is-local:visible",
+    );
+    if (width === 390) await expect(globalKey).toBeHidden();
+    else await expect(globalKey).toBeVisible();
+    await expect(localKeys).toHaveCount(width === 390 ? 4 : 0);
     const inputs = study.getByRole("region", { name: "Study inputs" });
     const varied = inputs.getByLabel("Varied inputs", { exact: true });
     await expect(varied.locator("dt")).toHaveText(["X axis", "Y axis"]);
@@ -198,8 +241,10 @@ try {
     const quickMargins = maps.locator(".design-map-quick-margins");
     await expect(quickMargins).toBeHidden();
     const fixedToggle = inputs.getByText("Fixed inputs (5)", { exact: true });
-    await fixedToggle.click();
     const fixed = study.getByLabel("Fixed inputs", { exact: true });
+    await expect(fixed).toBeHidden();
+    await capture("worksheet-study-polish");
+    await fixedToggle.click();
     await expect(fixed).toContainText("span1 m");
     await expect(fixed).toContainText("force100 N");
     await expect(fixed).toContainText("modulus200000 MPa");
@@ -278,6 +323,9 @@ try {
       await expect(stressMap).toBeInViewport();
       await expect(pin).toBeInViewport();
       await expect(quickMargins).toBeInViewport();
+      await expect(
+        quickMargins.locator(".design-map-quick-margin strong"),
+      ).toHaveText([/−[\d.]+ mm/, /−[\d.]+ MPa/]);
       await expect
         .poll(async () => {
           const sticky = await maps
@@ -376,8 +424,15 @@ try {
     await expect(hatch).toHaveAttribute("d", originalHatch);
     await previewValue.fill("1 mm");
     await previewForm.getByRole("button", { name: "Show preview" }).click();
+    const previewStrip = maps.locator(".design-limit-actions.is-previewing");
     await expect(
-      maps.getByText("Preview only: deflection <= 1 mm", { exact: true }),
+      previewStrip.getByText("Map preview · deflection ≤ 1 mm", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(previewStrip).toContainText("Worksheet unchanged");
+    await expect(
+      previewStrip.getByRole("button", { name: "Reset limit", exact: true }),
     ).toBeVisible();
     await expect(
       study.getByRole("button", { name: "Run", exact: true }),
