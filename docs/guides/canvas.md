@@ -654,9 +654,11 @@ relative to **Current**, and each design’s requirement margins. **Inspect A/B*
 probe to a pinned sample. Pins are only for comparison: they do not change inputs, call the solver,
 or survive reopening the study or recomputing its grid.
 
-The card shows current inputs and has a **Worksheet sources** disclosure with links back to the
-original expressions. **Fold source equations** puts ungrouped sources from the same scope into an
-ordinary collapsible canvas group without replacing the equations or changing their layout. Existing
+The card shows current axis values and the active scenario. **Fixed inputs** lists the other
+assigned quantities used by the goal, requirements, or reported outputs, with their current values.
+Select a name to edit its original equation. **Worksheet sources** links to the full set of expressions.
+**Fold source equations** puts ungrouped sources from the same scope into an ordinary collapsible
+canvas group without replacing the equations or changing their layout. Existing
 groups are left alone. **Run** opens a non-blocking candidate review beside the maps (above them
 on narrow screens). Use **Locate on maps** to inspect the checked candidate. Map inspection
 does not set either input, and the candidate is not saved with the study.

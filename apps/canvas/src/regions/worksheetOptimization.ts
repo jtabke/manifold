@@ -128,6 +128,29 @@ export function studySources(page: Page, spec: DesignSpec) {
     .map((r) => r.id);
 }
 
+/** Resolved, authored inputs in the study's dependency closure, other than its axes. */
+export function studyFixedInputs(page: Page, spec: DesignSpec) {
+  const p = project(page),
+    varied = new Set(spec.axes.map((a) => a.id));
+  return studySources(page, spec).flatMap((id) => {
+    const s = p.statements.get(id)!;
+    if (
+      varied.has(id) ||
+      p.errors.has(id) ||
+      p.kinds[id] !== "quantity" ||
+      s.relation !== "=" ||
+      s.anonymous ||
+      !quantityLiteral(s.expression) ||
+      p.sources[s.name]?.length !== 1
+    )
+      return [];
+    const q = p.solved.values.get(s.name);
+    return q
+      ? [{ id, name: s.name, value: worksheetInputUnit(s, q).format(q.value) }]
+      : [];
+  });
+}
+
 export function defaultStudySpec(page: Page, goal: string): DesignSpec {
   const { inputs, requirements } = designChoices(page, goal);
   return {

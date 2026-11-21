@@ -8,6 +8,7 @@ import {
   reviewDesign,
   scanDesignRange,
   mapDesignResponses,
+  studyFixedInputs,
   decodeDesign,
 } from "../src/regions/worksheetOptimization.ts";
 import { shelfRail, railSpec, sagThickness } from "./shelf-rail.mjs";
@@ -168,6 +169,22 @@ for (const p of mapped.points) {
 }
 assert(Object.isFrozen(mapped.points[0].values));
 assert(Object.isFrozen(mapped.points[0].margins[0]));
+assert.deepEqual(
+  studyFixedInputs(page, railMapSpec).map(({ id }) => id),
+  ["span", "force", "modulus", "density", "allowable"],
+);
+assert.equal(
+  studyFixedInputs(
+    {
+      ...page,
+      contexts: [
+        { ...page.contexts[0], overrides: { force: "force := 120 N" } },
+      ],
+    },
+    railMapSpec,
+  ).find(({ id }) => id === "force").value,
+  "120 N",
+);
 const domainMap = mapDesignResponses(
   {
     ...sheet,

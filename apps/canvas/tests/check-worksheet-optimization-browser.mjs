@@ -187,6 +187,25 @@ try {
       .poll(async () => (await saved()).plots[0].study.axes[0].low)
       .toBe("25 mm");
     assert.deepEqual((await saved()).regions, before.regions);
+    const fixedToggle = study.getByText("Fixed inputs (5)", { exact: true });
+    await fixedToggle.click();
+    const fixed = study.getByLabel("Fixed inputs", { exact: true });
+    await expect(fixed).toContainText("span1 m");
+    await expect(fixed).toContainText("force100 N");
+    await expect(fixed).toContainText("modulus200000 MPa");
+    await expect(
+      fixed.getByRole("button", { name: /width|thickness/ }),
+    ).toHaveCount(0);
+    await capture("worksheet-fixed-inputs");
+    await fixed
+      .getByRole("button", { name: "Edit fixed input force", exact: true })
+      .click();
+    await expect(
+      page.locator('[data-region-id="force"].is-editing'),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await fixedToggle.click();
+    assert.deepEqual((await saved()).regions, before.regions);
 
     const deflection = maps.getByRole("img", {
       name: "deflection response map",

@@ -75,6 +75,22 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+.study-fixed {
+  margin-top: 6px;
+  font-size: 0.82rem;
+}
+.study-fixed summary {
+  padding-block: 4px;
+  width: fit-content;
+  cursor: pointer;
+}
+.study-fixed .study-summary {
+  margin-top: 2px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12ch), 1fr));
+}
+.study-fixed dd {
+  padding-inline: 4px;
+}
 .study-body {
   display: grid;
   gap: 10px;

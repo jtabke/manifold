@@ -14,6 +14,7 @@ import {
 import {
   designChoices,
   mapDesignResponses,
+  studyFixedInputs,
   studySources,
   type DesignResponseMap,
   type DesignSpec,
@@ -112,6 +113,7 @@ export function WorksheetResponseStudy({
   }, [page.regions, page.links, page.contexts, page.active, spec]);
   const p = project(page),
     name = p.statements.get(plot.output)?.name || "Unresolved objective";
+  const fixed = useMemo(() => studyFixedInputs(page, spec), [p, spec]);
   const choices = useMemo(
     () => designChoices(page, plot.output),
     [p, plot.output],
@@ -272,6 +274,27 @@ export function WorksheetResponseStudy({
           <dd>{page.contexts.find((c) => c.id === page.active)?.label}</dd>
         </div>
       </dl>
+      {fixed.length > 0 && (
+        <details className="study-fixed">
+          <summary>Fixed inputs ({fixed.length})</summary>
+          <dl className="study-summary" aria-label="Fixed inputs">
+            {fixed.map(({ id, name, value }) => (
+              <div key={id}>
+                <dt>
+                  <button
+                    type="button"
+                    aria-label={`Edit fixed input ${name}`}
+                    onClick={() => source(id)}
+                  >
+                    {name}
+                  </button>
+                </dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
       {search.running && (
         <div className="study-feedback" role="status">
           Searching…{" "}
