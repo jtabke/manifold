@@ -585,8 +585,10 @@ export function WorksheetResponseMaps({
       )}
       <div className="design-map-reading">
         <small className="design-map-guide" id={`${id}-guide`}>
-          {map.size} × {map.size} worksheet samples. Click, tap, or use arrow
-          keys to inspect. Boundaries are approximate.
+          {map.size} × {map.size} samples · Approximate boundaries
+          <span className="design-map-gesture">
+            . Select a point or use arrow keys to inspect.
+          </span>
         </small>
         <MapMarkings requirements={map.requirements.length > 0} />
       </div>

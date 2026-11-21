@@ -439,7 +439,7 @@
 }
 @container (max-width: 520px) {
   .design-maps {
-    padding-top: 10px;
+    padding-top: 8px;
   }
   .design-map-bar {
     margin-bottom: 5px;
@@ -455,7 +455,15 @@
     margin-top: 6px;
   }
   .design-map-reading {
-    margin: 7px 0;
+    margin: 5px 0;
+  }
+  .design-map-gesture {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .design-map-reading .design-map-key {
     display: none;

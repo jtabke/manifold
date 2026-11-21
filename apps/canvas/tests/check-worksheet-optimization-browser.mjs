@@ -232,6 +232,36 @@ try {
     if (width === 390) await expect(globalKey).toBeHidden();
     else await expect(globalKey).toBeVisible();
     await expect(localKeys).toHaveCount(width === 390 ? 4 : 0);
+    const run = study.getByRole("button", { name: "Run", exact: true });
+    const footerIsClear = (key) =>
+      key.evaluate((legend) => {
+        const card = legend.closest(".design-map-card");
+        const canvas = card.closest(".er-canvas").getBoundingClientRect();
+        const footer = [card.querySelector(".design-map-scale"), legend];
+        return footer.every((node) => {
+          const { left, right, top, bottom } = node.getBoundingClientRect();
+          const x = (left + right) / 2;
+          return (
+            top >= canvas.top &&
+            bottom <= canvas.bottom &&
+            [top + 1, bottom - 1].every((y) =>
+              node.contains(document.elementFromPoint(x, y)),
+            )
+          );
+        });
+      });
+    const checkMobileFooters = async () => {
+      for (const key of await localKeys.all()) {
+        await key.evaluate((legend) => {
+          const canvas = legend.closest(".er-canvas");
+          const { top, height } = canvas.getBoundingClientRect();
+          canvas.scrollTop +=
+            legend.getBoundingClientRect().top - top - height / 2;
+        });
+        await expect(maps.locator("[data-probe-stuck]")).toHaveCount(1);
+        await expect.poll(() => footerIsClear(key)).toBe(true);
+      }
+    };
     const inputs = study.getByRole("region", { name: "Study inputs" });
     const varied = inputs.getByLabel("Varied inputs", { exact: true });
     await expect(varied.locator("dt")).toHaveText(["X axis", "Y axis"]);
@@ -243,7 +273,16 @@ try {
     const fixedToggle = inputs.getByText("Fixed inputs (5)", { exact: true });
     const fixed = study.getByLabel("Fixed inputs", { exact: true });
     await expect(fixed).toBeHidden();
-    await capture("worksheet-study-polish");
+    if (width === 390) {
+      const title = await scenario.boundingBox();
+      const action = await run.boundingBox();
+      assert(
+        title.y < action.y + action.height && title.y + title.height > action.y,
+        "Run shares the study identity row",
+      );
+      await expect.poll(() => footerIsClear(localKeys.first())).toBe(true);
+    }
+    await capture("worksheet-study-compact");
     await fixedToggle.click();
     await expect(fixed).toContainText("span1 m");
     await expect(fixed).toContainText("force100 N");
@@ -335,6 +374,7 @@ try {
         })
         .toBeLessThan(2);
       await capture("worksheet-sticky-probe");
+      await checkMobileFooters();
     }
     await pin.press("Enter");
     await expect(
@@ -471,11 +511,13 @@ try {
       await capture("worksheet-limit-preview");
       await compareTwo.click();
     }
+    if (width === 390) await checkMobileFooters();
     await resetLimit.click();
     await expect(sagComparison.getByRole("cell").last()).toHaveText(
       /Passes\+0.207 mm/,
     );
     await expect(hatch).toHaveAttribute("d", originalHatch);
+    await expect(run).toBeEnabled();
     await maps.getByRole("button", { name: "Inspect A", exact: true }).click();
     await expect(maps.getByRole("status")).toContainText("Sample A");
     await expect(cursors.first()).toHaveAttribute("d", coordinates);
@@ -553,7 +595,6 @@ try {
       .scrollIntoViewIfNeeded();
     await capture("worksheet-canvas-study");
 
-    const run = study.getByRole("button", { name: "Run", exact: true });
     await deflection.press("ArrowDown");
     await pin.click();
     await deflection.press("ArrowRight");

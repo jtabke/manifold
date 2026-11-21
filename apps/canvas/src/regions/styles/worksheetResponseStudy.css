@@ -213,10 +213,34 @@
 }
 @container (max-width: 520px) {
   .study-header {
-    padding-bottom: 8px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 4px 6px;
+    padding-bottom: 6px;
+  }
+  .study-actions {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: 4px;
+    margin-left: 0;
+  }
+  .study-review-action {
+    grid-column: 1 / -1;
+  }
+  .study-title-line {
+    column-gap: 7px;
   }
   .study-varied {
     row-gap: 2px;
+  }
+}
+@container (max-width: 280px) {
+  .study-header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .study-actions {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 @container (min-width: 820px) {

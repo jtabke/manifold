@@ -260,6 +260,7 @@ export function WorksheetResponseStudy({
           {review && (
             <button
               type="button"
+              className="study-review-action"
               aria-expanded={inspector === "review"}
               onClick={() =>
                 setInspector(inspector === "review" ? undefined : "review")
