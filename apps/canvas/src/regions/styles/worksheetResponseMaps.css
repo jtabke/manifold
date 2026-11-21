@@ -10,7 +10,9 @@
 }
 .design-map-bar,
 .design-map-buttons,
-.design-map-probe,
+.design-map-inspect,
+.design-probe-point,
+.design-map-reading,
 .design-map-key {
   display: flex;
   align-items: center;
@@ -18,8 +20,15 @@
   gap: 6px 12px;
 }
 .design-map-bar,
-.design-map-probe {
+.design-map-inspect,
+.design-map-reading {
   justify-content: space-between;
+}
+.design-map-bar {
+  margin-bottom: 8px;
+}
+.design-map-bar h3 {
+  margin: 0;
 }
 .design-map-buttons {
   gap: 5px;
@@ -29,13 +38,31 @@
   border-color: var(--canvas-accent);
   color: var(--canvas-accent);
 }
-.design-map-probe {
-  margin: 8px 0;
-  padding: 8px 10px;
+.design-map-inspect {
+  gap: 4px 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 8px;
   background: var(--canvas-bg);
-  border-radius: 6px;
-  font-size: 0.85em;
+}
+.design-map-probe {
+  flex: 1 1 24ch;
+  min-width: 0;
+  font-size: 0.9em;
   font-variant-numeric: tabular-nums;
+}
+.design-probe-point {
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.design-probe-coordinates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  color: var(--canvas-muted);
+}
+.design-probe-coordinates > span > span {
+  white-space: nowrap;
 }
 .design-maps [data-pass="true"] {
   color: var(--canvas-success);
@@ -43,14 +70,17 @@
 .design-maps [data-pass="false"] {
   color: var(--canvas-warning);
 }
+.design-map-requirements {
+  margin-top: 10px;
+}
 .design-map-margins {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr));
   gap: 5px;
   list-style: none;
-  margin: 4px 0 8px;
+  margin: 4px 0 0;
   padding: 0;
-  font-size: 0.79em;
+  font-size: 0.82em;
 }
 .design-maps .design-map-margins li > :is(button, div) {
   display: grid;
@@ -75,21 +105,31 @@
 .design-map-margins strong {
   text-align: right;
 }
-.design-map-margin-label {
-  font-size: 0.78em;
-  color: var(--canvas-muted);
+.design-requirements-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+}
+.design-requirements-header .design-map-margin-label {
+  margin: 0;
+  font-size: 0.86em;
 }
 .design-limit-preview {
-  margin: 5px 0 8px;
+  display: contents;
+}
+.design-limit-preview > :is(strong, small, form) {
+  grid-column: 1 / -1;
   font-size: 0.84em;
 }
 .design-limit-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 4px 8px;
 }
-.design-limit-actions strong {
+.design-limit-current {
   color: var(--canvas-warning);
 }
 .design-limit-preview form {
@@ -111,8 +151,20 @@
   display: none;
 }
 .design-map-inspect button,
+.design-limit-actions button,
 .design-pin-actions button {
-  font-size: 0.79em;
+  font-size: 0.82em;
+}
+.worksheet-design-controls
+  :is(.design-map-inspect, .design-limit-actions)
+  button {
+  border-color: var(--canvas-border);
+}
+.worksheet-design-controls
+  :is(.design-map-inspect, .design-limit-actions)
+  button[aria-expanded="true"] {
+  border-color: var(--canvas-accent);
+  background: var(--canvas-accent-tint);
 }
 .design-map-inspect button[aria-disabled="true"] {
   opacity: 0.65;
@@ -174,7 +226,7 @@
   white-space: nowrap;
 }
 .design-map-key {
-  margin: 6px 0;
+  margin: 0;
   padding: 0;
   list-style: none;
   font-size: 0.78em;
@@ -185,13 +237,6 @@
   align-items: center;
   gap: 5px;
   min-width: 0;
-}
-.design-map-key svg {
-  flex: none;
-}
-.design-map-key b {
-  color: var(--canvas-text);
-  font-weight: 650;
 }
 .design-map-key i {
   display: inline-block;
@@ -210,8 +255,9 @@
   background: radial-gradient(circle, var(--canvas-muted) 1px, transparent 1px)
     0 0 / 4px 4px;
 }
-.design-map-guide {
-  margin: 6px 0 10px;
+.design-map-reading {
+  gap: 3px 12px;
+  margin: 10px 0 8px;
 }
 .design-map-grid {
   display: grid;
@@ -370,21 +416,24 @@
     position: relative;
     transform: translateY(var(--map-probe-offset, 0px));
     z-index: 1;
-    padding: 4px 0;
-    background: var(--canvas-surface);
-    border-bottom: 1px solid var(--canvas-border);
   }
-  .design-map-inspect .design-map-probe {
-    margin: 0;
-    padding: 5px 7px;
+  [data-probe-stuck] .design-map-inspect:has(.design-map-quick-margins) {
+    border-radius: 8px 8px 0 0;
   }
-  .design-map-quick-margins {
+  [data-probe-stuck] .design-map-quick-margins {
+    position: absolute;
+    top: 100%;
+    inset-inline: -1px;
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
     gap: 0 8px;
-    padding: 2px 6px;
-    font-size: 0.72em;
+    padding: 2px 8px 5px;
+    border: 1px solid var(--canvas-border);
+    border-top: 0;
+    border-radius: 0 0 8px 8px;
+    background: var(--canvas-bg);
+    font-size: 0.76em;
     font-variant-numeric: tabular-nums;
   }
   .design-map-quick-margins > span {

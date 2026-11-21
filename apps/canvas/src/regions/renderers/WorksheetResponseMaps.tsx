@@ -173,11 +173,20 @@ function usePinnedProbe() {
       tick = 0;
       if (!mobile.matches) return;
       const home = frame.getBoundingClientRect();
+      const requested = canvas.getBoundingClientRect().top - home.top;
+      const stuck = requested > 0.5;
+      frame.toggleAttribute("data-probe-stuck", stuck);
+      // The extra readout overlays the map instead of moving the samples beneath a tap.
+      const marginsHeight = stuck
+        ? (frame
+            .querySelector(".design-map-quick-margins")
+            ?.getBoundingClientRect().height ?? 0)
+        : 0;
       const lift = Math.max(
         0,
         Math.min(
-          canvas.getBoundingClientRect().top - home.top,
-          maps.getBoundingClientRect().bottom - home.bottom,
+          requested,
+          maps.getBoundingClientRect().bottom - home.bottom - marginsHeight,
         ),
       );
       frame.style.setProperty(
@@ -312,10 +321,13 @@ export function WorksheetResponseMaps({
           canvas = panel?.closest(".er-canvas");
         if (!panel || !header || !canvas) return;
         const top = panel.getBoundingClientRect().top;
-        if (
-          top < header.getBoundingClientRect().bottom ||
-          top > canvas.getBoundingClientRect().bottom - 110
-        )
+        const probeEnd = Math.max(
+          header.getBoundingClientRect().bottom,
+          header
+            .querySelector(".design-map-quick-margins")
+            ?.getBoundingClientRect().bottom ?? 0,
+        );
+        if (top < probeEnd || top > canvas.getBoundingClientRect().bottom - 110)
           revealCanvasElement(document.getElementById(heading), {
             block: "start",
             inline: "nearest",
@@ -353,11 +365,10 @@ export function WorksheetResponseMaps({
           )}
         </div>
       </div>
-      {limits}
-      <div ref={probeSlot}>
+      <div ref={probeSlot} className="design-map-probe-slot">
         <div className="design-map-inspect">
           <div className="design-map-probe" role="status">
-            <div>
+            <div className="design-probe-point">
               <strong>
                 {active === "current"
                   ? "Current design"
@@ -367,9 +378,14 @@ export function WorksheetResponseMaps({
                       ? `Sample ${pinned.label}`
                       : "Sampled design"}
               </strong>
-              {" · "}
-              {axisX.name} {unitValue(point.x, axisX.unit)} · {axisY.name}{" "}
-              {unitValue(point.y, axisY.unit)}
+              <span className="design-probe-coordinates">
+                <span>
+                  {axisX.name} <span>{unitValue(point.x, axisX.unit)}</span>
+                </span>
+                <span>
+                  {axisY.name} <span>{unitValue(point.y, axisY.unit)}</span>
+                </span>
+              </span>
             </div>
             <span data-pass={point.pass ?? "unknown"}>
               {map.preview && "Limit preview · "}
@@ -456,10 +472,16 @@ export function WorksheetResponseMaps({
         </div>
       </div>
       {map.requirements.length > 0 && (
-        <div>
-          <h4 className="design-map-margin-label" id={`${id}-margins`}>
-            Requirement margins
-          </h4>
+        <section
+          className="design-map-requirements"
+          aria-labelledby={`${id}-margins`}
+        >
+          <div className="design-requirements-header">
+            <h4 className="design-map-margin-label" id={`${id}-margins`}>
+              Requirement margins
+            </h4>
+            {limits}
+          </div>
           <ul className="design-map-margins" aria-labelledby={`${id}-margins`}>
             {map.requirements.map(({ id, label, unit }, k) => {
               const margin = point.margins[k];
@@ -509,20 +531,8 @@ export function WorksheetResponseMaps({
               );
             })}
           </ul>
-        </div>
+        </section>
       )}
-      <ul className="design-map-key" aria-label="Map legend">
-        {map.requirements.length > 0 && (
-          <li>
-            <i className="design-map-failed" />
-            Fails a limit
-          </li>
-        )}
-        <li>
-          <i className="design-map-unknown" />
-          Undefined
-        </li>
-      </ul>
       {view.comparing && view.pins.length > 0 && (
         <WorksheetMapComparison
           id={`${id}-compare`}
@@ -541,10 +551,24 @@ export function WorksheetResponseMaps({
           }}
         />
       )}
-      <small className="design-map-guide" id={`${id}-guide`}>
-        {map.size} × {map.size} worksheet samples. Click, tap, or use arrow keys
-        to inspect the same point across maps. Boundaries are approximate.
-      </small>
+      <div className="design-map-reading">
+        <small className="design-map-guide" id={`${id}-guide`}>
+          {map.size} × {map.size} worksheet samples. Click, tap, or use arrow
+          keys to inspect. Boundaries are approximate.
+        </small>
+        <ul className="design-map-key" aria-label="Map legend">
+          {map.requirements.length > 0 && (
+            <li>
+              <i className="design-map-failed" />
+              Fails a limit
+            </li>
+          )}
+          <li>
+            <i className="design-map-unknown" />
+            Undefined
+          </li>
+        </ul>
+      </div>
       <div className="design-map-grid">
         {map.outputs.map((output, k) => {
           const layer = layers[k],

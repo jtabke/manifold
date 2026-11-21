@@ -222,8 +222,16 @@ export function WorksheetResponseStudy({
           <GripVertical size={16} />
         </button>
         <div className="study-title">
-          <span>Response study</span>
-          <h2 id={`${id}-title`}>{name}</h2>
+          <span className="study-kicker">Response study</span>
+          <div className="study-title-line">
+            <h2 id={`${id}-title`}>{name}</h2>
+            <span className="study-scenario">
+              Scenario:{" "}
+              <strong>
+                {page.contexts.find((c) => c.id === page.active)?.label}
+              </strong>
+            </span>
+          </div>
         </div>
         <div className="study-actions">
           <button
@@ -262,57 +270,58 @@ export function WorksheetResponseStudy({
           )}
         </div>
       </div>
-      <dl className="study-summary" aria-label="Current inputs">
-        {spec.axes.map((axis, k) => {
-          const input = choices.inputs.find((q) => q.id === axis.id);
-          return (
-            <div key={axis.id}>
-              <dt>{k === 0 ? "Horizontal" : "Vertical"}</dt>
-              <dd>
-                <button
-                  type="button"
-                  title="Edit source input"
-                  onClick={() => source(axis.id)}
-                >
-                  {input?.name ||
-                    p.statements.get(axis.id)?.name ||
-                    "Unresolved"}
-                </button>
-                {input && (
-                  <strong>
-                    {Number(input.current.toPrecision(6))} {input.unit}
-                  </strong>
-                )}
-              </dd>
-            </div>
-          );
-        })}
-        <div>
-          <dt>Scenario</dt>
-          <dd>{page.contexts.find((c) => c.id === page.active)?.label}</dd>
-        </div>
-      </dl>
-      {fixed.length > 0 && (
-        <details className="study-fixed">
-          <summary>Fixed inputs ({fixed.length})</summary>
-          <dl className="study-fixed-values" aria-label="Fixed inputs">
-            {fixed.map(({ id, name, value }) => (
-              <div key={id}>
-                <dt>
-                  <button
-                    type="button"
-                    aria-label={`Edit fixed input ${name}`}
-                    onClick={() => source(id)}
-                  >
-                    {name}
-                  </button>
-                </dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
+      <section className="study-inputs" aria-labelledby={`${id}-inputs`}>
+        <div className="study-varied">
+          <h3 id={`${id}-inputs`}>Study inputs</h3>
+          <dl className="study-axes" aria-label="Varied inputs">
+            {spec.axes.map((axis, k) => {
+              const input = choices.inputs.find((q) => q.id === axis.id);
+              return (
+                <div key={axis.id}>
+                  <dt>{k === 0 ? "X axis" : "Y axis"}</dt>
+                  <dd>
+                    <button
+                      type="button"
+                      title="Edit source input"
+                      onClick={() => source(axis.id)}
+                    >
+                      {input?.name ||
+                        p.statements.get(axis.id)?.name ||
+                        "Unresolved"}
+                    </button>
+                    {input && (
+                      <strong>
+                        {Number(input.current.toPrecision(6))} {input.unit}
+                      </strong>
+                    )}
+                  </dd>
+                </div>
+              );
+            })}
           </dl>
-        </details>
-      )}
+        </div>
+        {fixed.length > 0 && (
+          <details className="study-fixed">
+            <summary>Fixed inputs ({fixed.length})</summary>
+            <dl className="study-fixed-values" aria-label="Fixed inputs">
+              {fixed.map(({ id, name, value }) => (
+                <div key={id}>
+                  <dt>
+                    <button
+                      type="button"
+                      aria-label={`Edit fixed input ${name}`}
+                      onClick={() => source(id)}
+                    >
+                      {name}
+                    </button>
+                  </dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        )}
+      </section>
       {search.running && (
         <div className="study-feedback" role="status">
           Searching…{" "}

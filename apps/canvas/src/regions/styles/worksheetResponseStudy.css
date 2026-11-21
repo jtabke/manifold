@@ -26,13 +26,34 @@
   justify-content: flex-start;
   border-bottom: 1px solid var(--canvas-border);
 }
+.study-actions {
+  justify-content: flex-end;
+  margin-left: auto;
+}
 .study-title {
   min-width: 0;
   margin-right: auto;
 }
-.study-title span {
+.study-kicker {
   color: var(--canvas-muted);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+.study-title-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.study-scenario {
+  padding: 2px 7px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 6px;
+  color: var(--canvas-muted);
+  font-size: 0.82rem;
+}
+.study-scenario strong {
+  color: var(--canvas-text);
   font-weight: 650;
 }
 .study-title h2 {
@@ -46,37 +67,56 @@
   cursor: grab;
   touch-action: none;
 }
-.study-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8ch), 1fr));
-  align-items: start;
-  margin: 8px 0 0;
-  gap: 6px;
+.study-inputs {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--canvas-border);
 }
-.study-summary > div {
+.study-varied,
+.study-axes,
+.study-axes > div,
+.study-axes dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
   min-width: 0;
-  border-radius: 6px;
-  padding: 5px 7px;
-  background: var(--canvas-bg);
-  font-size: 0.8rem;
 }
-.study-summary dt {
+.study-varied h3 {
+  margin: 0 4px 0 0;
   color: var(--canvas-muted);
-  font-size: 0.72rem;
+  font-size: 0.83rem;
+  font-weight: 650;
 }
-.study-summary dd {
+.study-axes {
   margin: 0;
+  font-size: 0.82rem;
 }
-.er-response-study .study-summary button {
+.study-axes > div {
+  padding: 0 8px;
+  background: var(--canvas-bg);
+  border-radius: 6px;
+}
+.study-axes dt {
+  color: var(--canvas-muted);
+  font-size: 0.75rem;
+}
+.study-axes dd {
+  margin: 0;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.er-response-study .study-axes button {
   min-height: 28px;
+  max-width: 100%;
   padding: 2px 4px;
-  margin-right: 4px;
   border: 0;
+  font: inherit;
+  overflow-wrap: anywhere;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .study-fixed {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: 0.82rem;
 }
 .study-fixed summary {
@@ -188,10 +228,5 @@
     max-height: 550px;
     overflow: auto;
     overscroll-behavior: contain;
-  }
-}
-@container (max-width: 540px) {
-  .study-header .study-actions {
-    width: 100%;
   }
 }

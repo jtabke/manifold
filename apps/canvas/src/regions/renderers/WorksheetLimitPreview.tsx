@@ -50,21 +50,23 @@ export function WorksheetLimitPreview({
           Preview limit
         </button>
         {preview && (
-          <>
-            <strong role="status">Preview only: {preview.label}</strong>
-            <button
-              type="button"
-              onClick={() => {
-                change(undefined);
-                setEdit(undefined);
-                toggle.current?.focus({ preventScroll: true });
-              }}
-            >
-              Reset limit
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => {
+              change(undefined);
+              setEdit(undefined);
+              toggle.current?.focus({ preventScroll: true });
+            }}
+          >
+            Reset limit
+          </button>
         )}
       </div>
+      {preview && (
+        <strong className="design-limit-current" role="status">
+          Preview only: {preview.label}
+        </strong>
+      )}
       {(preview || draft) && (
         <small>
           Map-only preview. The worksheet is unchanged. Reset the preview to run

@@ -187,7 +187,17 @@ try {
       .poll(async () => (await saved()).plots[0].study.axes[0].low)
       .toBe("25 mm");
     assert.deepEqual((await saved()).regions, before.regions);
-    const fixedToggle = study.getByText("Fixed inputs (5)", { exact: true });
+    const scenario = study.locator(".study-header .study-scenario");
+    await expect(scenario).toHaveText("Scenario: Original");
+    const inputs = study.getByRole("region", { name: "Study inputs" });
+    const varied = inputs.getByLabel("Varied inputs", { exact: true });
+    await expect(varied.locator("dt")).toHaveText(["X axis", "Y axis"]);
+    await expect(varied.getByRole("button")).toHaveText(["width", "thickness"]);
+    await expect(varied.locator("strong")).toHaveText(["40 mm", "15 mm"]);
+    await expect(inputs).not.toContainText("Scenario");
+    const quickMargins = maps.locator(".design-map-quick-margins");
+    await expect(quickMargins).toBeHidden();
+    const fixedToggle = inputs.getByText("Fixed inputs (5)", { exact: true });
     await fixedToggle.click();
     const fixed = study.getByLabel("Fixed inputs", { exact: true });
     await expect(fixed).toContainText("span1 m");
@@ -231,7 +241,11 @@ try {
     const hit = deflection.locator(".design-map-hit"),
       hitBounds = await hit.boundingBox();
     await hit.click({
-      position: { x: 0.15 * hitBounds.width, y: 0.9 * hitBounds.height },
+      // Pick the center of a grid cell rather than a fractional pixel near a snap boundary.
+      position: {
+        x: (4 / 24) * hitBounds.width,
+        y: (21 / 24) * hitBounds.height,
+      },
     });
     await expect(maps.getByRole("status")).toContainText(
       "Fails selected requirements",
@@ -263,6 +277,7 @@ try {
       });
       await expect(stressMap).toBeInViewport();
       await expect(pin).toBeInViewport();
+      await expect(quickMargins).toBeInViewport();
       await expect
         .poll(async () => {
           const sticky = await maps
@@ -293,7 +308,10 @@ try {
       1,
     );
     await hit.click({
-      position: { x: 0.15 * hitBounds.width, y: 0.45 * hitBounds.height },
+      position: {
+        x: (4 / 24) * hitBounds.width,
+        y: (11 / 24) * hitBounds.height,
+      },
     });
     await expect(maps.getByRole("status")).toContainText(
       "Passes selected requirements",
@@ -332,10 +350,12 @@ try {
     );
     await capture("worksheet-map-comparison");
     const beforeTrial = await saved();
-    const preview = maps.getByRole("button", {
-      name: "Preview limit",
-      exact: true,
-    });
+    const preview = maps
+      .getByRole("region", { name: "Requirement margins", exact: true })
+      .getByRole("button", {
+        name: "Preview limit",
+        exact: true,
+      });
     const previewForm = maps.getByRole("form", {
       name: "Preview a fixed requirement",
     });
@@ -604,6 +624,9 @@ try {
       );
       if (width === 390) {
         assert.notEqual(applied.active, "original");
+        await expect(scenario).toHaveText(
+          `Scenario: ${applied.contexts.find((c) => c.id === applied.active).label}`,
+        );
         assert.equal(
           project(applied, "original").texts.thickness,
           "thickness := 15 mm",
