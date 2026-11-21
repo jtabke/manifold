@@ -372,17 +372,47 @@ function sampledFeasibility(goalDefined: boolean, checks: (boolean | null)[]) {
       : true;
 }
 
-function requirementUnit(p: ReturnType<typeof project>, id: string) {
+function requirementUnits(p: ReturnType<typeof project>, id: string) {
   const s = p.statements.get(id)!,
     { bound } = p.solved.constraints.get(id)!;
   const source =
     s.expression.kind === "name" && p.bindings[id][s.expression.name];
-  return worksheetInputUnit(
+  const { label, scale } = worksheetInputUnit(
     source
       ? p.statements.get(source)
       : { ...s, raw: s.raw.replace(/<=|>=|≤|≥|<|>/, ":=") },
     bound,
-  ).label;
+  );
+  return { label, scale, marginUnit: bound.absolute ? "K" : label };
+}
+
+export type DesignMargin = {
+  value: number;
+  atLimit: boolean;
+  roundoff: boolean;
+};
+function requirementMargin(
+  relation: Relation,
+  bound: Quantity,
+  actual: Quantity,
+  scale: number,
+): DesignMargin | null {
+  const slack = relation.startsWith("<")
+    ? bound.value - actual.value
+    : actual.value - bound.value;
+  const value = slack / scale;
+  if (!Number.isFinite(value)) return null;
+  const magnitude = Math.max(
+    Math.abs(actual.value),
+    Math.abs(bound.value),
+    1e-15,
+  );
+  // A display cue only. The worksheet's exact pass/fail check still applies.
+  return {
+    value,
+    atLimit: Math.abs(slack) <= 1e-6 * magnitude,
+    roundoff: slack !== 0 && Math.abs(slack) < 16 * Number.EPSILON * magnitude,
+  };
 }
 
 export type DesignMapPoint = {
@@ -390,6 +420,7 @@ export type DesignMapPoint = {
   y: number;
   values: readonly (number | null)[];
   checks: readonly (boolean | null)[];
+  margins: readonly (DesignMargin | null)[];
   pass: boolean | null;
 };
 
@@ -402,17 +433,24 @@ export function mapDesignResponses(page: Page, settings: DesignSpec) {
     problem,
   } = captureDesignProblem(page, settings);
   const p = project(page);
+  const requirements = problem.requirements.map(
+    ({ id, s, relation, subject }) => ({
+      id,
+      label: s.raw,
+      relation,
+      subject,
+      units: requirementUnits(p, id),
+    }),
+  );
   const defaults = [
     ...new Set([spec.goal, ...problem.requirements.map((r) => r.subject)]),
   ];
   const outputs = [...new Set([...defaults, ...spec.reports])].map((id) => {
     const { s, q } = problem.baselineValue(id);
-    const preferred = problem.requirements
-      .filter((r) => r.subject === id)
-      .at(-1);
+    const preferred = requirements.filter((r) => r.subject === id).at(-1);
     const fallback = worksheetInputUnit(s, q);
     const label =
-      (preferred && requirementUnit(p, preferred.id)) ||
+      preferred?.units.label ||
       page.regions.find((r) => r.id === id)?.displayUnit;
     let unit = fallback.label,
       scale = fallback.scale;
@@ -442,7 +480,7 @@ export function mapDesignResponses(page: Page, settings: DesignSpec) {
     x: number,
     y: number,
     values: (id: string) => Quantity | undefined,
-    check: (id: string) => boolean | undefined,
+    constraint: (id: string) => { pass: boolean; bound: Quantity } | undefined,
   ): DesignMapPoint => {
     const measured = outputs.map(
       ({ id, scale, offset, dimension, absolute }) => {
@@ -453,12 +491,21 @@ export function mapDesignResponses(page: Page, settings: DesignSpec) {
         return Number.isFinite(value) ? value : null;
       },
     );
-    const checks = problem.requirements.map(({ id }) => check(id) ?? null);
+    const checked = requirements.map(({ id }) => constraint(id));
+    const checks = checked.map((c) => c?.pass ?? null);
+    const margins = requirements.map(({ subject, relation, units }, k) => {
+      const bound = checked[k]?.bound,
+        actual = values(subject);
+      return bound && actual
+        ? requirementMargin(relation, bound, actual, units.scale)
+        : null;
+    });
     return {
       x,
       y,
       values: measured,
       checks,
+      margins,
       pass: sampledFeasibility(measured[0] !== null, checks),
     };
   };
@@ -471,20 +518,12 @@ export function mapDesignResponses(page: Page, settings: DesignSpec) {
     const x = coordinates(xAxis.bounds, i % size),
       y = coordinates(yAxis.bounds, Math.floor(i / size));
     const result = problem.at([x * xAxis.scale, y * yAxis.scale]);
-    return {
-      ...makePoint(
-        x,
-        y,
-        (id) => result.values.get(id),
-        (id) => result.requirements.get(id)?.pass,
-      ),
-      // Distance from equality in base units for estimating a transition only.
-      distances: problem.requirements.map(({ id, subject }) => {
-        const bound = result.requirements.get(id)?.bound;
-        const actual = result.values.get(subject);
-        return bound && actual ? Math.abs(bound.value - actual.value) : null;
-      }),
-    };
+    return makePoint(
+      x,
+      y,
+      (id) => result.values.get(id),
+      (id) => result.requirements.get(id),
+    );
   });
   return immutable({
     xAxis,
@@ -492,12 +531,16 @@ export function mapDesignResponses(page: Page, settings: DesignSpec) {
     size,
     points,
     outputs,
-    labels: problem.requirements.map(({ s }) => s.raw),
+    requirements: requirements.map(({ id, label, units }) => ({
+      id,
+      label,
+      unit: units.marginUnit,
+    })),
     current: makePoint(
       xAxis.current,
       yAxis.current,
       (id) => problem.baselineValue(id).q,
-      (id) => p.solved.constraints.get(id)?.pass,
+      (id) => p.solved.constraints.get(id),
     ),
   });
 }
@@ -666,34 +709,29 @@ export function reviewDesign(page: Page, c: Capture, candidate: Candidate) {
       const lhs = before.bindings[id][s.name],
         now = resolved(before, lhs).q,
         proposed = resolved(after, lhs).q,
-        unit = requirementUnit(before, id);
+        { label: unit, marginUnit, scale } = requirementUnits(before, id);
       units.set(lhs, unit);
-      const sign = s.relation.startsWith("<") ? 1 : -1;
-      const margin = (bound: Quantity, value: Quantity) => ({
-        ...bound,
-        absolute: false,
-        value: sign * (bound.value - value.value),
-      });
-      const remaining = margin(next.bound, proposed),
-        magnitude = Math.max(
-          Math.abs(proposed.value),
-          Math.abs(next.bound.value),
-          1e-15,
-        ),
-        checkedMargin = shown(remaining, unit);
-      // Keep the actual verification value; don't imply meaningful sub-roundoff clearance.
-      const roundoff =
-        remaining.value > 0 &&
-        remaining.value < 16 * Number.EPSILON * magnitude;
+      assert(s.relation !== "=", "Expected a worksheet inequality.");
+      const beforeMargin = requirementMargin(s.relation, old.bound, now, scale);
+      const mapMargin = requirementMargin(
+        s.relation,
+        next.bound,
+        proposed,
+        scale,
+      );
+      const format = (m: DesignMargin | null) =>
+        m ? `${Number(m.value.toPrecision(7))} ${marginUnit}`.trim() : "—";
+      const checkedMargin = format(mapMargin);
       return {
         id,
         label: s.raw,
-        current: shown(margin(old.bound, now), unit),
-        proposed: roundoff
-          ? "≈" + shown({ ...remaining, value: 0 }, unit)
+        current: format(beforeMargin),
+        proposed: mapMargin?.roundoff
+          ? `≈0 ${marginUnit}`.trim()
           : checkedMargin,
         checkedMargin,
-        active: remaining.value <= 1e-6 * magnitude,
+        mapMargin,
+        active: !!mapMargin?.atLimit,
       };
     });
   const ids = [

@@ -113,6 +113,23 @@ try {
     );
     const outputs = maps.locator(".design-map-title span");
     await expect(outputs).toHaveText(["4.68 kg", "0.9259 mm", "16.67 MPa"]);
+    const margins = maps.getByRole("list", { name: "Requirement margins" });
+    const sag = margins.getByRole("button", {
+      name: "Highlight boundary for deflection <= 2 mm",
+    });
+    const strength = margins.getByRole("button", {
+      name: "Highlight boundary for stress <= allowable",
+    });
+    const highlighted = maps.locator(
+      '.design-map-boundary[data-highlighted="true"]',
+    );
+    const comparisons = maps.getByRole("table", {
+      name: "Pinned design comparison",
+    });
+    const pin = maps.getByRole("button", { name: "Pin sample", exact: true });
+    await expect(margins).toContainText("Passes · +1.074 mm");
+    await expect(margins).toContainText("Passes · +83.33 MPa");
+    await expect(pin).toBeDisabled();
     const canvas = page.locator(".er-canvas");
     const viewport = await canvas.boundingBox(),
       bounds = await study.boundingBox();
@@ -183,6 +200,23 @@ try {
       "Fails selected requirements",
     );
     await expect(maps.locator(".design-map-sample")).toHaveCount(4);
+    await expect(sag).toContainText("Fails · −");
+    await expect(strength).toContainText("Fails · −");
+    await expect(highlighted).toHaveCount(8);
+    await strength.click();
+    await expect(strength).toHaveAttribute("aria-pressed", "true");
+    await expect(highlighted).toHaveCount(4);
+    await expect(highlighted.first()).toHaveAttribute(
+      "data-requirement",
+      "strength",
+    );
+    await strength.click();
+    await expect(highlighted).toHaveCount(8);
+    await pin.press("Enter");
+    await expect(
+      maps.getByRole("button", { name: "Sample A pinned" }),
+    ).toBeFocused();
+    await expect(maps.locator(".design-map-pin")).toHaveCount(4);
     const cursors = maps.locator(".design-map-cursor"),
       coordinates = await cursors.first().getAttribute("d");
     await maps
@@ -197,8 +231,63 @@ try {
       ).size,
       1,
     );
+    await hit.click({
+      position: { x: 0.15 * hitBounds.width, y: 0.45 * hitBounds.height },
+    });
+    await expect(maps.getByRole("status")).toContainText(
+      "Passes selected requirements",
+    );
+    await pin.click();
+    await expect(maps.locator(".design-map-pin")).toHaveCount(8);
+    const compareTwo = maps.getByRole("button", {
+      name: "Compare (2)",
+      exact: true,
+    });
+    await compareTwo.click();
+    await expect(comparisons.getByRole("columnheader")).toHaveText([
+      "Quantity",
+      "Current",
+      "Sample A",
+      "Sample B",
+    ]);
+    const massComparison = comparisons.getByRole("row").filter({
+      has: page.getByRole("rowheader", { name: "mass", exact: true }),
+    });
+    await expect(massComparison.getByRole("cell")).toHaveText([
+      "4.68 kg",
+      "1.653 kgΔ −3.027",
+      "3.157 kgΔ −1.523",
+    ]);
+    const sagComparison = comparisons.getByRole("row").filter({
+      has: page.getByRole("rowheader", { name: /deflection <= 2 mm/ }),
+    });
+    await expect(sagComparison.getByRole("cell")).toHaveText([
+      /Passes\+1.074 mm/,
+      /Fails−[\d.]+ mm/,
+      /Passes\+[\d.]+ mm/,
+    ]);
+    assert(
+      await comparisons.evaluate((el) => el.scrollWidth <= el.clientWidth),
+    );
+    await capture("worksheet-map-comparison");
+    await maps.getByRole("button", { name: "Inspect A", exact: true }).click();
+    await expect(maps.getByRole("status")).toContainText("Sample A");
+    await expect(cursors.first()).toHaveAttribute("d", coordinates);
+    await maps.getByRole("button", { name: "Remove sample A" }).click();
+    await expect(maps.locator(".design-map-pin")).toHaveCount(4);
+    await expect(
+      comparisons.getByRole("columnheader", { name: "Sample A" }),
+    ).toHaveCount(0);
+    await maps
+      .getByRole("button", { name: "Compare (1)", exact: true })
+      .click();
+    await expect(comparisons).toHaveCount(0);
     await maps.getByRole("button", { name: "Current", exact: true }).click();
-    assert.equal(requests.length, 0, "Inspection is not a solver run");
+    assert.equal(
+      requests.length,
+      0,
+      "Inspection and comparison are not solver runs",
+    );
     const configured = await saved();
     assert.deepEqual(configured.regions, before.regions);
     assert.deepEqual(configured.contexts, before.contexts);
@@ -235,6 +324,10 @@ try {
       assert.deepEqual((await saved()).regions, before.regions);
     }
     await page.reload();
+    await expect(
+      maps.getByRole("button", { name: /Compare \(\d\)/ }),
+    ).toHaveCount(0);
+    await expect(maps.locator(".design-map-pin")).toHaveCount(0);
     await expect(outputs).toHaveText([
       "4.68 kg",
       "0.9259 mm",
@@ -255,6 +348,14 @@ try {
     await capture("worksheet-canvas-study");
 
     const run = study.getByRole("button", { name: "Run", exact: true });
+    await deflection.press("ArrowDown");
+    await pin.click();
+    await deflection.press("ArrowRight");
+    await pin.click();
+    await deflection.press("ArrowRight");
+    await expect(
+      maps.getByRole("button", { name: "2 samples pinned" }),
+    ).toBeDisabled();
     await run.click();
     const capability = await context.request.get(
       base + "/api/optimizer/capability",
@@ -293,7 +394,27 @@ try {
       await expect(
         maps.getByRole("heading", { name: "Response maps" }),
       ).toBeFocused();
+      await expect(sag).toContainText("At limit ·");
+      await expect(strength).toContainText("Passes · +67.43 MPa");
+      await expect(highlighted).toHaveCount(4);
+      await expect(highlighted.first()).toHaveAttribute(
+        "data-requirement",
+        "sag",
+      );
       await capture("worksheet-canvas-candidate");
+      await maps
+        .getByRole("button", { name: "Compare (2)", exact: true })
+        .click();
+      await expect(comparisons.getByRole("columnheader")).toHaveText([
+        "Quantity",
+        "Current",
+        "Checked candidate",
+        "Sample A",
+        "Sample B",
+      ]);
+      assert(
+        await comparisons.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      );
       assert.deepEqual(
         await saved(),
         configured,
@@ -306,6 +427,8 @@ try {
         })
         .click();
       await expect(review).toHaveCount(0);
+      await expect(comparisons).toHaveCount(0);
+      await expect(maps.locator(".design-map-pin")).toHaveCount(0);
       await expect(study).toBeVisible();
       await expect
         .poll(async () =>
@@ -359,7 +482,7 @@ try {
     await context.close();
   }
   console.log(
-    "Worksheet design at desktop and 390 px: one-input scan, portable linked study, shared probe, folded sources, reviewed Apply/alternative and Undo.",
+    "Worksheet design at desktop and 390 px: scan, linked margins and boundary focus, pinned comparison, folded sources, reviewed Apply/alternative and Undo.",
   );
 } finally {
   await browser.close();

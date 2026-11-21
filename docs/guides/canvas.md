@@ -643,6 +643,17 @@ grid is derived locally from the accepted worksheet, including on reopen; nothin
 solver until **Run**. Hatching marks failed samples, dots mark undefined values, and the contours
 only approximate the sampled boundaries. Neither the grid nor the contours certify the region.
 
+**Requirement margins** show what passes, fails, or is near its limit at the inspected point.
+A positive margin is room to spare; a negative margin is a shortfall. A strict inequality can
+fail at zero margin. Failing or near-limit boundaries are highlighted across all maps; select a
+requirement to highlight just its boundary, and select it again to return to automatic highlighting.
+
+Use **Pin sample** to mark up to two sampled designs, then open **Compare** to see them alongside
+**Current** and, after **Run**, the checked candidate. The table shows input and output changes
+relative to **Current**, and each design’s requirement margins. **Inspect A/B** returns the shared
+probe to a pinned sample. Pins are only for comparison: they do not change inputs, call the solver,
+or survive reopening the study or recomputing its grid.
+
 The card shows current inputs and has a **Worksheet sources** disclosure with links back to the
 original expressions. **Fold source equations** puts ungrouped sources from the same scope into an
 ordinary collapsible canvas group without replacing the equations or changing their layout. Existing

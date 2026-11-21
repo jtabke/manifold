@@ -1,9 +1,24 @@
-import { useId, useMemo, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 import type {
   DesignMapPoint,
   DesignResponseMap,
   DesignReview,
 } from "../worksheetOptimization";
+import {
+  WorksheetMapComparison,
+  marginText,
+  num,
+  requirementStatus,
+  unitValue,
+  type MapPin,
+} from "./WorksheetMapComparison";
 import "../styles/worksheetResponseMaps.css";
 
 const plot = { left: 46, top: 10, width: 222, height: 132 };
@@ -15,9 +30,6 @@ const colors = [
   "var(--canvas-accent)",
   "var(--canvas-success)",
 ];
-const num = (v: number, precision = 4) =>
-  String(Number(v.toPrecision(precision)));
-const unitValue = (v: number, unit: string) => `${num(v)} ${unit}`.trim();
 const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
 const pos = (x: number, y: number) =>
   [plot.left + x * plot.width, plot.top + (1 - y) * plot.height] as const;
@@ -52,7 +64,7 @@ function tiles(size: number) {
 
 function boundaries(map: DesignResponseMap) {
   const last = map.size - 1;
-  return map.labels.map((_, index) => {
+  return map.requirements.map((_, index) => {
     let path = "";
     for (let y = 0; y < last; ++y)
       for (let x = 0; x < last; ++x) {
@@ -70,10 +82,13 @@ function boundaries(map: DesignResponseMap) {
             [c, d] = corners[next];
           if (samples[k].checks[index] === samples[next].checks[index])
             return [];
-          const from = samples[k].distances[index] ?? 0,
-            to = samples[next].distances[index] ?? 0;
-          const sum = from + to,
-            t = sum > 0 && Number.isFinite(sum) ? from / sum : 0.5;
+          const from = samples[k].margins[index],
+            to = samples[next].margins[index];
+          const sum = Math.abs(from?.value ?? 0) + Math.abs(to?.value ?? 0),
+            t =
+              from && to && sum > 0 && Number.isFinite(sum)
+                ? Math.abs(from.value) / sum
+                : 0.5;
           return [svgPoint((a + (c - a) * t) / last, (b + (d - b) * t) / last)];
         });
         for (let i = 0; i < edges.length; i += 2)
@@ -130,7 +145,10 @@ function candidatePoint(
       const v = (Number(values.get(id)) - offset) / scale;
       return Number.isFinite(v) ? v : null;
     }),
-    checks: map.labels.map(() => true),
+    checks: map.requirements.map(() => true),
+    margins: map.requirements.map(
+      ({ id }) => review.limits.find((r) => r.id === id)?.mapMargin ?? null,
+    ),
     pass: true,
   };
 }
@@ -151,7 +169,17 @@ export function WorksheetResponseMaps({
   select: (value: MapInspection) => void;
 }) {
   const { failed, contours, layers } = useMemo(() => prepareMaps(map), [map]);
-  const candidate = candidatePoint(map, review);
+  const candidate = useMemo(() => candidatePoint(map, review), [map, review]);
+  const [local, setLocal] = useState<{
+    map: DesignResponseMap;
+    pins: readonly MapPin[];
+    comparing?: boolean;
+    boundary?: number;
+  }>();
+  // A sample index is only meaningful within the grid that produced it.
+  const view = local?.map === map ? local : { map, pins: [] };
+  const pinButton = useRef<HTMLButtonElement>(null);
+  const compareButton = useRef<HTMLButtonElement>(null);
   const active =
     selected === "candidate" && !candidate
       ? "current"
@@ -162,6 +190,21 @@ export function WorksheetResponseMaps({
       : active === "candidate"
         ? candidate!
         : map.current;
+  const pinned = view.pins.find((p) => p.index === active);
+  const highlight = (k: number) =>
+    view.boundary === undefined
+      ? point.checks[k] === false ||
+        (point.checks[k] === true && !!point.margins[k]?.atLimit)
+      : view.boundary === k;
+  function pin() {
+    if (typeof active !== "number" || pinned || view.pins.length >= 2) return;
+    const label = view.pins.some((p) => p.label === "A") ? "B" : "A";
+    const pins: MapPin[] = [...view.pins, { label, index: active }];
+    setLocal({
+      ...view,
+      pins: pins.sort((a, b) => a.label.localeCompare(b.label)),
+    });
+  }
   const axisX = map.xAxis,
     axisY = map.yAxis,
     last = map.size - 1;
@@ -237,7 +280,9 @@ export function WorksheetResponseMaps({
               ? "Current design"
               : active === "candidate"
                 ? "Checked candidate"
-                : "Sampled design"}
+                : pinned
+                  ? `Sample ${pinned.label}`
+                  : "Sampled design"}
           </strong>
           {" · "}
           {axisX.name} {unitValue(point.x, axisX.unit)} · {axisY.name}{" "}
@@ -249,7 +294,7 @@ export function WorksheetResponseMaps({
             ? "Feasibility undefined"
             : point.pass === false
               ? "Fails selected requirements"
-              : map.labels.length
+              : map.requirements.length
                 ? "Passes selected requirements"
                 : "No requirements selected"}
         </span>
@@ -258,46 +303,134 @@ export function WorksheetResponseMaps({
             (o, k) =>
               `${o.name}: ${point.values[k] === null ? "undefined" : unitValue(point.values[k], o.unit)}. `,
           )}
+          {map.requirements.map(({ label, unit }, k) => {
+            const margin = point.margins[k];
+            return `${label}: ${requirementStatus(point, k)}${margin ? `, margin ${marginText(margin, unit)}` : ""}. `;
+          })}
         </span>
       </div>
-      <ul className="design-map-key" aria-label="Map legend">
-        {map.labels.map((label, k) => (
-          <li
-            key={k}
-            title={
-              point.checks[k] === null
-                ? "Undefined here"
-                : point.checks[k]
-                  ? "Passes here"
-                  : "Fails here"
+      {map.requirements.length > 0 && (
+        <div>
+          <h4 className="design-map-margin-label" id={`${id}-margins`}>
+            Requirement margins
+          </h4>
+          <ul className="design-map-margins" aria-labelledby={`${id}-margins`}>
+            {map.requirements.map(({ id, label, unit }, k) => {
+              const margin = point.margins[k];
+              const readout = (
+                <>
+                  <svg width="20" height="8" aria-hidden="true">
+                    <path d="M0,4H20" style={styleFor(k)} strokeWidth="2" />
+                  </svg>
+                  <span>{label}</span>
+                  <strong data-pass={point.checks[k] ?? "unknown"}>
+                    {requirementStatus(point, k)}
+                    {margin && ` · ${marginText(margin, unit)}`}
+                  </strong>
+                </>
+              );
+              return (
+                <li key={id} data-highlighted={highlight(k)}>
+                  {contours[k] ? (
+                    <button
+                      type="button"
+                      aria-pressed={view.boundary === k}
+                      aria-label={`Highlight boundary for ${label}`}
+                      aria-describedby={`${heading}-margin-${k}`}
+                      title="Highlight this boundary on every map"
+                      onClick={() =>
+                        setLocal({
+                          ...view,
+                          boundary: view.boundary === k ? undefined : k,
+                        })
+                      }
+                    >
+                      {readout}
+                    </button>
+                  ) : (
+                    <div>{readout}</div>
+                  )}
+                  {contours[k] && (
+                    <span
+                      className="design-map-announcement"
+                      id={`${heading}-margin-${k}`}
+                    >
+                      {requirementStatus(point, k)}
+                      {margin && `, margin ${marginText(margin, unit)}`}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      <div className="design-map-tools">
+        <div className="design-map-buttons">
+          <button
+            ref={pinButton}
+            type="button"
+            aria-disabled={
+              typeof active !== "number" || !!pinned || view.pins.length >= 2
             }
+            title={
+              typeof active !== "number"
+                ? "Inspect a map sample to pin it"
+                : view.pins.length >= 2
+                  ? "Remove a sample to free a pin"
+                  : undefined
+            }
+            onClick={pin}
           >
-            <svg width="20" height="8" aria-hidden="true">
-              <path d="M0,4H20" style={styleFor(k)} strokeWidth="2" />
-            </svg>
-            <span>
-              {label}
-              {point.checks[k] === false ? (
-                <b> · fails here</b>
-              ) : point.checks[k] === null ? (
-                <b> · undefined here</b>
-              ) : active === "candidate" && review?.limits[k]?.active ? (
-                <b> · at limit</b>
-              ) : null}
-            </span>
-          </li>
-        ))}
-        {map.labels.length > 0 && (
+            {pinned
+              ? `Sample ${pinned.label} pinned`
+              : view.pins.length >= 2
+                ? "2 samples pinned"
+                : "Pin sample"}
+          </button>
+          {view.pins.length > 0 && (
+            <button
+              type="button"
+              ref={compareButton}
+              aria-expanded={!!view.comparing}
+              aria-controls={view.comparing ? `${id}-compare` : undefined}
+              onClick={() => setLocal({ ...view, comparing: !view.comparing })}
+            >
+              Compare ({view.pins.length})
+            </button>
+          )}
+        </div>
+        <ul className="design-map-key" aria-label="Map legend">
+          {map.requirements.length > 0 && (
+            <li>
+              <i className="design-map-failed" />
+              Fails a limit
+            </li>
+          )}
           <li>
-            <i className="design-map-failed" />
-            Fails a limit
+            <i className="design-map-unknown" />
+            Undefined
           </li>
-        )}
-        <li>
-          <i className="design-map-unknown" />
-          Undefined
-        </li>
-      </ul>
+        </ul>
+      </div>
+      {view.comparing && view.pins.length > 0 && (
+        <WorksheetMapComparison
+          id={`${id}-compare`}
+          map={map}
+          candidate={candidate}
+          pins={view.pins}
+          inspect={(pin) => select(pin.index)}
+          remove={(pin) => {
+            const pins = view.pins.filter((p) => p !== pin);
+            setLocal({ ...view, pins, comparing: pins.length > 0 });
+            requestAnimationFrame(() => {
+              (compareButton.current ?? pinButton.current)?.focus({
+                preventScroll: true,
+              });
+            });
+          }}
+        />
+      )}
       <small className="design-map-guide" id={`${id}-guide`}>
         {map.size} × {map.size} worksheet samples. Click, tap, or use arrow keys
         to inspect the same point across maps. Boundaries are approximate.
@@ -383,12 +516,17 @@ export function WorksheetResponseMaps({
                 {contours.map(
                   (d, i) =>
                     d && (
-                      <g key={i}>
+                      <g
+                        key={i}
+                        className="design-map-boundary"
+                        data-highlighted={highlight(i)}
+                        data-requirement={map.requirements[i].id}
+                      >
                         <path d={d} className="design-map-outline" />
                         <path
                           d={d}
                           fill="none"
-                          strokeWidth="1.6"
+                          className="design-map-boundary-line"
                           style={styleFor(i)}
                         />
                       </g>
@@ -462,6 +600,34 @@ export function WorksheetResponseMaps({
                     className="design-map-sample"
                   />
                 )}
+                {view.pins.map(({ index, label }) => {
+                  const [x, y] = markerXY(map.points[index]);
+                  const offset = label === "A" ? -8 : 8;
+                  const side =
+                    x < plot.left + 20
+                      ? 1
+                      : x > plot.left + plot.width - 20
+                        ? -1
+                        : label === "A"
+                          ? -1
+                          : 1;
+                  return (
+                    <g
+                      key={label}
+                      className="design-map-pin"
+                      aria-hidden="true"
+                    >
+                      <circle cx={x} cy={y} r="2.4" />
+                      <text
+                        x={x + 7 * side}
+                        y={y + offset}
+                        textAnchor={side === 1 ? "start" : "end"}
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  );
+                })}
                 <rect
                   x={plot.left}
                   y={plot.top}

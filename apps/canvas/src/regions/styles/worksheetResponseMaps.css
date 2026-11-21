@@ -44,11 +44,109 @@
   font-size: 0.85em;
   font-variant-numeric: tabular-nums;
 }
-.design-map-probe [data-pass="true"] {
+.design-maps [data-pass="true"] {
   color: var(--canvas-success);
 }
-.design-map-probe [data-pass="false"] {
+.design-maps [data-pass="false"] {
   color: var(--canvas-warning);
+}
+.design-map-margins {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr));
+  gap: 5px;
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+  font-size: 0.79em;
+}
+.design-maps .design-map-margins li > :is(button, div) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 6px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.design-map-margins li[data-highlighted="true"] > :is(button, div) {
+  background: var(--canvas-bg);
+  border-color: var(--canvas-muted);
+}
+.design-map-margins li button[aria-pressed="true"] {
+  border-color: var(--canvas-accent);
+}
+.design-map-margins strong {
+  text-align: right;
+}
+.design-map-margin-label {
+  font-size: 0.78em;
+  color: var(--canvas-muted);
+}
+.design-map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.design-map-tools button,
+.design-pin-actions button {
+  font-size: 0.79em;
+}
+.design-map-tools button[aria-disabled="true"] {
+  opacity: 0.65;
+  cursor: default;
+}
+.design-map-comparison {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 6px;
+  font-size: 0.8em;
+}
+.design-comparison-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-bottom: 4px;
+}
+.design-comparison-toolbar p {
+  margin: 0;
+  color: var(--canvas-muted);
+}
+.design-map-comparison table {
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
+}
+.design-map-comparison th:first-child {
+  width: 25%;
+}
+.worksheet-design-controls .design-map-comparison :is(th, td) {
+  padding: 4px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.worksheet-design-controls .design-map-comparison td:last-child {
+  font-weight: inherit;
+}
+.design-map-comparison small {
+  font-size: 0.9em;
+}
+.design-map-comparison .design-margin-row {
+  background: var(--canvas-bg);
+}
+.design-pin-actions {
+  display: flex;
+  gap: 2px;
+}
+.design-pin-actions button:last-child {
+  min-width: 30px;
 }
 .design-map-announcement {
   position: absolute;
@@ -148,6 +246,28 @@
   stroke-width: 3.4;
   stroke-opacity: 0.9;
 }
+.design-map-boundary-line {
+  stroke-width: 1.6;
+}
+.design-map-boundary[data-highlighted="true"] .design-map-boundary-line {
+  stroke-width: 2.8;
+}
+.design-map-boundary[data-highlighted="true"] .design-map-outline {
+  stroke-width: 4.8;
+}
+.design-map-pin circle {
+  fill: var(--canvas-text);
+  stroke: var(--canvas-bg);
+  stroke-width: 1;
+}
+.design-map-pin text {
+  fill: var(--canvas-text);
+  stroke: var(--canvas-bg);
+  stroke-width: 3px;
+  paint-order: stroke;
+  font: 700 12px var(--canvas-font, sans-serif);
+  dominant-baseline: middle;
+}
 .design-map-tick,
 .design-map-axis {
   fill: var(--canvas-text);
@@ -208,6 +328,12 @@
 .design-map-log {
   grid-column: 1 / -1;
   text-align: center;
+}
+@container (min-width: 740px) {
+  .design-maps .design-map-delta {
+    display: inline;
+    margin-left: 6px;
+  }
 }
 @container (max-width: 740px) {
   .design-map-grid {

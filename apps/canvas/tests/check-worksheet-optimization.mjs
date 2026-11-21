@@ -144,8 +144,15 @@ assert.deepEqual([mapped.points.at(-1).x, mapped.points.at(-1).y], [60, 20]);
 assert.equal(mapped.current.x, 40);
 assert.equal(mapped.current.y, 15);
 assert.equal(mapped.current.pass, true);
+assert.deepEqual(
+  mapped.requirements.map((r) => r.unit),
+  ["mm", "MPa"],
+);
 const near = (a, b) =>
   assert(Math.abs(a - b) <= 1e-10 * Math.max(1, Math.abs(b)));
+near(mapped.current.margins[0].value, 2 - 0.9259259259259259);
+near(mapped.current.margins[1].value, 100 - 50 / 3);
+near(review.limits[0].mapMargin.value, 2 - 2 * (sagThickness(40, 2) / x) ** 3);
 for (const p of mapped.points) {
   const mass = 7800 * (p.x / 1000) * (p.y / 1000);
   const sag = 2 * (sagThickness(p.x, 2) / p.y) ** 3;
@@ -155,9 +162,12 @@ for (const p of mapped.points) {
   near(p.values[2], stress);
   near(p.values[3], mass * 3);
   assert.deepEqual(p.checks, [sag <= 2, stress <= 100]);
+  near(p.margins[0].value, 2 - sag);
+  near(p.margins[1].value, 100 - stress);
   assert.equal(p.pass, p.checks.every(Boolean));
 }
 assert(Object.isFrozen(mapped.points[0].values));
+assert(Object.isFrozen(mapped.points[0].margins[0]));
 const domainMap = mapDesignResponses(
   {
     ...sheet,
@@ -196,7 +206,42 @@ assert.equal(
   false,
   "A varying strict limit rejects equality",
 );
-assert.equal(domainMap.points.at(-1).distances[0], 0);
+assert.deepEqual(domainMap.points.at(-1).margins[0], {
+  value: 0,
+  atLimit: true,
+  roundoff: false,
+});
+assert.equal(domainMap.points[0].margins[0], null);
+near(domainMap.points[1].margins[0].value, 24);
+near(domainMap.points.at(-2).margins[0].value, 24 / 23 - 1);
+
+const thermalMap = mapDesignResponses(
+  {
+    ...page,
+    regions: [
+      ["ambient", "ambient := 20 degC"],
+      ["rise", "rise := 5 K"],
+      ["extra", "extra := 3 K"],
+      ["temperature", "temperature := ambient + rise + extra"],
+      ["limit", "temperature <= 30 degC"],
+    ].map(([id, text]) => ({ id, text, mathVersion: 3 })),
+  },
+  {
+    goal: "temperature",
+    mode: "minimize",
+    reports: [],
+    requirements: ["limit"],
+    axes: [
+      { id: "rise", low: "0", high: "10" },
+      { id: "extra", low: "0", high: "4" },
+    ],
+  },
+);
+assert.equal(thermalMap.outputs[0].unit, "°C");
+assert.equal(thermalMap.requirements[0].unit, "K");
+near(thermalMap.current.values[0], 28);
+near(thermalMap.current.margins[0].value, 2);
+near(thermalMap.points.at(-1).margins[0].value, -4);
 
 const session = new RegionSession(
   page,
