@@ -1,4 +1,4 @@
-import { Hand, HelpCircle, Scan } from "lucide-react";
+import { Hand, HelpCircle } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import type { ZoomDisplay } from "../interaction/useCanvasNavigation";
 export function CanvasNavigationControls({
@@ -54,7 +54,8 @@ export function CanvasNavigationControls({
         title={`Fit page (double middle-click${fitShortcut === "Unassigned" ? "" : ` or ${fitShortcut}`})`}
         onClick={fit}
       >
-        <Scan size={13} aria-hidden="true" /> {Math.round(zoom * 100)}%
+        <span>Fit</span>
+        <span className="er-zoom-value">{Math.round(zoom * 100)}%</span>
       </button>
       <button
         aria-label="Zoom in"

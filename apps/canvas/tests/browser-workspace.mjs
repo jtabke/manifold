@@ -107,6 +107,8 @@ export async function chooseDrawingTool(page, name) {
   if (!(await tool.isVisible())) {
     const shapes = [
       "Curve",
+      "Polyline / Polygon",
+      "Three-point arc",
       "Spline",
       "Line",
       "Arrow",
@@ -117,7 +119,9 @@ export async function chooseDrawingTool(page, name) {
     ];
     await toolbar
       .getByRole("button", {
-        name: shapes.includes(name) ? "Shapes" : /^More drawing tools(?:$|:)/,
+        name: shapes.includes(name)
+          ? /^Shapes(?:$|:)/
+          : /^More drawing tools(?:$|:)/,
         exact: true,
       })
       .click();

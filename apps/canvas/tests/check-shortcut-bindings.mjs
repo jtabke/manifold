@@ -47,6 +47,45 @@ const event = (key, flags = {}) => ({
   getModifierState: () => false,
   ...flags,
 });
+assert.equal(resolveShortcut(event("a"), defaultBindings), undefined);
+assert.equal(
+  resolveShortcut(event("a"), defaultBindings, "drawing-entry"),
+  undefined,
+);
+assert.equal(
+  resolveShortcut(event("a"), defaultBindings, "drawing"),
+  "drawing.arc",
+);
+assert.equal(
+  resolveShortcut(
+    event("a", { isComposing: true }),
+    defaultBindings,
+    "drawing",
+  ),
+  undefined,
+);
+const drawingRemap = parseShortcutConfiguration(
+  config([row("drawing.arc", ["U", "F2"], "drawing")]),
+);
+assert.equal(resolveShortcut(event("a"), drawingRemap, "drawing"), undefined);
+assert.equal(
+  resolveShortcut(event("u"), drawingRemap, "drawing"),
+  "drawing.arc",
+);
+assert.equal(resolveShortcut(event("F2"), drawingRemap), undefined);
+assert.equal(
+  resolveShortcut(event("F2"), drawingRemap, "drawing-entry"),
+  "drawing.arc",
+);
+assert.throws(
+  () =>
+    parseShortcutConfiguration(config([row("drawing.arc", ["P"], "drawing")])),
+  /conflicts/,
+);
+assert.throws(
+  () => parseShortcutConfiguration(config([row("drawing.arc", ["P"])])),
+  /drawing context/,
+);
 for (const modifier of ["ctrlKey", "metaKey"]) {
   assert.equal(
     resolveShortcut(event("k", { [modifier]: true }), defaultBindings),

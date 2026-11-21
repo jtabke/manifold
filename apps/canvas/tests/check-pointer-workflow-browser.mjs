@@ -21,7 +21,11 @@ try {
     name: "Drawing and diagram tools",
     exact: true,
   });
-  const tool = (name) => toolbar.getByRole("button", { name, exact: true });
+  const tool = (name) =>
+    toolbar.getByRole("button", {
+      name: name === "Shapes" ? /^Shapes(?:$|:)/ : name,
+      exact: true,
+    });
   const writer = page.getByLabel("Write an engineering region", {
     exact: true,
   });
@@ -250,7 +254,24 @@ try {
     expect(bounds.x).toBeGreaterThanOrEqual(7);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 7);
     await chooseDrawingTool(page, "Ellipse");
+    await expect(tool("Shapes")).toHaveText("Ellipse");
     await expect(tool("Shapes")).toHaveAttribute("data-active", "true");
+    if (width === 390) {
+      await expect(
+        tool("Select / Edit").getByText("Select", { exact: true }),
+      ).toBeVisible();
+      await expect(tool("Pen").getByText("Pen", { exact: true })).toBeVisible();
+      await expect(
+        tool("Diagram label").getByText("Label", { exact: true }),
+      ).toBeVisible();
+      const mainTools = toolbar.locator(
+        ".drawing-primary-tools > button, .drawing-primary-tools .er-command-menu > button, .drawing-scale-tools button",
+      );
+      const rows = await mainTools.evaluateAll((nodes) => [
+        ...new Set(nodes.map((node) => node.getBoundingClientRect().top)),
+      ]);
+      expect(rows).toHaveLength(1);
+    }
     await chooseDrawingTool(page, "Highlighter");
     await expect(tool("More drawing tools: Highlighter")).toHaveText(
       "Highlighter",

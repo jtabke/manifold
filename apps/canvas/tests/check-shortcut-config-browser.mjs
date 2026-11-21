@@ -23,9 +23,9 @@ session.dispose();
 const json = (rows = []) =>
   JSON.stringify({
     version: 1,
-    bindings: rows.map(([action, keys]) => ({
+    bindings: rows.map(([action, keys, context = "canvas"]) => ({
       action,
-      context: "canvas",
+      context,
       keys,
     })),
   });
@@ -333,6 +333,7 @@ try {
       ["canvas.undo", ["F2"]],
       ["canvas.redo", ["F9"]],
       ["help.shortcuts", ["Shift+1"]],
+      ["drawing.arc", ["U"], "drawing"],
     ]),
   );
   await expect(dialog.getByRole("status")).toContainText("Imported");
@@ -347,6 +348,17 @@ try {
   const toolbar = page.getByRole("toolbar", {
     name: "Drawing and diagram tools",
   });
+  await toolbar
+    .getByRole("button", { name: "Select / Edit", exact: true })
+    .focus();
+  await page.keyboard.press("a");
+  await expect(
+    toolbar.getByRole("button", { name: "Select / Edit", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("u");
+  await expect(
+    toolbar.getByRole("button", { name: "Shapes: Arc", exact: true }),
+  ).toBeVisible();
   await chooseDrawingTool(page, "Rectangle");
   const canvas = await page.locator(".er-canvas").boundingBox();
   await page.mouse.move(canvas.x + 1100, canvas.y + 450);
@@ -368,13 +380,14 @@ try {
   await count(1);
   // Fit measures on the next frame. The fixture's plot extends beyond this viewport.
   const fitButton = page.getByRole("button", { name: "Fit page", exact: true });
+  const zoomValue = fitButton.locator(".er-zoom-value");
   await fitButton.click();
-  await expect(fitButton).not.toHaveText("100%");
-  const fitted = await fitButton.textContent();
+  await expect(zoomValue).not.toHaveText("100%");
+  const fitted = await zoomValue.textContent();
   await page.keyboard.press("ControlOrMeta+0");
-  await expect(fitButton).toHaveText("100%");
+  await expect(zoomValue).toHaveText("100%");
   await page.keyboard.press("F8");
-  await expect(fitButton).toHaveText(fitted);
+  await expect(zoomValue).toHaveText(fitted);
   await customize();
   const beforeFailure = await stored();
   await page.evaluate((key) => {

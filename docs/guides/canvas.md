@@ -243,11 +243,13 @@ canvas binding or reset it. **Edit configuration** provides JSON with **Apply JS
 }
 ```
 
-The configurable IDs are `search.open`, `canvas.fit`, `canvas.undo`, `canvas.redo` and
-`help.shortcuts`. Missing records use defaults; `keys: []` unassigns an action. `Mod` means
-⌘ or Ctrl; explicit `Ctrl`/`Meta` are also accepted. Use modified letters/digits, F1/F2/F8/F9,
-or the default Shift+1 fit key; protected combinations are rejected with an explanation.
-Text editing and gestures stay fixed. Changes are saved locally for this browser profile/site,
+Canvas IDs are `search.open`, `canvas.fit`, `canvas.undo`, `canvas.redo` and
+`help.shortcuts`. Drawing tools have `drawing.*` IDs (for example `drawing.arc`) and
+use `"context": "drawing"` instead. Missing records use defaults; `keys: []` unassigns
+an action. `Mod` means ⌘ or Ctrl; explicit `Ctrl`/`Meta` are also accepted. Use modified
+letters/digits, F1/F2/F8/F9, or the default Shift+1 fit key; drawing tools also accept
+single letters in drawing context. Protected combinations are rejected. Text editing and
+gestures stay fixed. Changes are saved locally for this browser profile/site,
 not embedded in engineering files or their Undo history. Reload already-open tabs to use
 changed preferences; importing does not watch or stay linked to the source file. The **?**
 button always remains available if keys are cleared.
@@ -419,8 +421,11 @@ starts computation. Current native captures use V9; older V1–V8 files are supp
 
 Use the drawing toolbar below the header to sketch beside calculations. **Pen** and
 **More drawing tools → Highlighter** accept mouse or pen input; Pen retains stylus
-pressure where supported. Open **Shapes** for Line, Curve, Spline, Arrow, Rectangle, Ellipse and Visual
-connector. **Diagram label** creates a drawing label, not an equation or worksheet note. Shift snaps line angles or constrains shapes to squares/circles. Drag a
+pressure where supported. **Shapes** lists lines and paths, closed shapes and diagram tools;
+after choosing, the button shows the active tool. **Diagram label** (**Label** on narrow screens)
+creates a drawing label, not an equation or worksheet note. **Scale** manages physical units,
+calibration and dimensions; **Scaled drawing area** places a new boundary. Shift snaps line
+angles or constrains shapes to squares/circles. Drag a
 **Visual connector** between rectangles/ellipses: it stays attached as they move or
 resize, without creating a computational relationship.
 
@@ -466,16 +471,40 @@ objects. Escape leaves Pan and restores the previous tool; choosing an authoring
 also exits Pan. Finger-drag pans and two fingers pinch-zoom; Space-drag and middle-drag
 also pan.
 
-**Shapes → Curve** creates a quadratic Bézier: click the start, control point, then
-end. **Shapes → Spline** creates a smooth curve through clicked knots (2–128);
-press **Enter** or double-click the final knot to finish. Both show live previews.
-**Backspace** removes the last placed point; **Escape** discards unfinished work.
-Choose **Select / Edit** with one curve or spline selected to drag its point handles.
-Focus a handle and use arrow keys to move it by 5 units, or Shift+Arrow for 20.
-Curves and splines support moving, resizing, duplication, erasing and Undo/Redo;
-they are visual drawings, not computed plots or dimensional CAD constraints.
+**Switch tools at the pointer:** with a drawing tool active, a drawing selected, or focus
+in the drawing toolbar, hold **Shift+Space**, move toward a tool and release to choose it.
+Tap the shortcut to open the wheel for a click or arrow keys and Enter; Escape dismisses it.
+**More drawing tools → Tool wheel** opens the same picker. Use **Edit tool wheel…** in
+that menu to assign any drawing tool to one of the eight directions. Choosing a tool already
+on the wheel swaps its position. **Save wheel** applies the layout for this browser; it
+does not change the worksheet or shortcut bindings. **Restore defaults** puts the original
+layout back in the editor before saving. Outside drawing context, Shift+Space still opens
+the worksheet marking menu. In drawing context, single keys such
+as **V** (Select), **P** (Pen), **A** (Arc) and **Y** (Polyline) switch directly. The drawing
+menus show the bindings, and **Keyboard shortcuts → Customize** lets you remap them.
+Outside drawing context, plain letters still start worksheet writing. Typing in an editor
+never switches tools.
 
-Ordinary drawing gestures save on release as one Undo step. Curves and splines save
+**Shapes → Three-point arc** creates a circular arc: click the start, a point the arc must
+pass through, then the end. The middle point selects the short or long sweep. Duplicate or
+collinear points do not create a mark. **Shapes → Curve** instead creates a quadratic Bézier:
+click the start, control point, then end. **Shapes → Spline** creates a smooth curve through
+clicked knots (2–128); press **Enter** or double-click the final knot to finish. All show live
+previews.
+
+**Shapes → Polyline / Polygon** draws straight segments through clicked vertices.
+Press **Enter** (or double-click the last vertex) to finish an open path. Click the
+first vertex to close an outline with at least three non-collinear vertices. Hold
+**Shift** to constrain the next segment to a multiple of 45°. Paths can contain up
+to 128 vertices.
+
+For any multi-point path, **Backspace** removes the last point and **Escape** discards
+unfinished work. Choose **Select / Edit** with a path selected to drag its point handles. Focus a handle and use
+arrow keys to move it by 5 units, or Shift+Arrow for 20. Paths support moving, resizing,
+duplication, erasing and Undo/Redo; selections containing arcs resize proportionally to
+preserve their circular shape. These are visual drawings, not computed plots or CAD constraints.
+
+Ordinary drawing gestures save on release as one Undo step. Multi-point paths save
 only when finished, as one Undo step; each subsequent point edit is another step. A held regularization saves
 the original ink first, then replaces it through a second normal history operation:
 **Undo restores the exact ink/pressure; another Undo removes the stroke**. Redo restores
@@ -521,7 +550,20 @@ accept explicit units and fractions, for example `120 mm`, `6 ft` and `1/2 in`.
   affects all its members but leaves their geometry and camera unchanged. Calibration
   and membership assignment are one Undo step.
 
-Dimensions appear on selected shapes by default. **Show all dimensions** is an explicit
+**Included angle:** Shift-select two line or arrow drawings that meet at an
+endpoint. The sketch shows the smaller angle between their outgoing edges in degrees.
+Under **Scale**, choose **Keep angle dimension** to show it without selecting the pair,
+or **Remove angle dimension** to return to selection-only display. The label updates
+when the edges change, and hides if they no longer meet.
+
+**Radius and diameter:** Select a three-point arc or a circle (not a noncircular ellipse)
+to see its radius. Under **Scale**, choose **Keep radius** or **Keep diameter** to show
+that measurement after deselecting. **Remove circular dimension** returns to the automatic
+preview. A calibrated area supplies physical units; otherwise the label uses canvas units
+(`cu`). These annotations follow geometry, survive native reopen and support Undo/Redo.
+They do not constrain or change the shape.
+
+Linear dimensions appear on selected shapes by default. **Show all dimensions** is an explicit
 per-area option, applied with **Apply area properties**; **Show dimensions** is the master
 visibility toggle. Drag a dimension line toward/away from its shape, or drag its label
 along the line. These gestures only change annotation placement, never geometry or the
@@ -545,7 +587,9 @@ physical interpretation. Area properties, dimensions and calibration survive loc
 recovery and native-file Download/Open. Up to 32 areas share the existing 2,000-mark
 limit. Unscaled records retain the original `canvas-drawing@1` contract; areas and
 unit-bearing drawings use `canvas-drawing@2`. Curves and splines use
-`canvas-drawing@3`, including when assigned to a scaled area. Calibration explicitly upgrades selected
+`canvas-drawing@3`; three-point arcs use `canvas-drawing@4`, including when assigned
+to a scaled area. Polylines, polygons and shapes with kept angle or circular annotations
+use `canvas-drawing@5`. Calibration explicitly upgrades selected
 revisions, and Undo restores their original version and meaning. This is not a CAD
 solver or a fixed-scale printing/export feature.
 

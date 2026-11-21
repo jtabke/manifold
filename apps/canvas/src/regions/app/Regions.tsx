@@ -117,6 +117,7 @@ import "../styles/regions.css";
 import {
   CanvasActionMenu,
   type ActionMenuLocation,
+  type CanvasAction,
 } from "../renderers/CanvasActionMenu";
 import {
   commandTarget,
@@ -432,7 +433,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const [canvasSelection, setCanvasSelection] = useState<string[]>(
     resume?.selection || [],
   );
-  const [actionMenu, setActionMenu] = useState<ActionMenuLocation>();
+  const [actionMenu, setActionMenu] = useState<
+    ActionMenuLocation & { drawingTools?: CanvasAction[] }
+  >();
   const [selectionDetail, setSelectionDetail] = useState<CommandSelection>();
   const [recentCommands, setRecentCommands] = useState<string[]>([]);
   const actionPointer = useRef<Point | undefined>(undefined);
@@ -3407,6 +3410,22 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     allIds: () => canvasSelection,
     report: setMessage,
     onChooseTool: () => navigation.setHand(false),
+    onToolWheel: (drawingTools, held) => {
+      const rect = canvas.current?.getBoundingClientRect();
+      if (!rect || actionMenu) return;
+      const { x, y } = (held && actionPointer.current) || {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+      setActionMenu({
+        x,
+        y,
+        world: canvasPoint(x, y),
+        mode: "pie",
+        held,
+        drawingTools,
+      });
+    },
     onShortcut: performShortcut,
     point: canvasPoint,
     activate: () => {
@@ -3453,11 +3472,15 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         {actionMenu && (
           <CanvasActionMenu
             location={actionMenu}
-            subject={menuSubject}
+            subject={
+              actionMenu.drawingTools ? "Choose a drawing tool" : menuSubject
+            }
+            label={actionMenu.drawingTools ? "Drawing tools" : undefined}
             actions={
-              actionMenu.mode === "pie"
+              actionMenu.drawingTools ??
+              (actionMenu.mode === "pie"
                 ? primaryMenuItems
-                : [...overlapActions, ...listActions]
+                : [...overlapActions, ...listActions])
             }
             close={() => setActionMenu(undefined)}
             search={() => paletteOpen("search")}

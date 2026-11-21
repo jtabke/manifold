@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import * as f from "@manifold/foundation";
 import { RegionSession } from "../src/regions/document.ts";
 import {
+  createDrawing,
+  deleteDrawings,
   drawings,
   editDrawings,
+  DRAFTING_DRAWING,
   duplicateDrawings,
   scaledDrawingSchema,
   drawingSchema,
@@ -11,12 +14,17 @@ import {
 import { drawingGeometry } from "../src/regions/drawingGeometry.ts";
 import {
   dimensionLineLayout,
+  joinedAngle,
+  radialGeometry,
+  selectedAngle,
   validateDimensionPlacements,
 } from "../src/regions/drawingDimensions.ts";
 import {
   createScaledArea,
   exactDrawing,
   setDimensionPlacement,
+  setAngleDimension,
+  setRadialDimension,
   resetDimensionPlacements,
   updateDrawingScale,
 } from "../src/regions/drawingScaleOperations.ts";
@@ -187,6 +195,90 @@ assert.deepEqual(entry(rectangle).mark.dimensionPlacement, {
   height: { offset: 50, label: 12 },
 });
 assert.equal(f.current(s.document, rectangle).schema, "canvas-drawing@2");
+const p = (x, y) => ({ x, y, pressure: 0.5 });
+const mark = (kind, points) => ({
+  kind,
+  points,
+  color: "#888888",
+  width: 2,
+  text: "",
+  start: null,
+  end: null,
+});
+const right = createDrawing(s, mark("line", [p(0, 0), p(100, 0)]), p(200, 300));
+const up = createDrawing(s, mark("arrow", [p(0, -100), p(0, 0)]), p(200, 300));
+const edges = new Set([right, up]);
+const inspect = () =>
+  selectedAngle(drawingGeometry(drawings(s.document)), edges);
+near(inspect().angle.degrees, 90);
+near(joinedAngle([p(1, 1), p(4, 1)], [p(1, 1), p(0, 0)]).degrees, 135);
+near(joinedAngle([p(0, 0), p(10, 0)], [p(-10, 0), p(0, 0)]).degrees, 180);
+assert.equal(joinedAngle([p(0, 0), p(10, 0)], [p(0, 5), p(0, 15)]), undefined);
+assert.equal(joinedAngle([p(0, 0), p(0, 0)], [p(0, 0), p(0, 20)]), undefined);
+setAngleDimension(s, edges, true);
+assert(inspect().pinned);
+assert.equal(f.current(s.document, right).schema, DRAFTING_DRAWING);
+const copies = duplicateDrawings(s, [right, up]).map(entry);
+const otherRight = copies.find((e) => e.mark.kind === "line");
+const otherUp = copies.find((e) => e.mark.kind === "arrow");
+assert.equal(
+  otherRight.mark.angleDimensions[0].item,
+  otherUp.id,
+  "Duplicate the pair as a pair",
+);
+const orphan = duplicateDrawings(s, [right])[0];
+assert.equal(entry(orphan).mark.angleDimensions, undefined);
+editDrawings(s, [
+  {
+    entry: entry(up),
+    mark: { ...entry(up).mark, points: [p(50, -50), p(0, 0)] },
+  },
+]);
+near(inspect().angle.degrees, 45);
+editDrawings(s, [{ entry: entry(up), at: p(240, 340) }]);
+assert.equal(
+  inspect().angle,
+  undefined,
+  "No misleading measurement at a disconnected joint",
+);
+assert(inspect().pinned);
+s.undo();
+near(inspect().angle.degrees, 45);
+deleteDrawings(s, [up]);
+assert.equal(
+  entry(right).mark.angleDimensions,
+  undefined,
+  "Deleting an edge detaches its annotation",
+);
+s.undo();
+assert.equal(entry(right).mark.angleDimensions[0].item, up);
+setAngleDimension(s, edges, false);
+assert(!inspect().pinned);
+s.undo();
+assert(inspect().pinned);
+const round = mark("ellipse", [p(0, 0), p(100, 100)]);
+const ellipse = mark("ellipse", [p(0, 0), p(100, 75)]);
+assert.equal(radialGeometry(ellipse.kind, ellipse.points), undefined);
+assert.deepEqual(radialGeometry(round.kind, round.points).center, {
+  x: 50,
+  y: 50,
+});
+const arc = mark("arc", [p(0, 0), p(60, -60), p(120, 0)]);
+near(radialGeometry(arc.kind, arc.points).radius, 60);
+const arcId = createDrawing(s, {
+  ...arc,
+  area: f.reference(s.document.document, area),
+});
+setRadialDimension(s, arcId, "diameter");
+assert.equal(entry(arcId).mark.radialDimension, "diameter");
+assert.equal(f.current(s.document, arcId).schema, DRAFTING_DRAWING);
+assert.deepEqual(entry(arcId).mark.points, arc.points);
+const ellipseId = createDrawing(s, ellipse);
+assert.throws(() => setRadialDimension(s, ellipseId, "radius"), /circle/);
+assert.deepEqual(
+  drawings((await stageWorkspaceFile(archive(s.native()))).document),
+  drawings(s.document),
+);
 console.log(
-  "Drafting dimension geometry, short/reversed/vertical/zero spans, zoom legibility, strict placement bounds, independent annotation edits, stale rejection, Undo/Redo, reset/copy and native round trips pass.",
+  "Drafting dimensions: linear placement, live included angle and circular measurements, duplication, Undo/Redo, deletion cleanup and native round trips pass.",
 );

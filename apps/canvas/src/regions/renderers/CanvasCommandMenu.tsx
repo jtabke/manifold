@@ -11,6 +11,7 @@ import { ChevronDown } from "lucide-react";
 /** A disclosure of ordinary controls, with normal Tab navigation (not an ARIA menu). */
 export function CanvasCommandMenu({
   label,
+  displayLabel,
   icon,
   children,
   align = "left",
@@ -20,6 +21,7 @@ export function CanvasCommandMenu({
   closeOnAction = true,
 }: {
   label: string;
+  displayLabel?: string;
   icon?: ReactNode;
   children: ReactNode;
   align?: "left" | "right";
@@ -112,7 +114,7 @@ export function CanvasCommandMenu({
         onClick={() => setOpen(!open)}
       >
         {icon}
-        <span>{(active && activeTool) || label}</span>
+        <span>{(active && activeTool) || displayLabel || label}</span>
         <ChevronDown size={12} aria-hidden="true" />
       </button>
       {open && (

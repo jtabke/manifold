@@ -22,8 +22,103 @@
 .drawing-primary-tools > button {
   font-size: 12px;
 }
+.drawing-label-short {
+  display: none;
+}
+.drawing-tool-group {
+  display: grid;
+  gap: 3px;
+}
+.drawing-tool-group + .drawing-tool-group {
+  border-top: 1px solid var(--canvas-border);
+  padding-top: 4px;
+}
+.drawing-tool-group > button {
+  justify-content: flex-start;
+  width: 100%;
+  font-size: 12px;
+  text-align: left;
+}
+.drawing-shortcut-key {
+  margin-left: auto;
+  padding-inline: 4px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 4px;
+  color: var(--canvas-muted);
+  font-size: 0.82em;
+}
 .drawing-icon-menu {
   flex-shrink: 0;
+}
+.drawing-wheel-editor {
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 10px;
+  background: var(--canvas-surface);
+  color: var(--canvas-text);
+  font-size: 13px;
+  box-shadow: 0 10px 32px var(--canvas-shadow);
+}
+.drawing-wheel-editor::backdrop {
+  background: var(--canvas-backdrop);
+}
+.drawing-wheel-editor h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.drawing-wheel-editor p {
+  margin: 8px 0 14px;
+  color: var(--canvas-muted);
+  line-height: 1.45;
+}
+.drawing-wheel-editor [role="alert"] {
+  color: var(--canvas-danger);
+}
+.drawing-wheel-positions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+.drawing-wheel-positions label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.drawing-wheel-positions label > span > span {
+  color: var(--canvas-accent);
+}
+.drawing-wheel-positions select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 6px;
+  border: 1px solid var(--canvas-border);
+  border-radius: 5px;
+  background: var(--canvas-surface-soft);
+  color: inherit;
+  font: inherit;
+}
+.drawing-wheel-editor footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 16px;
+}
+.er-app .drawing-wheel-editor footer > button {
+  min-height: 36px;
+  border-color: var(--canvas-border);
+}
+.drawing-wheel-editor footer > button:first-child {
+  margin-inline-end: auto;
+}
+.er-app .drawing-wheel-editor button[type="submit"] {
+  background: var(--canvas-accent-tint);
+  color: var(--canvas-accent);
 }
 .drawing-mode-status {
   padding: 5px 8px;
@@ -84,6 +179,12 @@
   padding-left: 5px;
 }
 .drawing-toolbar [hidden] {
+  display: none;
+}
+:is(.wc-toolbar-left, .wc-toolbar-right)
+  .drawing-primary-tools
+  > button
+  > .drawing-label-short {
   display: none;
 }
 .drawing-hint {
@@ -207,6 +308,16 @@
 .drawing-dimensions {
   color: var(--canvas-muted);
 }
+.drawing-geometric-dimension {
+  color: var(--canvas-accent);
+}
+.drawing-geometric-dimension path {
+  fill: none;
+  stroke: currentColor;
+}
+.drawing-geometric-dimension circle {
+  fill: currentColor;
+}
 .drawing-dimension-extension,
 .drawing-dimension-baseline {
   stroke: currentColor;
@@ -295,12 +406,57 @@
   color: var(--canvas-error, #b42318);
 }
 @media (max-width: 600px) {
-  .drawing-primary-tools > button > span {
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom) .drawing-toolbar {
+    gap: 3px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-primary-tools {
+    gap: 2px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-toolbar
+    :is(.drawing-primary-tools > button, .er-command-menu > button) {
+    padding-inline: 5px;
+    gap: 4px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-toolbar
+    :is(.drawing-primary-tools > button, .er-command-menu > button)
+    > svg {
+    width: 14px;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom) .drawing-label-full {
+    display: none;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-label-short {
+    display: inline;
+  }
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-scale-tools
+    .er-command-menu
+    > button
+    > svg {
+    display: none;
+  }
+}
+@media (max-width: 440px) {
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    :is(
+      .drawing-primary-tools > button,
+      .drawing-primary-tools > .er-command-menu > button
+    )
+    > svg:first-child,
+  .wc-toolbar-slot:is(.wc-toolbar-top, .wc-toolbar-bottom)
+    .drawing-primary-tools
+    .drawing-icon-menu
+    button[data-active="true"]
+    > svg:first-child {
     display: none;
   }
 }
 @media (max-width: 900px) {
-  .drawing-hint {
+  .drawing-hint:not([data-precise-path]) {
     display: none;
   }
   .drawing-selection-actions > button > span {

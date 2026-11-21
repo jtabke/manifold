@@ -29,6 +29,7 @@ const names = [
   "check-drawing-dimensions.mjs",
   "check-drawing-scale-browser.mjs",
   "check-dimension-placement-browser.mjs",
+  "check-drafting-browser.mjs",
   "check-drawing-regularization.mjs",
   "check-drawing-browser.mjs",
   "check-drawing-scene-browser.mjs",

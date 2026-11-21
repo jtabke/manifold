@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import * as f from "@manifold/foundation";
 import { RegionSession } from "../src/regions/document.ts";
 import {
+  ARC_DRAWING,
   CURVED_DRAWING,
+  DRAFTING_DRAWING,
+  curvedDrawingSchema,
   createDrawing,
   drawings,
   drawingSchema,
@@ -13,6 +16,7 @@ import {
   deleteDrawings,
 } from "../src/regions/drawing.ts";
 import {
+  circularArc,
   curveSegments,
   curvePath,
   flattenCurve,
@@ -131,6 +135,97 @@ const store = canvasLocalStore(f.memoryBackend());
 await store.load();
 await store.save(s);
 assert.deepEqual(drawings((await store.load()).document), drawings(s.document));
+const arc = mark("arc", [p(150, 100), p(50, 100), p(100, 150)]);
+const circle = circularArc(arc.points);
+assert.ok(Math.abs(circle.radius - 50) < 1e-10);
+assert.ok(
+  Math.abs(circle.sweep + 1.5 * Math.PI) < 1e-10,
+  "the through point selects the major arc",
+);
+assert.match(curvePath("arc", arc.points), / A[^ ]+ 0 1 0 100,150$/);
+for (const entry of flattenCurve("arc", arc.points))
+  assert.ok(Math.abs(Math.hypot(entry.x - 100, entry.y - 100) - 50) < 1e-9);
+assert.equal(circularArc([p(0, 0), p(50, -50), p(100, 0)]).sweep, Math.PI);
+for (const bad of [
+  [p(0, 0), p(20, 0), p(50, 0)],
+  [p(0, 0), p(20, 1), p(0, 0)],
+  [p(0, 0), p(2, 1)],
+  [p(0, 0), p(1000, 0.01), p(2000, 0)],
+]) {
+  assert.throws(
+    () => validateMark(mark("arc", bad)),
+    /three distinct, non-collinear/,
+  );
+}
+assert.throws(() => curvedDrawingSchema.validate(arc), /@4/);
+const arcId = createDrawing(s, arc, p(25, -10));
+const arcEntry = drawings(s.document).find((e) => e.id === arcId);
+assert.equal(f.current(s.document, arcId).schema, ARC_DRAWING);
+geometry = drawingGeometry(drawings(s.document));
+assert.ok(
+  Math.abs(geometry.bounds(arcEntry).y - 40) < 1e-9,
+  "bounds include an unclicked cardinal point",
+);
+assert(geometry.hit(arcEntry, p(125, 40), 0));
+assert(!geometry.hit(arcEntry, p(125, 90), 0));
+assert(
+  !geometry.hit(arcEntry, p(160.355, 125.355), 0),
+  "do not hit the complementary sweep",
+);
+const [arcEdit] = geometry.transform(
+  new Set([arcId]),
+  p(200, 200),
+  true,
+)(p(300, 200));
+const resized = circularArc(arcEdit.mark.points);
+assert.ok(Math.abs(resized.radius - 75) < 1e-9);
+assert.ok(
+  Math.abs(resized.sweep - circle.sweep) < 1e-9,
+  "resize preserves circular proportions",
+);
+editDrawings(s, [arcEdit]);
+s.undo();
+assert.deepEqual(drawings(s.document).find((e) => e.id === arcId).mark, arc);
+s.redo();
+assert.deepEqual(
+  drawings((await stageWorkspaceFile(archive(s.native()))).document),
+  drawings(s.document),
+);
+const corners = [p(0, 0), p(90, 0), p(90, 90)];
+for (const bad of [
+  mark("polyline", [p(0, 0)]),
+  mark("polygon", [p(0, 0), p(90, 0), p(30, 0)]),
+  mark("polygon", [...corners, corners[0]]),
+  mark("polyline", [corners[0], corners[0]]),
+])
+  assert.throws(() => validateMark(bad));
+assert.throws(
+  () => curvedDrawingSchema.validate(mark("polygon", corners)),
+  /@5/,
+);
+const polygonId = createDrawing(s, mark("polygon", corners), p(300, 200));
+const polylineId = createDrawing(s, mark("polyline", corners), p(300, 200));
+geometry = drawingGeometry(drawings(s.document));
+const polygon = geometry.byId.get(polygonId),
+  polyline = geometry.byId.get(polylineId);
+assert.equal(f.current(s.document, polygonId).schema, DRAFTING_DRAWING);
+assert(
+  geometry.hit(polygon, p(345, 245), 0),
+  "Polygon's closing edge is selectable",
+);
+assert(!geometry.hit(polyline, p(345, 245), 0), "Open polyline does not close");
+assert(
+  !geometry.hit(polygon, p(375, 240), 0),
+  "An outline doesn't claim its interior",
+);
+assert(
+  geometry.sweptHit(polygon, p(342, 247), p(347, 242), 0),
+  "Eraser crosses closing edge",
+);
+assert.deepEqual(
+  drawings((await stageWorkspaceFile(archive(s.native()))).document),
+  drawings(s.document),
+);
 console.log(
-  "drawing curves: schema, geometry, transforms, history, native file and recovery passed",
+  "Drawing paths: Bézier, spline, circular arc and polygon geometry, transforms, history, native file and recovery passed",
 );

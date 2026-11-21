@@ -49,12 +49,14 @@ function sector(index: number, count: number) {
 export function CanvasActionMenu({
   location,
   subject,
+  label,
   actions,
   close,
   search,
 }: {
   location: ActionMenuLocation;
   subject: string;
+  label?: string;
   actions: CanvasAction[];
   close: () => void;
   search: () => void;
@@ -81,7 +83,11 @@ export function CanvasActionMenu({
   const dismiss = () => {
     close();
     const trigger = origin.current;
-    if (!(trigger instanceof HTMLElement) || !trigger.isConnected) return;
+    if (
+      !(trigger instanceof HTMLElement || trigger instanceof SVGElement) ||
+      !trigger.isConnected
+    )
+      return;
     trigger.focus({ preventScroll: true });
     // Selection controls are hidden until React removes the menu. Don't steal focus from a command's editor.
     if (document.activeElement !== trigger)
@@ -199,7 +205,7 @@ export function CanvasActionMenu({
         ref={menu}
         role="menu"
         data-canvas-controls=""
-        aria-label={pie ? "Canvas actions" : "Context actions"}
+        aria-label={label ?? (pie ? "Canvas actions" : "Context actions")}
         aria-description={subject}
         data-revealed={revealed}
         tabIndex={-1}

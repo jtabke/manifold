@@ -17,8 +17,12 @@ import {
 } from "./drawingScale.ts";
 import {
   dimensionAxes,
+  MAX_ANGLE_DIMENSIONS,
+  radialGeometry,
+  selectedAngle,
   type DimensionAxis,
   type DimensionPlacement,
+  type RadialDimension,
 } from "./drawingDimensions.ts";
 export function setDimensionPlacement(
   session: RegionSession,
@@ -39,6 +43,52 @@ export function setDimensionPlacement(
   if (Object.keys(placements).length) mark.dimensionPlacement = placements;
   else delete mark.dimensionPlacement;
   editDrawings(session, [{ entry, mark }], expected);
+}
+export function setRadialDimension(
+  session: RegionSession,
+  id: string,
+  mode: RadialDimension | null,
+) {
+  const entry = drawings(session.document).find((e) => e.id === id);
+  f.assert(
+    entry &&
+      (mode
+        ? radialGeometry(entry.mark.kind, entry.mark.points)
+        : entry.mark.radialDimension),
+    "Choose an arc or circle",
+  );
+  const mark = { ...entry.mark };
+  if (mode) mark.radialDimension = mode;
+  else delete mark.radialDimension;
+  editDrawings(session, [{ entry, mark }]);
+}
+export function setAngleDimension(
+  session: RegionSession,
+  ids: ReadonlySet<string>,
+  keep: boolean,
+) {
+  const pair = selectedAngle(drawingGeometry(drawings(session.document)), ids);
+  f.assert(
+    pair && (keep ? pair.angle : pair.pinned),
+    "Select two straight edges that share an endpoint",
+  );
+  if (pair.pinned === keep) return;
+  const { a, b } = pair;
+  const mark = { ...a.mark };
+  const refs = mark.angleDimensions ?? [];
+  if (keep) {
+    f.assert(
+      refs.length < MAX_ANGLE_DIMENSIONS,
+      "This edge already has eight kept angle dimensions",
+    );
+    mark.angleDimensions = [
+      ...refs,
+      f.reference(session.document.document, b.id),
+    ];
+  } else if (refs.length > 1)
+    mark.angleDimensions = refs.filter((ref) => ref.item !== b.id);
+  else delete mark.angleDimensions;
+  editDrawings(session, [{ entry: a, mark }]);
 }
 export function resetDimensionPlacements(
   session: RegionSession,

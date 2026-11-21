@@ -397,9 +397,10 @@ try {
         }),
       );
   });
-  await expect(
-    page.getByRole("button", { name: "Fit page", exact: true }),
-  ).toHaveText(`${Math.round(Math.exp(0.18) * 100)}%`);
+  const zoomValue = page
+    .getByRole("button", { name: "Fit page", exact: true })
+    .locator(".er-zoom-value");
+  await expect(zoomValue).toHaveText(`${Math.round(Math.exp(0.18) * 100)}%`);
   await paint();
   const zoomAfter = await counts();
   assert.ok(
@@ -415,9 +416,7 @@ try {
   // Completion must consume the newest queued multi-object preview, even
   // when move and release arrive in the same task without an intervening RAF.
   await page.keyboard.press("ControlOrMeta+0");
-  await expect(
-    page.getByRole("button", { name: "Fit page", exact: true }),
-  ).toHaveText("100%");
+  await expect(zoomValue).toHaveText("100%");
   const first = page.locator('[data-region-id="fast-0"]');
   await first.locator(".er-math-line").click();
   await page

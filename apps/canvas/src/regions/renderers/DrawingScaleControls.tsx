@@ -12,9 +12,12 @@ import {
   assignDrawingArea,
   calibrateDrawingSelection,
   exactDrawing,
+  setAngleDimension,
+  setRadialDimension,
   updateDrawingScale,
   resetDimensionPlacements,
 } from "../drawingScaleOperations";
+import { radialGeometry, selectedAngle } from "../drawingDimensions";
 import { CanvasCommandMenu } from "./CanvasCommandMenu";
 export function DrawingScaleControls({
   session,
@@ -136,19 +139,78 @@ export function DrawingScaleControls({
   const existing = target?.mark.kind === kind ? target : undefined;
   const referenceLine =
     selected.filter((e) => e.mark.kind === "line").length === 1;
+  const corner =
+    selected.length === 2
+      ? selectedAngle(drawingGeometry(entries), selection)
+      : undefined;
+  const single = selected.length === 1 ? selected[0] : undefined;
+  const circular =
+    single && radialGeometry(single.mark.kind, single.mark.points);
   return (
-    <div className="drawing-icon-menu">
+    <div className="drawing-scale-tools">
       <CanvasCommandMenu
         label="Scaled drawings"
+        displayLabel="Scale"
         icon={<Ruler size={17} />}
         closeOnAction={false}
-        description="Physical units, dimensions and drawing calibration"
+        description="Manage drawing scale, physical units and dimensions"
       >
         <div className="drawing-scale-panel">
           <strong>Scaled drawings</strong>
           <p>
             Each area has its own physical scale. Zoom never changes dimensions.
           </p>
+          {corner && (
+            <fieldset disabled={disabled}>
+              <legend>Included angle</legend>
+              <small>
+                {corner.angle
+                  ? `${Number(corner.angle.degrees.toFixed(2))}° between the selected edges.`
+                  : "The two straight edges must share an endpoint."}
+              </small>
+              <button
+                type="button"
+                disabled={!corner.pinned && !corner.angle}
+                onClick={() =>
+                  run(() =>
+                    setAngleDimension(session, selection, !corner.pinned),
+                  )
+                }
+              >
+                {corner.pinned
+                  ? "Remove angle dimension"
+                  : "Keep angle dimension"}
+              </button>
+            </fieldset>
+          )}
+          {single && (circular || single.mark.radialDimension) && (
+            <fieldset disabled={disabled}>
+              <legend>Circular dimension</legend>
+              {circular &&
+                (["radius", "diameter"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={single.mark.radialDimension === mode}
+                    onClick={() =>
+                      run(() => setRadialDimension(session, single.id, mode))
+                    }
+                  >
+                    Keep {mode}
+                  </button>
+                ))}
+              {single.mark.radialDimension && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    run(() => setRadialDimension(session, single.id, null))
+                  }
+                >
+                  Remove circular dimension
+                </button>
+              )}
+            </fieldset>
+          )}
           <button type="button" disabled={disabled} onClick={drawArea}>
             Draw new area
           </button>

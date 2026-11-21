@@ -210,16 +210,23 @@ export function ShortcutCustomization({
                     }
                     if (["Shift", "Control", "Meta", "Alt"].includes(event.key))
                       return;
-                    const combo = shortcutFromEvent(event.nativeEvent);
+                    const drawing = action.id.startsWith("drawing.");
+                    const combo = shortcutFromEvent(
+                      event.nativeEvent,
+                      true,
+                      drawing,
+                    );
                     setCapture({ ...capture, key: combo || event.key });
                     if (
                       accept(() => {
                         if (!combo)
                           throw Error(
-                            "Use a modified letter/digit or F1/F2/F8/F9; typing and editing keys are protected.",
+                            drawing
+                              ? "Use a drawing letter, modified shortcut, or F1/F2/F8/F9."
+                              : "Use a modified letter/digit or F1/F2/F8/F9; typing and editing keys are protected.",
                           );
                         return preferences.replace(action.id, [
-                          normalizeShortcut(combo),
+                          normalizeShortcut(combo, drawing),
                         ]);
                       }, `${action.label} shortcut updated.`)
                     )
@@ -250,9 +257,10 @@ export function ShortcutCustomization({
             />
           </label>
           <p>
-            Version 1; context must be <code>canvas</code>. Omitted actions use
-            defaults; <code>keys: []</code> disables a binding. Changes apply
-            together, only after validation and a successful local save.
+            Version 1; context is <code>drawing</code> for drawing tools and{" "}
+            <code>canvas</code> for other actions. Omitted actions use defaults;{" "}
+            <code>keys: []</code> disables a binding. Changes apply together,
+            only after validation and a successful local save.
           </p>
           <button
             onClick={() =>

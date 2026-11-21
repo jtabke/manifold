@@ -1,7 +1,12 @@
 /** Portable visual marks. References preserve connector identity, not computation. */
 import * as f from "@manifold/foundation";
 import { rendererViews } from "./rendererViews.ts";
-import { isCurve, MAX_SPLINE_POINTS } from "./drawingCurves.ts";
+import {
+  circularArc,
+  isCurve,
+  isVertexPath,
+  MAX_SPLINE_POINTS,
+} from "./drawingCurves.ts";
 import type { RegionSession, Point } from "./document.ts";
 import { drawingGeometry } from "./drawingGeometry.ts";
 import { detachMember } from "./canvasScene.ts";
@@ -12,12 +17,17 @@ import {
   withAreaMembers,
 } from "./drawingScale.ts";
 import {
+  isStraightDrawing,
+  MAX_ANGLE_DIMENSIONS,
   validateDimensionPlacements,
   type DimensionPlacements,
+  type RadialDimension,
 } from "./drawingDimensions.ts";
 export const DRAWING = "canvas-drawing@1";
 export const SCALED_DRAWING = "canvas-drawing@2";
 export const CURVED_DRAWING = "canvas-drawing@3";
+export const ARC_DRAWING = "canvas-drawing@4";
+export const DRAFTING_DRAWING = "canvas-drawing@5";
 export const DRAWING_RENDERER = "canvas-drawing-view@1";
 export const MAX_DRAWINGS = 2000;
 export const MAX_STROKE_POINTS = 8192;
@@ -39,6 +49,9 @@ export type Mark = {
   area?: f.Reference;
   scale?: DrawingScale;
   dimensionPlacement?: DimensionPlacements;
+  radialDimension?: RadialDimension;
+  /** Each included angle follows this edge and one other straight drawing. */
+  angleDimensions?: f.Reference[];
 };
 export type DrawingEntry = { id: string; view: f.View; mark: Mark };
 export type DrawingEdit = { entry: DrawingEntry; mark?: Mark; at?: Point };
@@ -47,7 +60,10 @@ const kinds = [
   "highlighter",
   "line",
   "curve",
+  "arc",
   "spline",
+  "polyline",
+  "polygon",
   "arrow",
   "rectangle",
   "ellipse",
@@ -59,6 +75,10 @@ const checked = new WeakSet<object>();
 const projections = new WeakMap<f.Document, DrawingEntry[]>();
 const entriesByView = new WeakMap<f.View, DrawingEntry>();
 
+const usesDraftingSchema = (mark: Mark) =>
+  isVertexPath(mark.kind) ||
+  mark.radialDimension !== undefined ||
+  mark.angleDimensions !== undefined;
 const finite = (n: unknown, max = 1_000_000) =>
   typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= max;
 export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
@@ -75,7 +95,36 @@ export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
     "area",
     "scale",
     "dimensionPlacement",
+    "radialDimension",
+    "angleDimensions",
   ]);
+  if (raw.radialDimension !== undefined)
+    f.assert(
+      (raw.kind === "arc" || raw.kind === "ellipse") &&
+        (raw.radialDimension === "radius" ||
+          raw.radialDimension === "diameter"),
+      "A radial dimension requires a circular drawing",
+    );
+  if (raw.angleDimensions !== undefined) {
+    f.assert(
+      isStraightDrawing(raw.kind) &&
+        Array.isArray(raw.angleDimensions) &&
+        raw.angleDimensions.length > 0 &&
+        raw.angleDimensions.length <= MAX_ANGLE_DIMENSIONS,
+      "Angle dimensions require straight edges",
+    );
+    const targets = new Set<string>();
+    for (const target of raw.angleDimensions) {
+      f.validateReference(target);
+      f.assert(
+        target.selection.kind === "follow" &&
+          sameJson(target.selector, f.wholeSelector) &&
+          !targets.has(target.item),
+        "Invalid angle dimension edge",
+      );
+      targets.add(target.item);
+    }
+  }
   if (raw.dimensionPlacement !== undefined) {
     f.assert(
       raw.area !== undefined,
@@ -140,12 +189,44 @@ export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
       raw.points.length === 3,
       "Curves require start, control and end points",
     );
+  else if (raw.kind === "arc")
+    f.assert(
+      circularArc(raw.points as unknown as InkPoint[]),
+      "Arcs require three distinct, non-collinear points within the supported radius",
+    );
   else if (raw.kind === "spline")
     f.assert(
       raw.points.length >= 2 && raw.points.length <= MAX_SPLINE_POINTS,
       `Splines support 2–${MAX_SPLINE_POINTS} knots`,
     );
-  else if (!isInk(raw.kind))
+  else if (isVertexPath(raw.kind)) {
+    const points = raw.points as unknown as InkPoint[];
+    const closed = raw.kind === "polygon";
+    f.assert(
+      points.length >= (closed ? 3 : 2) && points.length <= MAX_SPLINE_POINTS,
+      "Place 2–128 vertices for a polyline, or 3–128 for a polygon",
+    );
+    f.assert(
+      points.every((point, i) => {
+        const next = points[i + 1] ?? (closed ? points[0] : undefined);
+        return !next || Math.hypot(point.x - next.x, point.y - next.y) > 1e-9;
+      }),
+      "Adjacent path vertices must be distinct",
+    );
+    if (closed) {
+      const [a, b] = points;
+      f.assert(
+        points
+          .slice(2)
+          .some(
+            (c) =>
+              Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) >
+              1e-9,
+          ),
+        "A polygon needs at least three non-collinear vertices",
+      );
+    }
+  } else if (!isInk(raw.kind))
     f.assert(raw.points.length === 2, "Shapes require two corners");
   if (raw.kind !== "text")
     f.assert(raw.text === "", "Only labels contain text");
@@ -174,7 +255,14 @@ export function validateMark(raw: f.Json): asserts raw is f.Json & Mark {
 }
 export const curvedDrawingSchema: f.Schema = {
   id: CURVED_DRAWING,
-  validate: validateMark,
+  validate(body) {
+    validateMark(body);
+    f.assert(body.kind !== "arc", "Arcs require canvas-drawing@4");
+    f.assert(
+      !usesDraftingSchema(body),
+      "Drafting paths and annotations require canvas-drawing@5",
+    );
+  },
   references(body) {
     validateMark(body);
     return [
@@ -184,8 +272,45 @@ export const curvedDrawingSchema: f.Schema = {
   },
   assets: () => [],
   project(body) {
-    validateMark(body);
+    this.validate(body);
     return { type: CURVED_DRAWING, value: body };
+  },
+};
+export const arcDrawingSchema: f.Schema = {
+  ...curvedDrawingSchema,
+  id: ARC_DRAWING,
+  validate(body) {
+    validateMark(body);
+    f.assert(
+      body.kind === "arc" && !usesDraftingSchema(body),
+      "Expected an unannotated three-point arc",
+    );
+  },
+  project(body) {
+    this.validate(body);
+    return { type: ARC_DRAWING, value: body };
+  },
+};
+export const draftingDrawingSchema: f.Schema = {
+  ...curvedDrawingSchema,
+  id: DRAFTING_DRAWING,
+  validate(body) {
+    validateMark(body);
+    f.assert(
+      usesDraftingSchema(body),
+      "Expected a drafting path or annotation",
+    );
+  },
+  references(body) {
+    validateMark(body);
+    return [
+      ...curvedDrawingSchema.references(body),
+      ...(body.angleDimensions ?? []),
+    ];
+  },
+  project(body) {
+    this.validate(body);
+    return { type: DRAFTING_DRAWING, value: body };
   },
 };
 export const scaledDrawingSchema: f.Schema = {
@@ -193,7 +318,12 @@ export const scaledDrawingSchema: f.Schema = {
   id: SCALED_DRAWING,
   validate(body) {
     validateMark(body);
+    f.assert(body.kind !== "arc", "Arcs require canvas-drawing@4");
     f.assert(!isCurve(body.kind), "Curves require canvas-drawing@3");
+    f.assert(
+      !usesDraftingSchema(body),
+      "Drafting paths and annotations require canvas-drawing@5",
+    );
   },
   project(body) {
     this.validate(body);
@@ -228,7 +358,9 @@ export function drawings(document: f.Document): DrawingEntry[] {
     f.assert(
       revision?.schema === DRAWING ||
         revision?.schema === SCALED_DRAWING ||
-        revision?.schema === CURVED_DRAWING,
+        revision?.schema === CURVED_DRAWING ||
+        revision?.schema === ARC_DRAWING ||
+        revision?.schema === DRAFTING_DRAWING,
       "Missing drawing",
     );
     validateMark(revision.body);
@@ -268,6 +400,13 @@ export function validateDrawingDocument(document: f.Document) {
           byId.get(e.mark.area.item)?.mark.kind === "area",
         "Drawings must belong to a live drawing area in this document",
       );
+    for (const a of e.mark.angleDimensions ?? [])
+      f.assert(
+        a.document === document.document &&
+          a.item !== e.id &&
+          isStraightDrawing(byId.get(a.item)?.mark.kind),
+        "Angle dimensions must reference another live straight edge in this document",
+      );
     for (const a of [e.mark.start, e.mark.end])
       if (a) {
         const target = byId.get(a.target.item);
@@ -284,11 +423,15 @@ const uid = () => "drawing-" + crypto.randomUUID();
 const revision = (item: string, mark: Mark): f.Revision => ({
   item,
   id: uid(),
-  schema: isCurve(mark.kind)
-    ? CURVED_DRAWING
-    : mark.kind === "area" || mark.area
-      ? SCALED_DRAWING
-      : DRAWING,
+  schema: usesDraftingSchema(mark)
+    ? DRAFTING_DRAWING
+    : mark.kind === "arc"
+      ? ARC_DRAWING
+      : isCurve(mark.kind)
+        ? CURVED_DRAWING
+        : mark.kind === "area" || mark.area
+          ? SCALED_DRAWING
+          : DRAWING,
   required: true,
   body: mark as unknown as f.Json,
 });
@@ -400,13 +543,23 @@ export function deleteDrawings(
         { kind: "removeView", id: e.view.id },
         { kind: "delete", item: e.id },
       );
-    } else if (
-      [e.mark.start, e.mark.end].some((a) => a && removed.has(a.target.item))
-    ) {
+      continue;
+    }
+    const detach = [e.mark.start, e.mark.end].some(
+      (a) => a && removed.has(a.target.item),
+    );
+    const clearAngle = e.mark.angleDimensions?.some((a) => removed.has(a.item));
+    if (detach || clearAngle) {
+      const mark = detach ? geometry.detachedMark(e, removed) : { ...e.mark };
+      if (clearAngle) {
+        const kept = mark.angleDimensions!.filter((a) => !removed.has(a.item));
+        if (kept.length) mark.angleDimensions = kept;
+        else delete mark.angleDimensions;
+      }
       commands.push({
         kind: "revise",
         item: e.id,
-        revision: revision(e.id, geometry.detachedMark(e, removed)),
+        revision: revision(e.id, mark),
       });
     }
   }
@@ -426,12 +579,18 @@ export function duplicateDrawings(session: RegionSession, ids: string[]) {
       ),
     };
   session.applyCommands(
-    entries.flatMap((e) =>
-      createCommands(
+    entries.flatMap((e) => {
+      const { angleDimensions, ...mark } = e.mark;
+      const angles = angleDimensions?.flatMap((a) => {
+        const id = mapping.get(a.item);
+        return id ? [f.reference(expected.document, id)] : [];
+      });
+      return createCommands(
         expected.document,
         mapping.get(e.id)!,
         {
-          ...e.mark,
+          ...mark,
+          ...(angles?.length ? { angleDimensions: angles } : {}),
           start: anchor(e.mark.start),
           end: anchor(e.mark.end),
           ...(e.mark.area
@@ -444,8 +603,8 @@ export function duplicateDrawings(session: RegionSession, ids: string[]) {
             : {}),
         },
         { x: e.view.x + 24, y: e.view.y + 24 },
-      ),
-    ),
+      );
+    }),
     expected,
   );
   return [...mapping.values()];

@@ -14,6 +14,7 @@ import {
   SHORTCUT_STORAGE,
   type ShortcutAction,
   type ShortcutBindings,
+  type ShortcutScope,
 } from "../interaction/shortcutBindings";
 
 export const ShortcutBindingsContext =
@@ -21,6 +22,7 @@ export const ShortcutBindingsContext =
 export function canvasShortcut(
   event: KeyboardEvent,
   bindings: ShortcutBindings,
+  scope?: ShortcutScope,
 ): ShortcutAction | undefined {
   if (
     isDialogEvent(event) ||
@@ -30,12 +32,13 @@ export function canvasShortcut(
       ))
   )
     return;
-  return resolveShortcut(event, bindings);
+  return resolveShortcut(event, bindings, scope);
 }
 export function useShortcutMatcher() {
   const bindings = useContext(ShortcutBindingsContext);
   return useCallback(
-    (event: KeyboardEvent) => canvasShortcut(event, bindings),
+    (event: KeyboardEvent, scope?: ShortcutScope) =>
+      canvasShortcut(event, bindings, scope),
     [bindings],
   );
 }

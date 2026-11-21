@@ -22,6 +22,7 @@ import { setDimensionPlacement } from "../drawingScaleOperations";
 import type { DrawingEntry } from "../drawing";
 import type { drawingGeometry, Bounds } from "../drawingGeometry";
 import { drawingGridStep, formatDrawingLength } from "../drawingScale";
+import { DrawingGeometricDimensions } from "./DrawingGeometricDimensions";
 export function DrawingAreaGrid({
   entry,
   bounds: b,
@@ -399,6 +400,12 @@ export const DrawingDimensions = memo(function DrawingDimensions({
         Escape cancels a drag or returns to the shape. Placement never changes
         geometry.
       </desc>
+      <DrawingGeometricDimensions
+        entries={entries}
+        geometry={geometry}
+        selection={selection}
+        zoom={zoom}
+      />
       {entries.flatMap((entry) => {
         const scale =
           entry.mark.area &&

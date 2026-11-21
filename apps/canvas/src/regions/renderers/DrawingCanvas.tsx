@@ -1,10 +1,23 @@
-import { useShortcutMatcher } from "../app/useShortcutPreferences";
-import type { ShortcutAction } from "../interaction/shortcutBindings";
+import {
+  ShortcutBindingsContext,
+  useShortcutMatcher,
+} from "../app/useShortcutPreferences";
+import {
+  drawingShortcutActions,
+  shortcutLabel,
+  type ShortcutAction,
+} from "../interaction/shortcutBindings";
 import { isCanvasControlEvent } from "../interaction/modalInput";
+import {
+  DRAWING_WHEEL_STORAGE,
+  loadDrawingWheel,
+  type WheelTool,
+} from "../interaction/drawingWheel";
 import { canvasZoom } from "../interaction/canvasViewport";
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -30,6 +43,8 @@ import {
   Circle,
   Type,
   Workflow,
+  CircleDot,
+  SlidersHorizontal,
   Copy,
   Trash2,
   Palette,
@@ -37,9 +52,19 @@ import {
   Shapes,
   MoreHorizontal,
   Ruler,
+  Radius,
   Spline,
+  Pentagon,
 } from "lucide-react";
-import { curvePath, isCurve, MAX_SPLINE_POINTS } from "../drawingCurves";
+import {
+  circularArc,
+  curvePath,
+  isCurve,
+  isPointPath,
+  isVertexPath,
+  isThreePointPath,
+  MAX_SPLINE_POINTS,
+} from "../drawingCurves";
 import type { RegionSession, Point } from "../document";
 import {
   createDrawing,
@@ -73,10 +98,12 @@ import {
 import type { EditBuffers } from "../app/workspaceFiles";
 import "../styles/drawing.css";
 import { CanvasCommandMenu } from "./CanvasCommandMenu";
+import type { CanvasAction } from "./CanvasActionMenu";
 import { DrawingScaleControls } from "./DrawingScaleControls";
+import { DrawingWheelEditor } from "./DrawingWheelEditor";
 import { defaultDrawingScale, snapDrawingPoint } from "../drawingScale";
 import { DrawingAreaGrid, DrawingDimensions } from "./DrawingDimensions";
-type Tool = "select" | "lasso" | "eraser" | DrawingKind;
+type Tool = "select" | "lasso" | "eraser" | Exclude<DrawingKind, "polygon">;
 type DrawingPointer = ReactPointerEvent<SVGSVGElement>;
 type Geometry = ReturnType<typeof drawingGeometry>;
 type VisibleMarks = (
@@ -106,6 +133,7 @@ type Gesture = {
   transform?: (end: Point) => DrawingEdit[];
   area?: DrawingEntry;
 };
+type PathDraft = { mark: Mark; points: InkPoint[]; expected: Document };
 const tools = [
   ["select", "Select / Edit", MousePointer2],
   ["pen", "Pen", PenTool],
@@ -114,7 +142,9 @@ const tools = [
   ["lasso", "Lasso drawings", Lasso],
   ["line", "Line", Minus],
   ["curve", "Curve", Spline],
+  ["arc", "Three-point arc", Radius],
   ["spline", "Spline", Spline],
+  ["polyline", "Polyline / Polygon", Pentagon],
   ["arrow", "Arrow", MoveUpRight],
   ["rectangle", "Rectangle", Square],
   ["ellipse", "Ellipse", Circle],
@@ -122,6 +152,15 @@ const tools = [
   ["connector", "Visual connector", Workflow],
   ["area", "Scaled drawing area", Ruler],
 ] as const;
+const shortToolNames: Partial<Record<Tool, string>> = {
+  select: "Select",
+  arc: "Arc",
+  polyline: "Polyline",
+  lasso: "Lasso",
+  text: "Label",
+  connector: "Connector",
+  area: "Scaled area",
+};
 const freehand = (tool: Tool) => isInk(tool) || tool === "lasso";
 function clearHold(g: Gesture) {
   clearTimeout(g.hold?.timer);
@@ -180,9 +219,16 @@ function useDrawingCanvas(
   currentDrawing: () => Geometry,
   positioned: Geometry,
   visibleMarks: VisibleMarks,
+  onChooseTool: () => void,
+  onToolWheel: (actions: CanvasAction[], held: boolean) => void,
 ) {
   const matchShortcut = useShortcutMatcher();
   const [tool, setTool] = useState<Tool>("select");
+  const [wheel, setWheel] = useState(loadDrawingWheel);
+  const saveWheel = (next: readonly WheelTool[]) => {
+    localStorage.setItem(DRAWING_WHEEL_STORAGE, JSON.stringify(next));
+    setWheel(next);
+  };
   const [areaId, setAreaId] = useState<string>();
   const surface = useRef<SVGSVGElement>(null);
   const [style, setStyle] = useState({ color: "#c5d3e8", width: 3 });
@@ -193,9 +239,7 @@ function useDrawingCanvas(
   const gesture = useRef<Gesture | undefined>(undefined),
     frame = useRef<number | undefined>(undefined);
   const [version, redraw] = useReducer((n) => n + 1, 0);
-  const pathDraft = useRef<
-    { mark: Mark; points: InkPoint[]; expected: Document } | undefined
-  >(undefined);
+  const pathDraft = useRef<PathDraft | undefined>(undefined);
   const preview = gesture.current;
   const fitted = preview?.regularized;
   const shown = useRef<{ gesture: Gesture; mark: Mark } | undefined>(undefined);
@@ -365,32 +409,55 @@ function useDrawingCanvas(
       return false;
     },
   });
-  const finishPath = () => {
+  const finishPath = (closed = false) => {
     const draft = pathDraft.current;
-    if (!draft) return;
-    const required = draft.mark.kind === "curve" ? 3 : 2;
+    if (!draft) return false;
+    const required = closed || isThreePointPath(draft.mark.kind) ? 3 : 2;
     if (draft.points.length < required) {
       report(`Place at least ${required} points before finishing.`);
-      return;
+      return false;
     }
-    if (
-      safe(() => {
-        const id = createDrawing(
-          session,
-          { ...draft.mark, points: draft.points },
-          undefined,
-          draft.expected,
-        );
-        setSelection(new Set([id]));
-      })
-    )
-      cancel();
+    const accepted = safe(() => {
+      const id = createDrawing(
+        session,
+        {
+          ...draft.mark,
+          kind: closed ? "polygon" : draft.mark.kind,
+          points: draft.points,
+        },
+        undefined,
+        draft.expected,
+      );
+      setSelection(new Set([id]));
+    });
+    if (accepted) cancel();
+    return accepted;
   };
   const choose = (next: Tool) => {
     if (!finishLabel()) return false;
     cancel();
     setTool(next);
     return true;
+  };
+  const chooseTool = (next: Tool) => {
+    if (choose(next)) onChooseTool();
+  };
+  const openWheel = (held: boolean) => {
+    if (gesture.current) return;
+    onToolWheel(
+      wheel.map((id) => {
+        const [, name, Icon] = tools.find(([tool]) => tool === id)!;
+        return {
+          id: `drawing.${id}`,
+          key: id,
+          label: shortToolNames[id] ?? name,
+          icon: <Icon size={17} />,
+          hint: name,
+          run: () => chooseTool(id),
+        };
+      }),
+      held,
+    );
   };
   const editLabel = (entry: DrawingEntry) => {
     if (!activate() || !choose("select")) return;
@@ -457,18 +524,51 @@ function useDrawingCanvas(
   const duplicate = shared.duplicate;
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (isCanvasControlEvent(e)) return;
-      const target = e.target as Element;
+      if (
+        e.defaultPrevented ||
+        e.isComposing ||
+        e.keyCode === 229 ||
+        isCanvasControlEvent(e) ||
+        !(e.target instanceof Element)
+      )
+        return;
+      const target = e.target;
       if (target.closest("[data-curve-point]") && e.key.startsWith("Arrow"))
         return;
       if (
         !visible ||
-        hand ||
-        (tool === "select" && !selected.size && !gesture.current) ||
         target.closest("input,textarea,select,[contenteditable=true]")
       )
         return;
-      const action = matchShortcut(e);
+      const toolbarFocus = !!target.closest(".drawing-toolbar");
+      const toolKeyTarget =
+        toolbarFocus || !target.closest("button,a,[role=button],summary");
+      const drawing =
+        !hand && (tool !== "select" || toolbarFocus || selected.size > 0);
+      if (
+        drawing &&
+        toolKeyTarget &&
+        e.code === "Space" &&
+        e.shiftKey &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey
+      ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!e.repeat) openWheel(true);
+        return;
+      }
+      const action = matchShortcut(e, drawing ? "drawing" : "drawing-entry");
+      const binding = drawingShortcutActions.find((item) => item.id === action);
+      if (binding && toolKeyTarget) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!e.repeat && !gesture.current) chooseTool(binding.tool);
+        return;
+      }
+      if (hand || (tool === "select" && !selected.size && !gesture.current))
+        return;
       if (action) {
         if (action === "canvas.undo" || action === "canvas.redo") cancel();
         return;
@@ -522,6 +622,25 @@ function useDrawingCanvas(
       window.removeEventListener("blur", cancel);
     };
   });
+  const vertex = (
+    p: InkPoint,
+    draft: PathDraft,
+    zoom: number,
+    shift: boolean,
+    scene: Geometry,
+  ) => {
+    const first = draft.points[0];
+    if (
+      draft.points.length >= 2 &&
+      Math.hypot(p.x - first.x, p.y - first.y) <= 8 / zoom
+    )
+      return first;
+    const area = draft.mark.area && scene.byId.get(draft.mark.area.item);
+    if (area?.mark.scale)
+      p = snapDrawingPoint(p, scene.bounds(area), area.mark.scale);
+    const last = draft.points.at(-1);
+    return shift && last ? constrain(last, p, "line") : p;
+  };
   const down = (e: DrawingPointer, p: InkPoint, zoom: number) => {
     if (e.button !== 0 || e.pointerType === "touch" || gesture.current) return;
     e.preventDefault();
@@ -558,7 +677,7 @@ function useDrawingCanvas(
       });
       return;
     }
-    if (isCurve(tool)) {
+    if (isPointPath(tool)) {
       e.currentTarget.focus();
       let draft = pathDraft.current;
       if (!draft) {
@@ -579,18 +698,39 @@ function useDrawingCanvas(
         pathDraft.current = draft;
         setSelection(new Set());
       }
+      if (tool === "polyline") {
+        p = vertex(p, draft, zoom, e.shiftKey, scene);
+        if (p === draft.points[0]) {
+          finishPath(true);
+          return;
+        }
+      }
       const last = draft.points[draft.points.length - 1];
       if (!last || Math.hypot(last.x - p.x, last.y - p.y) > 0.6 / zoom) {
         if (draft.points.length >= MAX_SPLINE_POINTS) {
           report(
-            `Splines support up to ${MAX_SPLINE_POINTS} knots. Press Enter to finish.`,
+            `Paths support up to ${MAX_SPLINE_POINTS} points. Press Enter to finish.`,
           );
           return;
         }
-        draft.points = [...draft.points, p];
+        const points = [...draft.points, p];
+        if (tool === "arc" && points.length === 3 && !circularArc(points)) {
+          report(
+            "Choose an arc end away from the line through the first two points.",
+          );
+          return;
+        }
+        draft.points = points;
       }
       draft.mark = { ...draft.mark, points: draft.points };
-      if (tool === "curve" && draft.points.length === 3) finishPath();
+      if (
+        isThreePointPath(tool) &&
+        draft.points.length === 3 &&
+        !finishPath()
+      ) {
+        draft.points = draft.points.slice(0, 2);
+        draft.mark = { ...draft.mark, points: draft.points };
+      }
       redraw();
       return;
     }
@@ -746,7 +886,11 @@ function useDrawingCanvas(
     const draft = pathDraft.current;
     if (draft && e.type === "pointermove") {
       if (draft.expected !== session.document) return cancel();
-      draft.mark = { ...draft.mark, points: [...draft.points, p] };
+      const next =
+        draft.mark.kind === "polyline"
+          ? vertex(p, draft, zoom, e.shiftKey, positioned)
+          : p;
+      draft.mark = { ...draft.mark, points: [...draft.points, next] };
       redraw();
       return;
     }
@@ -843,12 +987,16 @@ function useDrawingCanvas(
     report,
     surface,
     choose,
+    openWheel,
+    wheel,
+    saveWheel,
     style,
     setStyle,
     selection: selected,
     entries: visibleEntries,
     preview,
     pathDraft: pathDraft.current?.mark,
+    pathPoints: pathDraft.current?.points,
     finishPath,
     label,
     setLabel,
@@ -868,25 +1016,33 @@ function useDrawingCanvas(
       ? "Moving / resizing drawings · Release to place · Escape cancels"
       : preview?.regularized
         ? `${preview.regularized.kind === "ellipse" ? "Circle" : preview.regularized.kind === "line" ? "Line" : "Rectangle"} preview. Release to accept; move to keep drawing.`
-        : tool === "curve"
-          ? "Click start, control point, then end · Escape cancels · Backspace removes a point"
-          : tool === "spline"
-            ? "Click knots · Enter or double-click to finish · Backspace removes a knot · Escape cancels"
-            : tool === "pen"
-              ? "Draw, then hold still to preview a line, circle or rectangle."
-              : tool === "select"
-                ? "Click blank canvas to write · Drag selected objects to move · Double-click to edit · Shift-click adds · Escape clears"
-                : tool === "connector"
-                  ? "Drag between shapes · visual only"
-                  : tool === "eraser"
-                    ? "Drag over drawings to erase · Esc to select"
-                    : tool === "highlighter"
-                      ? "Drag to highlight · Esc to select"
-                      : tool === "lasso"
-                        ? "Draw around the marks to select · Esc to select"
-                        : tool === "text"
-                          ? "Click to place a diagram label · Use Select to write equations and notes"
-                          : "Space-drag to pan · Shift constrains shapes · Esc to Select / Edit",
+        : tool === "arc"
+          ? [
+              "Click the arc start",
+              "Click a point the arc passes through",
+              "Click the arc end",
+            ][pathDraft.current?.points.length ?? 0] + " · Esc cancels"
+          : tool === "polyline"
+            ? "Click corners · Enter finishes · Click first point to close"
+            : tool === "curve"
+              ? "Click start, control point, then end · Escape cancels · Backspace removes a point"
+              : tool === "spline"
+                ? "Click knots · Enter or double-click to finish · Backspace removes a knot · Escape cancels"
+                : tool === "pen"
+                  ? "Draw, then hold still to preview a line, circle or rectangle."
+                  : tool === "select"
+                    ? "Click blank canvas to write · Drag selected objects to move · Double-click to edit · Shift-click adds · Escape clears"
+                    : tool === "connector"
+                      ? "Drag between shapes · visual only"
+                      : tool === "eraser"
+                        ? "Drag over drawings to erase · Esc to select"
+                        : tool === "highlighter"
+                          ? "Drag to highlight · Esc to select"
+                          : tool === "lasso"
+                            ? "Draw around the marks to select · Esc to select"
+                            : tool === "text"
+                              ? "Click to place a diagram label · Use Select to write equations and notes"
+                              : "Space-drag to pan · Shift constrains shapes · Esc to Select / Edit",
   };
 }
 type Controller = ReturnType<typeof useDrawingCanvas>;
@@ -899,22 +1055,23 @@ function DrawingToolbar({
   onChooseTool: () => void;
   hand: boolean;
 }) {
-  const shapeTools = tools.filter(([tool]) =>
-    [
-      "line",
-      "curve",
-      "spline",
-      "arrow",
-      "rectangle",
-      "ellipse",
-      "connector",
-      "area",
-    ].includes(tool),
-  );
+  const bindings = useContext(ShortcutBindingsContext);
+  const [editingWheel, setEditingWheel] = useState(false);
+  const shapeGroups = [
+    ["Lines & paths", ["line", "arrow", "polyline", "curve", "arc", "spline"]],
+    ["Closed shapes", ["rectangle", "ellipse"]],
+    ["Diagram tools", ["connector", "area"]],
+  ] as const;
+  const shapes = (names: readonly Tool[]) =>
+    names.map((name) => tools.find(([id]) => id === name)!);
   const extraTools = tools.filter(([tool]) =>
     ["highlighter", "eraser", "lasso"].includes(tool),
   );
-  const activeShape = shapeTools.find(([tool]) => tool === d.tool);
+  const activeShape = shapeGroups
+    .flatMap(([, group]) => shapes(group))
+    .find(([tool]) => tool === d.tool);
+  const activeShapeLabel =
+    activeShape && (shortToolNames[activeShape[0]] ?? activeShape[1]);
   const activeExtra = extraTools.find(([tool]) => tool === d.tool);
   const ShapeIcon = activeShape?.[2] ?? Shapes;
   const ExtraIcon = (!hand && activeExtra?.[2]) || MoreHorizontal;
@@ -926,24 +1083,42 @@ function DrawingToolbar({
   const button = (
     [tool, name, Icon]: (typeof tools)[number],
     label: string = name,
-  ) => (
-    <button
-      key={tool}
-      aria-label={name}
-      title={
-        tool === "text"
-          ? "Text label for diagrams · Equations and notes use the default pointer"
-          : name
-      }
-      aria-pressed={!hand && d.tool === tool}
-      onClick={() => {
-        if (d.choose(tool)) onChooseTool();
-      }}
-    >
-      <Icon size={17} />
-      <span>{label}</span>
-    </button>
-  );
+    inPanel = false,
+  ) => {
+    const entry = drawingShortcutActions.find((a) => a.tool === tool)!;
+    const keys = bindings[entry.id];
+    const shownKeys = keys.length ? shortcutLabel(keys) : undefined;
+    return (
+      <button
+        key={tool}
+        aria-label={name}
+        title={`${name}${shownKeys ? ` · ${shownKeys}` : ""}${tool === "text" ? " · Equations and notes use Select" : ""}`}
+        aria-pressed={!hand && d.tool === tool}
+        onClick={() => {
+          if (d.choose(tool)) onChooseTool();
+        }}
+      >
+        <Icon size={17} />
+        <span
+          className={
+            tool === "text" && !inPanel ? "drawing-label-full" : undefined
+          }
+        >
+          {label}
+        </span>
+        {tool === "text" && !inPanel && (
+          <span className="drawing-label-short" aria-hidden="true">
+            Label
+          </span>
+        )}
+        {inPanel && shownKeys && (
+          <kbd className="drawing-shortcut-key" aria-hidden="true">
+            {shownKeys}
+          </kbd>
+        )}
+      </button>
+    );
+  };
   return (
     <div
       className="drawing-toolbar"
@@ -961,29 +1136,55 @@ function DrawingToolbar({
           label="Shapes"
           icon={<ShapeIcon size={17} />}
           active={!hand && !!activeShape}
+          activeTool={activeShapeLabel}
           description={
             activeShape && !hand
               ? `Shapes · ${activeShape[1]} active`
               : "Shapes and visual connectors"
           }
         >
-          {shapeTools.map((entry) => button(entry))}
+          {shapeGroups.map(([label, group]) => (
+            <div className="drawing-tool-group" key={label}>
+              <span className="er-command-heading">{label}</span>
+              {shapes(group).map((entry) => button(entry, entry[1], true))}
+            </div>
+          ))}
         </CanvasCommandMenu>
         {button(tools.find(([tool]) => tool === "text")!)}
         <div className="drawing-icon-menu">
           <CanvasCommandMenu
             label="More drawing tools"
             icon={<ExtraIcon size={17} />}
-            activeTool={activeExtra?.[1]}
+            activeTool={
+              activeExtra && (shortToolNames[activeExtra[0]] ?? activeExtra[1])
+            }
             active={!hand && !!activeExtra}
             description={
               activeExtra && !hand
                 ? `More drawing tools · ${activeExtra[1]} active`
-                : "Highlighter, eraser and drawing lasso"
+                : "Tool wheel, highlighter, eraser and drawing lasso"
             }
           >
-            {extraTools.map((entry) => button(entry))}
+            <button type="button" onClick={() => d.openWheel(false)}>
+              <CircleDot size={17} />
+              Tool wheel
+              <kbd className="drawing-shortcut-key" aria-hidden="true">
+                Shift + Space
+              </kbd>
+            </button>
+            <button type="button" onClick={() => setEditingWheel(true)}>
+              <SlidersHorizontal size={17} />
+              Edit tool wheel…
+            </button>
+            {extraTools.map((entry) => button(entry, entry[1], true))}
           </CanvasCommandMenu>
+          {editingWheel && (
+            <DrawingWheelEditor
+              slots={d.wheel}
+              save={d.saveWheel}
+              close={() => setEditingWheel(false)}
+            />
+          )}
         </div>
       </div>
       <DrawingScaleControls
@@ -1075,6 +1276,9 @@ function DrawingToolbar({
       )}
       <span
         className="drawing-hint"
+        data-precise-path={
+          (d.tool === "arc" || d.tool === "polyline") && !hand ? "" : undefined
+        }
         aria-hidden="true"
         hidden={!d.preview && (hand || d.tool === "select")}
       >
@@ -1141,6 +1345,14 @@ const MarkView = memo(function MarkView({
         points={`${points.map((p) => `${p.x},${p.y}`).join(" ")} ${b.x},${b.y}`}
       />
     );
+  if (isVertexPath(m.kind)) {
+    const coords = points.map((p) => `${p.x},${p.y}`).join(" ");
+    return m.kind === "polygon" ? (
+      <polygon {...common} points={coords} />
+    ) : (
+      <polyline {...common} points={coords} />
+    );
+  }
   if (isCurve(m.kind))
     return <path {...common} d={curvePath(m.kind, points)} />;
   const box = geometry?.bounds ?? pointBounds(points);
@@ -1231,13 +1443,13 @@ const DrawingMark = memo(function DrawingMark({
       },
     [shape, entry.mark],
   );
-  const hitPoints = useMemo(
-    () =>
-      ["area", "rectangle", "text", "ellipse"].includes(entry.mark.kind)
-        ? undefined
-        : markGeometry.points.map((p) => `${p.x},${p.y}`).join(" "),
-    [entry.mark.kind, markGeometry.points],
-  );
+  const hitPoints = useMemo(() => {
+    if (["area", "rectangle", "text", "ellipse"].includes(entry.mark.kind))
+      return;
+    const points = markGeometry.points.map((p) => `${p.x},${p.y}`);
+    if (entry.mark.kind === "polygon") points.push(points[0]);
+    return points.join(" ");
+  }, [entry.mark.kind, markGeometry.points]);
   return (
     <g
       data-drawing-id={entry.id}
@@ -1378,6 +1590,7 @@ function DrawingScenePreview({
 type DrawingActions = Omit<Parameters<typeof useDrawingCanvas>[6], "ids"> & {
   report: (message: string) => void;
   onChooseTool: () => void;
+  onToolWheel: (actions: CanvasAction[], held: boolean) => void;
   onShortcut: (action: ShortcutAction) => void;
   point: (x: number, y: number) => Point;
   activate: () => boolean;
@@ -1458,6 +1671,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({
     currentDrawing,
     positioned,
     visibleMarks,
+    () => actions.current.onChooseTool(),
+    (tools, held) => actions.current.onToolWheel(tools, held),
   );
   const latest = useRef(d);
   useLayoutEffect(() => {
@@ -1590,6 +1805,10 @@ export const DrawingCanvas = memo(function DrawingCanvas({
                   <g
                     pointerEvents="none"
                     data-regularized-preview={d.preview?.regularized?.kind}
+                    data-arc-preview={draft.kind === "arc" ? "" : undefined}
+                    data-polyline-preview={
+                      draft.kind === "polyline" ? "" : undefined
+                    }
                   >
                     <MarkView
                       mark={draft}
@@ -1598,6 +1817,24 @@ export const DrawingCanvas = memo(function DrawingCanvas({
                         view: { x: 0, y: 0 },
                       })}
                     />
+                    {(draft.kind === "arc" || draft.kind === "polyline") &&
+                      d.pathPoints?.map((p, i) => (
+                        <circle
+                          key={i}
+                          cx={p.x}
+                          cy={p.y}
+                          r={
+                            (draft.kind === "polyline" &&
+                            i === 0 &&
+                            d.pathPoints!.length >= 3
+                              ? 5
+                              : 3) / zoom
+                          }
+                          fill="var(--canvas-text)"
+                          stroke="var(--canvas-surface)"
+                          strokeWidth={1 / zoom}
+                        />
+                      ))}
                   </g>
                 )}
                 {b && (
@@ -1634,7 +1871,8 @@ export const DrawingCanvas = memo(function DrawingCanvas({
                   entries
                     .filter(
                       (entry) =>
-                        d.selection.has(entry.id) && isCurve(entry.mark.kind),
+                        d.selection.has(entry.id) &&
+                        isPointPath(entry.mark.kind),
                     )
                     .map((entry) => (
                       <g key={entry.id} className="drawing-curve-controls">
@@ -1664,7 +1902,11 @@ export const DrawingCanvas = memo(function DrawingCanvas({
                             strokeWidth={1.5 / zoom}
                             tabIndex={0}
                             role="button"
-                            aria-label={`${entry.mark.kind === "curve" && i === 1 ? "Control point" : "Knot"} ${i + 1}; arrow keys to move`}
+                            aria-label={
+                              entry.mark.kind === "arc"
+                                ? `${["Arc start", "Arc through point", "Arc end"][i]}; arrow keys to move`
+                                : `${isVertexPath(entry.mark.kind) ? "Vertex" : entry.mark.kind === "curve" && i === 1 ? "Control point" : "Knot"} ${i + 1}; arrow keys to move`
+                            }
                             onKeyDown={(e) => {
                               const action = matchShortcut(e.nativeEvent);
                               if (action) {

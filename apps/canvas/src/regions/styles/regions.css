@@ -2225,6 +2225,15 @@
     padding: 5px 6px;
   }
 }
+@media (min-width: 365px) and (max-width: 600px) {
+  .er-zoom button:is([aria-label="Zoom in"], [aria-label="Zoom out"]) {
+    min-width: 28px;
+  }
+}
+.er-zoom-value {
+  color: var(--canvas-muted);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Choosing covered work changes personal attention, never authored layer order. */
 .er-canvas [data-overlap-picked] {

@@ -1,8 +1,10 @@
 /** One accepted record owner; Page is a read-only compatibility projection for the current renderer. */
 import {
+  arcDrawingSchema,
   drawingSchema,
   scaledDrawingSchema,
   curvedDrawingSchema,
+  draftingDrawingSchema,
   validateDrawingDocument,
 } from "../drawing.ts";
 import { analysisMethodRef } from "../modelAnalysis.ts";
@@ -305,6 +307,8 @@ export const canvasSchemas = f.createSchemas([
   drawingSchema,
   scaledDrawingSchema,
   curvedDrawingSchema,
+  arcDrawingSchema,
+  draftingDrawingSchema,
   ...sceneSchemas,
   samplingPlanSchema,
   samplingHistorySchema,

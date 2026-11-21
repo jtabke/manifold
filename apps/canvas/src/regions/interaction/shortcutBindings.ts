@@ -1,12 +1,59 @@
 /** Personal canvas bindings. Editor keys and gestures are intentionally outside this contract. */
+export const drawingShortcutActions = [
+  { id: "drawing.select", tool: "select", label: "Select / Edit", keys: ["V"] },
+  { id: "drawing.pen", tool: "pen", label: "Pen", keys: ["P"] },
+  { id: "drawing.line", tool: "line", label: "Line", keys: ["L"] },
+  { id: "drawing.arrow", tool: "arrow", label: "Arrow", keys: ["B"] },
+  { id: "drawing.curve", tool: "curve", label: "Curve", keys: ["C"] },
+  { id: "drawing.arc", tool: "arc", label: "Three-point arc", keys: ["A"] },
+  { id: "drawing.spline", tool: "spline", label: "Spline", keys: ["S"] },
+  {
+    id: "drawing.polyline",
+    tool: "polyline",
+    label: "Polyline / Polygon",
+    keys: ["Y"],
+  },
+  {
+    id: "drawing.rectangle",
+    tool: "rectangle",
+    label: "Rectangle",
+    keys: ["R"],
+  },
+  { id: "drawing.ellipse", tool: "ellipse", label: "Ellipse", keys: ["O"] },
+  { id: "drawing.text", tool: "text", label: "Diagram label", keys: ["T"] },
+  {
+    id: "drawing.connector",
+    tool: "connector",
+    label: "Visual connector",
+    keys: ["W"],
+  },
+  {
+    id: "drawing.area",
+    tool: "area",
+    label: "Scaled drawing area",
+    keys: ["G"],
+  },
+  {
+    id: "drawing.highlighter",
+    tool: "highlighter",
+    label: "Highlighter",
+    keys: ["H"],
+  },
+  { id: "drawing.eraser", tool: "eraser", label: "Eraser", keys: ["E"] },
+  { id: "drawing.lasso", tool: "lasso", label: "Lasso drawings", keys: ["X"] },
+] as const;
 export const shortcutActions = [
   { id: "search.open", label: "Search objects and commands", keys: ["Mod+K"] },
   { id: "canvas.fit", label: "Fit page", keys: ["Shift+1"] },
   { id: "canvas.undo", label: "Undo", keys: ["Mod+Z"] },
   { id: "canvas.redo", label: "Redo", keys: ["Mod+Shift+Z", "Mod+Y"] },
   { id: "help.shortcuts", label: "Keyboard shortcuts", keys: [] },
+  ...drawingShortcutActions,
 ] as const;
 export type ShortcutAction = (typeof shortcutActions)[number]["id"];
+export type ShortcutScope = "drawing" | "drawing-entry";
+const scopeFor = (action: ShortcutAction) =>
+  action.startsWith("drawing.") ? "drawing" : "canvas";
 export type ShortcutBindings = Readonly<
   Record<ShortcutAction, readonly string[]>
 >;
@@ -42,7 +89,7 @@ const aliases: Record<string, string> = {
   shift: "Shift",
 };
 /** Canonical spelling is used by capture, JSON, validation and actual dispatch. */
-export function normalizeShortcut(value: string): string {
+export function normalizeShortcut(value: string, drawing = false): string {
   if (value.length > 60) throw Error("Shortcut is too long.");
   const parts = value.split("+").map((p) => p.trim());
   if (parts.some((p) => !p))
@@ -64,7 +111,8 @@ export function normalizeShortcut(value: string): string {
   const primary = modifiers.some((m) => ["Mod", "Ctrl", "Meta"].includes(m));
   const isFit =
     key === "1" && modifiers.length === 1 && modifiers[0] === "Shift";
-  if (!primary && !isFit && !functionKey.test(key))
+  const drawingLetter = drawing && !modifiers.length && /^[A-Z]$/.test(key);
+  if (!primary && !isFit && !functionKey.test(key) && !drawingLetter)
     throw Error(
       "Plain typing and Alt-only shortcuts are protected. Add Mod, Ctrl or Meta.",
     );
@@ -127,7 +175,9 @@ export function parseShortcutConfiguration(text: string): ShortcutBindings {
     !Array.isArray(data.bindings) ||
     data.bindings.length > shortcutActions.length
   )
-    throw Error("Expected version 1 and at most five canvas binding records.");
+    throw Error(
+      `Expected version 1 and at most ${shortcutActions.length} shortcut binding records.`,
+    );
   const next: Record<ShortcutAction, readonly string[]> = {
     ...defaultBindings,
   };
@@ -137,9 +187,10 @@ export function parseShortcutConfiguration(text: string): ShortcutBindings {
     fields(row, ["action", "context", "keys"]);
     const action = shortcutActions.find((a) => a.id === row.action);
     if (!action) throw Error(`Unknown shortcut action: ${String(row.action)}.`);
-    if (row.context !== "canvas")
+    const context = scopeFor(action.id);
+    if (row.context !== context)
       throw Error(
-        "Only the canvas context is customizable; editor keys and gestures stay fixed.",
+        `Expected the ${context} context for ${action.label}; editor keys and gestures stay fixed.`,
       );
     if (seen.has(action.id)) throw Error(`Repeated binding for ${action.id}.`);
     seen.add(action.id);
@@ -151,7 +202,9 @@ export function parseShortcutConfiguration(text: string): ShortcutBindings {
       throw Error(
         "Keys must be an array of at most three shortcut strings; [] means unassigned.",
       );
-    const keys = (row.keys as string[]).map(normalizeShortcut);
+    const keys = (row.keys as string[]).map((key) =>
+      normalizeShortcut(key, context === "drawing"),
+    );
     if (new Set(keys).size !== keys.length)
       throw Error(`Repeated shortcut for ${action.label}.`);
     next[action.id] = keys;
@@ -179,7 +232,7 @@ export function shortcutConfiguration(bindings: ShortcutBindings): string {
       version: 1,
       bindings: shortcutActions.map((a) => ({
         action: a.id,
-        context: "canvas",
+        context: scopeFor(a.id),
         keys: [...bindings[a.id]],
       })),
     },
@@ -211,10 +264,11 @@ export type ShortcutKey = Pick<
   | "keyCode"
   | "getModifierState"
 >;
-/** Unmodified text, composition and AltGraph never become configurable actions. */
+/** Plain letters are eligible only in drawing mode; composition and AltGraph never are. */
 export function shortcutFromEvent(
   event: ShortcutKey,
   portable = true,
+  drawing = false,
 ): string | undefined {
   if (
     event.isComposing ||
@@ -245,7 +299,14 @@ export function shortcutFromEvent(
         ? "Mod"
         : "Meta"
       : undefined;
-  if (!primary && !(event.shiftKey && key === "1") && !functionKey.test(key))
+  const drawingLetter =
+    drawing && !event.shiftKey && !event.altKey && /^[A-Z]$/.test(key);
+  if (
+    !primary &&
+    !(event.shiftKey && key === "1") &&
+    !functionKey.test(key) &&
+    !drawingLetter
+  )
     return;
   return [
     primary,
@@ -259,10 +320,13 @@ export function shortcutFromEvent(
 export function resolveShortcut(
   event: ShortcutKey,
   bindings: ShortcutBindings,
+  scope?: ShortcutScope,
 ): ShortcutAction | undefined {
-  const key = shortcutFromEvent(event, false);
+  const key = shortcutFromEvent(event, false, scope === "drawing");
   if (!key) return;
-  return shortcutActions.find((a) =>
-    bindings[a.id].some((combo) => signatures(combo).includes(key)),
+  return shortcutActions.find(
+    (a) =>
+      (scope || scopeFor(a.id) === "canvas") &&
+      bindings[a.id].some((combo) => signatures(combo).includes(key)),
   )?.id;
 }

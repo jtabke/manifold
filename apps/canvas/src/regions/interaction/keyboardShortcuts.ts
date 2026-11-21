@@ -1,5 +1,6 @@
 import {
   defaultBindings,
+  drawingShortcutActions,
   shortcutLabel,
   type ShortcutAction,
   type ShortcutBindings,
@@ -107,7 +108,7 @@ const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
     [
       "Shift + Space",
       "Open the marking menu",
-      "Outside text fields. Hold and point, or release to click an action.",
+      "Outside text fields and drawing context. Hold and point, or release to click an action.",
     ],
     [
       "↑ / ↓ / ← / → · Home / End",
@@ -171,6 +172,20 @@ const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
   ],
   Drawing: [
     [
+      "Shift + Space",
+      "Open the drawing tool wheel",
+      "With a drawing tool active, a drawing selected, or the drawing toolbar focused. Hold, point and release, or tap the shortcut and use arrows and Enter.",
+    ],
+    ...drawingShortcutActions.map(
+      ({ id, label, keys }) =>
+        [
+          keys.join(" / "),
+          label,
+          "Single letters apply with a drawing tool active, a drawing selected, or the drawing toolbar focused. Customize in Keyboard shortcuts.",
+          id,
+        ] as const,
+    ),
+    [
       "Draw + hold",
       "Regularize a pen stroke",
       "Pen only: hold still about 650 ms for a line/circle/rectangle preview. Lift accepts; move resumes ink. Undo restores original ink.",
@@ -202,7 +217,7 @@ const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
     ],
     [
       "Escape",
-      "Cancel drawing and return to Write",
+      "Cancel drawing or return to Select / Edit",
       "Also clears selected marks; does not delete accepted drawings.",
     ],
   ],

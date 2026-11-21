@@ -281,12 +281,14 @@ class DrawingGeometry {
     }
     const hitMargin = tolerance + e.mark.width / 2,
       stationary = from.x === to.x && from.y === to.y;
-    return points.some(
-      (a, i) =>
+    return points.some((a, i) => {
+      const next = points[i + 1] ?? (e.mark.kind === "polygon" ? points[0] : a);
+      return (
         (stationary
-          ? distance(from, a, points[i + 1] || a)
-          : segmentDistance(from, to, a, points[i + 1] || a)) <= hitMargin,
-    );
+          ? distance(from, a, next)
+          : segmentDistance(from, to, a, next)) <= hitMargin
+      );
+    });
   }
   pick(
     p: Point,
@@ -353,14 +355,20 @@ class DrawingGeometry {
         ![m.start, m.end].some((a) => a && ids.has(a.target.item));
       return { entry, mark: detach ? this.detachedMark(entry) : m };
     });
+    const preserveCircle = selected.some(({ mark }) => mark.kind === "arc");
     return (end: Point): DrawingEdit[] =>
       selected.map(({ entry, mark }) => {
         const dx = end.x - start.x,
           dy = end.y - start.y;
         let at = { x: entry.view.x + dx, y: entry.view.y + dy };
         if (resize && bounds) {
-          const sx = Math.max(8, bounds.width + dx) / bounds.width,
-            sy = Math.max(8, bounds.height + dy) / bounds.height;
+          const { width, height } = bounds;
+          const uniform = Math.max(
+            8 / Math.max(width, height),
+            1 + (width * dx + height * dy) / (width ** 2 + height ** 2),
+          );
+          const sx = preserveCircle ? uniform : Math.max(8, width + dx) / width,
+            sy = preserveCircle ? uniform : Math.max(8, height + dy) / height;
           at = {
             x: bounds.x + (entry.view.x - bounds.x) * sx,
             y: bounds.y + (entry.view.y - bounds.y) * sy,
