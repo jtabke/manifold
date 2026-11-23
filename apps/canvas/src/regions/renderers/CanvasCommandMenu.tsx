@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { ChevronDown } from "lucide-react";
 
@@ -18,6 +19,8 @@ export function CanvasCommandMenu({
   activeTool,
   description,
   closeOnAction = true,
+  triggerRef,
+  triggerClassName,
 }: {
   label: string;
   icon?: ReactNode;
@@ -27,10 +30,13 @@ export function CanvasCommandMenu({
   activeTool?: string;
   description?: string;
   closeOnAction?: boolean;
+  triggerRef?: RefObject<HTMLButtonElement | null>;
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
+  const localTrigger = useRef<HTMLButtonElement>(null);
+  const trigger = triggerRef ?? localTrigger;
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0 });
@@ -104,6 +110,7 @@ export function CanvasCommandMenu({
       <button
         ref={trigger}
         type="button"
+        className={triggerClassName}
         title={description ?? label}
         data-active={active}
         aria-label={active && activeTool ? `${label}: ${activeTool}` : label}

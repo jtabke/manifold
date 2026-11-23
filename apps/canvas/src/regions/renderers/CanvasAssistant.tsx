@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "../styles/assistant.css";
 import {
   AssistantConnection,
-  AssistantPreferences,
+  AssistantModelPicker,
+  AssistantPermissions,
   useAssistantSetup,
 } from "./AssistantConnection";
 import {
@@ -14,6 +15,8 @@ import {
   Square,
   X,
   Info,
+  Expand,
+  Shrink,
   Minus,
   PanelRight,
   PanelsTopLeft,
@@ -26,6 +29,7 @@ import { AssistantConversation } from "./AssistantConversation";
 import type { WorkspaceEdits } from "../app/workspaceFiles";
 import type { AssistantCanvasPort } from "../assistantCanvas";
 import { useAssistantWindow } from "../app/useAssistantWindow";
+import { assistantLiveLabel } from "../assistantTimeline";
 
 const starters = [
   {
@@ -54,14 +58,17 @@ export function CanvasAssistant({
   canvas,
   floating,
   minimized,
+  readingExpanded,
   changePresentation,
   reveal,
 }: {
   floating: boolean;
   minimized: boolean;
+  readingExpanded: boolean;
   changePresentation: (value: {
     floating: boolean;
     minimized: boolean;
+    readingExpanded?: boolean;
   }) => void;
   reveal: (id: string, input?: string) => Promise<boolean>;
   canvas: AssistantCanvasPort;
@@ -81,12 +88,13 @@ export function CanvasAssistant({
     busy,
     submitting,
     error,
-    activity,
     stop,
     resolve,
   } = assistant;
   const [prompt, setPrompt] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const cancelledSend = useRef(false);
+  const readingHold = useRef(false);
   const requestInput = useRef<HTMLTextAreaElement>(null);
   const popup = useRef<HTMLDialogElement>(null);
   const conversation = useRef<HTMLDivElement>(null);
@@ -104,6 +112,14 @@ export function CanvasAssistant({
       .find((region) => region.id === id)
       ?.text.slice(0, 60) ||
     "Canvas object";
+  const holdReading = () => {
+    changingPresentation.current = false;
+    readingHold.current = true;
+    followLatest.current = false;
+    setAwayFromLatest(true);
+  };
+  const setReadingExpanded = (readingExpanded: boolean) =>
+    changePresentation({ floating, minimized: false, readingExpanded });
   const minimize = () => {
     changePresentation({ floating, minimized: true });
     requestAnimationFrame(() =>
@@ -113,9 +129,21 @@ export function CanvasAssistant({
   useLayoutEffect(() => {
     const input = requestInput.current;
     if (!input) return;
-    input.style.height = "auto";
-    input.style.height = Math.min(100, input.scrollHeight) + "px";
-  }, [prompt]);
+    const fit = () => {
+      if (!input.getClientRects().length) return;
+      input.style.height = "auto";
+      input.style.height = Math.min(144, input.scrollHeight) + "px";
+    };
+    fit();
+    let width = input.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (input.clientWidth === width) return;
+      width = input.clientWidth;
+      fit();
+    });
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, [prompt, minimized]);
   useLayoutEffect(() => {
     // Hidden metrics and host reparenting are not evidence of user scrolling.
     changingPresentation.current = true;
@@ -133,7 +161,7 @@ export function CanvasAssistant({
       cancelAnimationFrame(frame);
       cancelAnimationFrame(settled);
     };
-  }, [minimized, floating]);
+  }, [minimized, floating, readingExpanded]);
   useLayoutEffect(() => {
     const element = conversation.current;
     if (
@@ -143,7 +171,7 @@ export function CanvasAssistant({
       followLatest.current
     )
       element.scrollTop = element.scrollHeight;
-  }, [turns, proposals, activity, settingsOpen, minimized, floating]);
+  }, [turns, proposals, settingsOpen, minimized, floating, readingExpanded]);
   useLayoutEffect(() => {
     const element = conversation.current;
     const content = element?.firstElementChild;
@@ -157,10 +185,28 @@ export function CanvasAssistant({
         element.scrollTop = element.scrollHeight;
     });
     observer.observe(content);
+    observer.observe(element);
     return () => observer.disconnect();
   }, [turns.length > 0, minimized]);
   useEffect(() => {
+    if (minimized) return;
+    const selectedHistory = () => {
+      const range = window.getSelection();
+      if (
+        range &&
+        !range.isCollapsed &&
+        conversation.current?.contains(range.anchorNode)
+      )
+        holdReading();
+    };
+    document.addEventListener("selectionchange", selectedHistory);
+    return () =>
+      document.removeEventListener("selectionchange", selectedHistory);
+  }, [minimized]);
+  useEffect(() => {
     if (!minimized) requestInput.current?.focus();
+  }, [anchor, connection, minimized]);
+  useEffect(() => {
     if (connection === "ready") setSettingsOpen(false);
   }, [connection, minimized]);
   const setup = useAssistantSetup(connection, connect, {
@@ -170,9 +216,19 @@ export function CanvasAssistant({
     activeSettings: assistant.settings,
   });
   const readOnly = setup.permissions === "read-only";
+  const activeTurn = busy ? turns.at(-1) : undefined;
+  const connecting =
+    submitting || setup.starting || connection === "connecting";
+  const cancelSend = () => {
+    cancelledSend.current = true;
+    setup.cancelStart();
+    disconnect();
+  };
   const send = async () => {
     if (setup.loading || submitting || busy || !prompt.trim()) return;
     const text = prompt;
+    cancelledSend.current = false;
+    readingHold.current = false;
     followLatest.current = true;
     setAwayFromLatest(false);
     const sent = await assistant.send(
@@ -180,8 +236,8 @@ export function CanvasAssistant({
       attached,
       async () => {
         const ready = await setup.start();
-        if (!ready) setSettingsOpen(true);
-        return ready;
+        if (!ready && !cancelledSend.current) setSettingsOpen(true);
+        return ready && !cancelledSend.current;
       },
       setup.preferences,
     );
@@ -203,7 +259,9 @@ export function CanvasAssistant({
           <MessageSquare size={17} aria-hidden="true" /> Agent
           <span role="status">
             {busy || submitting
-              ? activity || "Working…"
+              ? activeTurn
+                ? `${assistantLiveLabel(activeTurn.phase, activeTurn.tools)}…`
+                : "Connecting…"
               : error
                 ? "Needs attention"
                 : pendingCount
@@ -216,41 +274,50 @@ export function CanvasAssistant({
         open
         hidden={minimized}
         ref={popup}
-        className={`canvas-assistant ${floating ? "is-floating" : "is-embedded"}`}
-        style={floating ? windowControls.bounds : undefined}
+        className={`canvas-assistant ${floating ? "is-floating" : "is-embedded"}${readingExpanded ? " is-reading" : ""}`}
+        style={floating && !readingExpanded ? windowControls.bounds : undefined}
         aria-labelledby="canvas-assistant-title"
         onKeyDown={(event) => {
           if (event.key === "Escape" && !event.nativeEvent.isComposing) {
             event.preventDefault();
             event.stopPropagation();
-            if (!windowControls.cancel()) minimize();
+            if (windowControls.cancel()) return;
+            if (readingExpanded) setReadingExpanded(false);
+            else minimize();
           }
         }}
       >
         <header className="assistant-header">
           <div
             className="assistant-heading"
-            {...(movable ? windowControls.move : {})}
-            tabIndex={movable ? 0 : undefined}
-            role={movable ? "button" : undefined}
-            aria-label={movable ? "Move floating assistant" : undefined}
+            {...(movable && !readingExpanded ? windowControls.move : {})}
+            tabIndex={movable && !readingExpanded ? 0 : undefined}
+            role={movable && !readingExpanded ? "button" : undefined}
+            aria-label={
+              movable && !readingExpanded
+                ? "Move floating assistant"
+                : undefined
+            }
             title={
-              movable
+              movable && !readingExpanded
                 ? "Drag to move · Arrow keys move · Shift for larger steps"
                 : undefined
             }
           >
-            {movable ? (
+            {movable && !readingExpanded ? (
               <Move size={18} aria-hidden="true" />
             ) : (
               <MessageSquare size={18} aria-hidden="true" />
             )}
             <div>
               <h2 id="canvas-assistant-title">
-                Canvas assistant <small>Pi · experimental</small>
+                Canvas assistant{" "}
+                <small className="assistant-visually-hidden">
+                  Pi · experimental
+                </small>
               </h2>
               <span className={`assistant-connection-state is-${connection}`}>
-                {submitting || setup.starting || connection === "connecting"
+                {connecting
                   ? "Connecting…"
                   : connection === "ready"
                     ? "Connected"
@@ -259,6 +326,25 @@ export function CanvasAssistant({
             </div>
           </div>
           <div className="assistant-inline-actions">
+            <button
+              type="button"
+              aria-label={
+                readingExpanded ? "Exit expanded chat" : "Expand chat"
+              }
+              aria-pressed={readingExpanded}
+              title={
+                readingExpanded
+                  ? "Exit expanded chat"
+                  : "Expand chat for reading"
+              }
+              onClick={() => setReadingExpanded(!readingExpanded)}
+            >
+              {readingExpanded ? (
+                <Shrink size={16} aria-hidden="true" />
+              ) : (
+                <Expand size={16} aria-hidden="true" />
+              )}
+            </button>
             <button
               type="button"
               aria-label={
@@ -327,11 +413,24 @@ export function CanvasAssistant({
             tabIndex={0}
             role="region"
             aria-label="Conversation history"
+            onPointerDownCapture={(event) => {
+              if ((event.target as Element).closest("summary")) holdReading();
+            }}
             onWheel={(event) => {
               changingPresentation.current = false;
               if (event.deltaY < 0) followLatest.current = false;
+              if (event.deltaY > 0) readingHold.current = false;
             }}
             onKeyDown={(event) => {
+              if (
+                ["Enter", " "].includes(event.key) &&
+                (event.target as Element).closest("summary")
+              ) {
+                holdReading();
+                return;
+              }
+              if (["ArrowDown", "PageDown", "End"].includes(event.key))
+                readingHold.current = false;
               if (
                 !event.nativeEvent.isComposing &&
                 ["Home", "PageUp", "ArrowUp"].includes(event.key)
@@ -349,10 +448,11 @@ export function CanvasAssistant({
                 return;
               const element = event.currentTarget;
               followLatest.current =
+                !readingHold.current &&
                 element.scrollHeight -
                   element.clientHeight -
                   element.scrollTop <
-                48;
+                  48;
               setAwayFromLatest(!followLatest.current);
             }}
           >
@@ -364,10 +464,10 @@ export function CanvasAssistant({
                 <span className="assistant-welcome-icon">
                   <MessageSquare size={24} aria-hidden="true" />
                 </span>
-                <h3>Think it through, together.</h3>
+                <h3>Work through this canvas</h3>
                 <p>
-                  Ask about your equations, inspect assumptions, or plan a
-                  change to your canvas.
+                  Ask about an equation, check an assumption, or propose a
+                  change. You decide what gets applied.
                 </p>
                 <div className="assistant-starters">
                   {starters.map((starter) => (
@@ -385,10 +485,6 @@ export function CanvasAssistant({
                     </button>
                   ))}
                 </div>
-                <p className="assistant-privacy">
-                  Start with a suggestion or write your own request. Suggestions
-                  fill the draft; nothing is sent until you choose.
-                </p>
               </section>
             ) : (
               <AssistantConversation
@@ -398,6 +494,11 @@ export function CanvasAssistant({
                 connection={connection}
                 resolve={resolve}
                 reveal={reveal}
+                hasDraft={!!prompt.trim()}
+                editPrompt={(value) => {
+                  setPrompt((draft) => (draft.trim() ? draft : value));
+                  requestInput.current?.focus({ preventScroll: true });
+                }}
               />
             )}
           </div>
@@ -407,12 +508,13 @@ export function CanvasAssistant({
               className="assistant-jump"
               onClick={() => {
                 const element = conversation.current;
-                if (element) element.scrollTop = element.scrollHeight;
+                readingHold.current = false;
                 followLatest.current = true;
+                if (element) element.scrollTop = element.scrollHeight;
                 setAwayFromLatest(false);
               }}
             >
-              <ArrowDown size={14} aria-hidden="true" /> Latest response
+              <ArrowDown size={14} aria-hidden="true" /> Jump to latest
             </button>
           )}
         </div>
@@ -422,25 +524,21 @@ export function CanvasAssistant({
               {error}
             </p>
           )}
-          <div className="assistant-activity" role="status">
-            {submitting
-              ? "Connecting…"
-              : activity ||
-                (pendingCount
-                  ? `${pendingCount} proposed edit${pendingCount === 1 ? "" : "s"} ready for review`
-                  : "")}
-          </div>
           <form
-            className="assistant-composer-row"
+            className="assistant-composer-form"
             onSubmit={(event) => {
               event.preventDefault();
               void send();
             }}
           >
-            <div className="assistant-context">
-              <div className="assistant-context-chips">
-                {attached.length ? (
-                  attached.map((id) => (
+            <div className="assistant-composer-surface">
+              {selection.length > 0 && (
+                <div
+                  className="assistant-context assistant-context-chips"
+                  aria-label="Canvas context"
+                  role="group"
+                >
+                  {attached.map((id) => (
                     <button
                       key={id}
                       type="button"
@@ -449,85 +547,116 @@ export function CanvasAssistant({
                       title="Remove from request focus; worksheet remains inspectable"
                       onClick={() => setExcluded((prior) => [...prior, id])}
                     >
-                      {contextName(id)}
+                      <span>{contextName(id)}</span>
                       <X size={12} aria-hidden="true" />
                     </button>
-                  ))
-                ) : (
-                  <span>Worksheet focus</span>
-                )}
-                {attached.length < selection.length && (
-                  <button type="button" onClick={() => setExcluded([])}>
-                    Use selection
-                  </button>
-                )}
-              </div>
-            </div>
-            <span
-              className="assistant-visually-hidden"
-              id="assistant-input-context"
-            >
-              {attached.length
-                ? `${attached.length} selected object(s) will be attached. `
-                : "Worksheet context. "}
-              The whole worksheet remains inspectable. Context and requested
-              images go to your model.{" "}
-              {readOnly
-                ? "Read-only access; editing tools are disabled."
-                : "Every edit needs your approval."}
-            </span>
-            {
-              <p
-                hidden={!privacyOpen}
-                id="assistant-access-details"
-                className="assistant-privacy"
+                  ))}
+                  {attached.length < selection.length && (
+                    <button
+                      type="button"
+                      className="assistant-context-chip"
+                      onClick={() => setExcluded([])}
+                    >
+                      Use selection
+                    </button>
+                  )}
+                </div>
+              )}
+              <span
+                className="assistant-visually-hidden"
+                id="assistant-input-context"
               >
-                Selection is a focus hint, not an access restriction. The
-                assistant can inspect the worksheet and request canvas images.
-                Inspected content goes to your model provider. Credentials are
-                excluded from images. No shell access or automatic computation.{" "}
+                {attached.length
+                  ? `${attached.length} selected object(s) will be attached. `
+                  : "Worksheet context. "}
+                The whole worksheet remains inspectable. Context and requested
+                images go to your model. Enter to send. Shift+Enter for a new
+                line.{" "}
                 {readOnly
                   ? "Read-only access; editing tools are disabled."
-                  : "Every edit requires approval."}
-              </p>
-            }
-            <label className="assistant-composer">
-              <span className="assistant-visually-hidden">
-                {readOnly
-                  ? "Ask about the canvas"
-                  : "Ask about or edit the canvas"}
+                  : "Every edit needs your approval."}
               </span>
-              <textarea
-                ref={requestInput}
-                maxLength={10000}
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                aria-describedby="assistant-input-context"
-                placeholder={
-                  busy
-                    ? "Draft your next question…"
-                    : readOnly
-                      ? "Ask about the canvas…"
-                      : "Ask about or edit the canvas…"
-                }
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    void send();
+              <label className="assistant-composer">
+                <span className="assistant-visually-hidden">
+                  {readOnly
+                    ? "Ask about the canvas"
+                    : "Ask about or edit the canvas"}
+                </span>
+                <textarea
+                  ref={requestInput}
+                  maxLength={10000}
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  aria-describedby="assistant-input-context"
+                  placeholder={
+                    busy
+                      ? "Draft your next question…"
+                      : readOnly
+                        ? "Ask about the canvas…"
+                        : "Ask about or edit the canvas…"
                   }
-                }}
-                rows={2}
-              />
-            </label>
-            <AssistantPreferences setup={setup} compact />
-            <div className="assistant-composer-toolbar">
-              <span className="assistant-keyboard-hint">
-                Enter to send · Shift+Enter for newline
-              </span>
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault();
+                      void send();
+                    }
+                  }}
+                  rows={2}
+                />
+              </label>
+              <div className="assistant-composer-toolbar">
+                <AssistantModelPicker setup={setup} />
+                <div className="assistant-composer-actions">
+                  {busy ? (
+                    <button
+                      type="button"
+                      onClick={stop}
+                      className="assistant-stop"
+                      disabled={activeTurn?.phase === "stopping"}
+                      aria-label="Stop request"
+                      title={
+                        activeTurn?.phase === "stopping"
+                          ? "Waiting for Stop acknowledgement"
+                          : "Stop request"
+                      }
+                    >
+                      <Square size={13} aria-hidden="true" /> Stop
+                    </button>
+                  ) : connecting ? (
+                    <button
+                      type="button"
+                      className="assistant-stop"
+                      onClick={cancelSend}
+                      aria-label="Cancel send"
+                      title="Cancel connection and keep the draft"
+                    >
+                      <Square size={13} aria-hidden="true" /> Cancel
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      aria-label="Send request"
+                      title="Send · Enter. New line · Shift+Enter"
+                      disabled={setup.loading || !prompt.trim()}
+                    >
+                      <ArrowUp size={19} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="assistant-access-bar">
+              <div className="assistant-access-mode">
+                <ShieldCheck size={15} aria-hidden="true" />
+                <AssistantPermissions
+                  setup={setup}
+                  label="Assistant permissions"
+                />
+              </div>
               <button
                 type="button"
                 className="assistant-access"
@@ -536,44 +665,27 @@ export function CanvasAssistant({
                 aria-controls="assistant-access-details"
                 onClick={() => setPrivacyOpen(!privacyOpen)}
               >
-                <Info size={14} aria-hidden="true" />
+                <Info size={13} aria-hidden="true" /> Access details
               </button>
-              <div className="assistant-inline-actions">
-                {busy ? (
-                  <button
-                    type="button"
-                    onClick={stop}
-                    aria-label="Stop request"
-                    title="Stop request"
-                  >
-                    <Square size={15} aria-hidden="true" />
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    aria-label="Send request"
-                    title="Send request · Enter"
-                    disabled={
-                      setup.loading ||
-                      submitting ||
-                      setup.starting ||
-                      connection === "connecting" ||
-                      !prompt.trim()
-                    }
-                  >
-                    <ArrowUp size={17} aria-hidden="true" />
-                  </button>
-                )}
-              </div>
             </div>
+            <p
+              hidden={!privacyOpen}
+              id="assistant-access-details"
+              className="assistant-privacy assistant-access-note"
+            >
+              <strong>
+                {readOnly
+                  ? "Canvas edits are disabled."
+                  : "Every edit requires your approval."}
+              </strong>{" "}
+              Selection is a focus hint, not an access restriction. The
+              assistant can inspect the worksheet and request canvas images.
+              Inspected content goes to your model provider. Credentials are
+              excluded from images. No shell access or automatic computation.
+            </p>
           </form>
-          <p className="assistant-safety">
-            <ShieldCheck size={13} aria-hidden="true" />
-            {readOnly ? "Read-only access." : "You review every edit."} Check
-            engineering results independently.
-          </p>
         </footer>
-        {floating && (
+        {floating && !readingExpanded && (
           <button
             type="button"
             className="assistant-window-resize"

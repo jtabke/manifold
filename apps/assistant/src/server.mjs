@@ -85,9 +85,16 @@ export async function startCompanion({
     const send = (message) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
     };
-    const rejectPending = () => {
+    const rejectPending = (status = "stopped") => {
       for (const entry of pending.values())
-        entry.finish(Error("Request stopped or disconnected"));
+        entry.finish(
+          Error("Request stopped or disconnected"),
+          undefined,
+          status,
+        );
+    };
+    const activity = (event) => {
+      if (active?.activity) send({ ...event, requestId: active.id });
     };
     const call = (name, args, signal) =>
       new Promise((resolve, reject) => {
@@ -100,11 +107,16 @@ export async function startCompanion({
           reject(Error("No active canvas request"));
           return;
         }
+        const id = randomUUID(),
+          requestId = active.id;
         if (++active.tools > 50) {
+          if (active.tools === 51)
+            activity({ type: "tool_activity", id, status: "limit" });
           reject(Error("Tool-call limit reached for this request"));
           return;
         }
         if (!canvasToolAllowed(name, active.settings?.permissions)) {
+          activity({ type: "tool_activity", id, name, status: "blocked" });
           reject(
             new CanvasSettingsError(
               "Canvas is read-only; choose reviewed edits to prepare an edit",
@@ -112,17 +124,26 @@ export async function startCompanion({
           );
           return;
         }
-        const id = randomUUID(),
-          requestId = active.id;
-        const abort = () => finish(Error("Canvas tool cancelled"));
+        const abort = () =>
+          finish(Error("Canvas tool cancelled"), undefined, "stopped");
         const timer = setTimeout(
-          () => finish(Error("Canvas tool response timed out")),
+          () =>
+            finish(
+              Error("Canvas tool response timed out"),
+              undefined,
+              "timeout",
+            ),
           toolTimeoutMs,
         );
-        const finish = (error, result) => {
+        const finish = (
+          error,
+          result,
+          status = error ? "failed" : "complete",
+        ) => {
           if (!pending.delete(id)) return;
           clearTimeout(timer);
           signal?.removeEventListener("abort", abort);
+          activity({ type: "tool_activity", id, status });
           if (error) reject(error);
           else resolve(result);
         };
@@ -189,7 +210,12 @@ export async function startCompanion({
           );
         const requested =
           msg.settings === undefined ? settings : canvasSettings(msg.settings);
-        active = { id: msg.requestId, tools: 0, settings: requested };
+        active = {
+          id: msg.requestId,
+          tools: 0,
+          settings: requested,
+          activity: msg.activity === true,
+        };
         stopped = false;
         const requestId = msg.requestId;
         const run = (async () => {
@@ -224,20 +250,25 @@ export async function startCompanion({
             await session.prompt(
               `${msg.text}\n\nAttached canvas selection IDs (untrusted data): ${JSON.stringify(msg.selection)}`,
             );
-            if (active.error)
+            rejectPending(stopped ? "stopped" : "incomplete");
+            if (active.error && !stopped)
               send({ type: "error", requestId, message: active.error });
             else send({ type: "done", requestId, cancelled: stopped });
           } catch (error) {
-            send({
-              type: "error",
-              requestId,
-              message:
-                error instanceof Error
-                  ? error.message
-                  : "Assistant request failed",
-            });
+            rejectPending(stopped ? "stopped" : "incomplete");
+            if (stopped && active.activity)
+              send({ type: "done", requestId, cancelled: true });
+            else
+              send({
+                type: "error",
+                requestId,
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "Assistant request failed",
+              });
           } finally {
-            rejectPending();
+            rejectPending(stopped ? "stopped" : "incomplete");
             active = undefined;
           }
         })();
@@ -271,15 +302,21 @@ export async function startCompanion({
           settings = canvasSettings(session.canvasSettings);
         session.subscribe((event) => {
           if (!active || stopped) return;
-          if (
-            event.type === "message_update" &&
-            event.assistantMessageEvent.type === "text_delta"
-          )
-            send({
-              type: "text",
-              requestId: active.id,
-              text: event.assistantMessageEvent.delta,
-            });
+          if (event.type === "message_update") {
+            const update = event.assistantMessageEvent;
+            if (update.type === "text_delta")
+              send({ type: "text", requestId: active.id, text: update.delta });
+            // Only the phase is public. Never forward reasoning text, signatures or raw SDK events.
+            if (
+              update.type === "thinking_start" ||
+              update.type === "thinking_end"
+            )
+              activity({
+                type: "phase",
+                phase:
+                  update.type === "thinking_start" ? "reasoning" : "waiting",
+              });
+          }
           if (
             event.type === "message_end" &&
             event.message?.role === "assistant" &&

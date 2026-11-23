@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import os
+import shutil
 import signal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,17 +27,41 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def local_agent_request(self) -> bool:
+        origins = self.server.assistant.origins
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin")
+        if f"http://{host}" in origins and (not origin or origin in origins):
+            return True
+        self.send_json({"error": "Use the local canvas origin."}, 403)
+        return False
+
+    def agent_setup(self) -> None:
+        if not self.local_agent_request():
+            return
+        # PATH discovery is not a health probe. Never start a client or accept
+        # executable names or paths from the request.
+        path = os.pathsep.join(entry for entry in os.get_exec_path() if os.path.isabs(entry))
+
+        def executable(name):
+            found = shutil.which(name, path=path)
+            return found if found and os.path.isabs(found) else None
+
+        self.send_json({
+            "shell": "powershell" if os.name == "nt" else "posix",
+            "agents": {name: executable(name) for name in ("claude", "codex")},
+            "mcp": {
+                "command": executable("node"),
+                "args": [str(ROOT.resolve().parent / "assistant/src/mcp-main.mjs")],
+            },
+        })
+
     def assistant_request(self, action: str) -> None:
+        if not self.local_agent_request():
+            return
         try:
-            host = self.headers.get("Host", "")
-            parsed = urlparse(f"http://{host}")
             origin = self.headers.get("Origin")
             bridge = self.server.assistant
-            if (parsed.hostname not in ("127.0.0.1", "localhost")
-                    or parsed.port not in (self.server.server_port, self.server.dev_port)
-                    or (origin and origin not in bridge.origins)):
-                self.send_json({"error": "Use the local canvas origin."}, 403)
-                return
             body = None
             if action == "connect":
                 length = int(self.headers.get("Content-Length", "0"))
@@ -127,6 +153,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if requested == "/api/assistant/configuration":
             self.assistant_request("configuration")
+            return
+        if requested == "/api/agent-setup":
+            self.agent_setup()
             return
         if requested == "/api/health":
             self.send_json({"status": "ready", "evaluator": "bounded Python plot sampler"})

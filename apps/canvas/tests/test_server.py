@@ -1,9 +1,11 @@
 """Exercise the application server without research packages or build artifacts."""
 
 import json
+import os
 import sys
 import threading
 import unittest
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from http.client import HTTPConnection
 from pathlib import Path
@@ -25,11 +27,13 @@ class ServerTests(unittest.TestCase):
         cls.server.server_close()
         cls.thread.join()
 
-    def request(self, method, path, body=None, origin=None):
+    def request(self, method, path, body=None, origin=None, host=None):
         connection = HTTPConnection(*self.server.server_address, timeout=5)
         headers = {"Content-Type": "application/json"}
         if origin:
             headers["Origin"] = origin
+        if host:
+            headers["Host"] = host
         try:
             connection.request(
                 method, path, json.dumps(body) if body is not None else None, headers
@@ -87,6 +91,32 @@ class ServerTests(unittest.TestCase):
             origin="https://example.com",
         )
         self.assertEqual(status, 400)
+
+    def test_agent_setup_refreshes_only_fixed_path_lookups_without_startup(self):
+        with TemporaryDirectory() as directory, patch.dict(os.environ, {"PATH": directory}), \
+                patch("subprocess.Popen") as spawn:
+            suffix = ".exe" if os.name == "nt" else ""
+            node = Path(directory) / f"node{suffix}"
+            node.touch(mode=0o755)
+            status, result = self.request("GET", "/api/agent-setup?binary=python")
+            self.assertEqual(status, 200)
+            self.assertEqual(result["agents"], {"claude": None, "codex": None})
+            self.assertEqual(result["mcp"]["command"], str(node))
+            self.assertEqual(Path(result["mcp"]["args"][0]).name, "mcp-main.mjs")
+            self.assertTrue(Path(result["mcp"]["args"][0]).is_file())
+            claude = Path(directory) / f"claude{suffix}"
+            claude.touch(mode=0o755)
+            (Path(directory) / f"codex{suffix}").mkdir()
+            status, result = self.request("GET", "/api/agent-setup")
+            self.assertEqual(status, 200)
+            self.assertEqual(result["agents"], {"claude": str(claude), "codex": None})
+            spawn.assert_not_called()
+
+    def test_agent_setup_checks_host_and_origin_before_discovery(self):
+        with patch("server.shutil.which") as lookup:
+            self.assertEqual(self.request("GET", "/api/agent-setup", origin="https://example.com")[0], 403)
+            self.assertEqual(self.request("GET", "/api/agent-setup", host="example.com")[0], 403)
+            lookup.assert_not_called()
 
     def test_assistant_configuration_uses_owned_bridge(self):
         config = {"defaultProvider": "test", "defaultModel": "small", "providers": []}

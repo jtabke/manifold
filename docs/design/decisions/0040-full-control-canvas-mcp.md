@@ -23,6 +23,14 @@ an explicit full-control grant. It opens no socket until the user enables contro
 The exact canvas Origin, loopback Host, random token and single connected tab bound
 transport authority. The MCP process must not be exposed on a public network.
 
+The document-header **Ask agent** control offers external setup independently of the Pi
+assistant. Its setup UI uses a Host/Origin-checked endpoint to look up Claude Code and
+Codex on the server’s PATH. It does not execute clients, check credentials, configure a client,
+or take a binary path from the browser. A manual executable override only changes the
+user-visible setup command. The same stdio endpoint and grant remain open to any compatible
+client; pasting a private link reuses the grant prompt on the current canvas tab without
+writing the pasted token to browser history.
+
 `CanvasMcp` owns transient browser connection/revocation. `createMcpCanvas` supplies an
 independent full-control semantic adapter over the existing `RegionSession`, canvas
 inspection/capture ports and renderer-draft guard. It reuses assistant read/proposal

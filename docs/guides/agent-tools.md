@@ -74,7 +74,35 @@ Validation does not establish physical validity.
 
 Continue with the [agent guide](agents.md) and [CLI reference](../reference/cli.md).
 
+## Use an installed agent from the canvas
+
+In the document header, open **Ask agent → Connect an external agent**. This opens
+external setup without starting the built-in Pi assistant.
+Manifold checks its local server’s `PATH` for Claude Code and Codex. **Detected** means
+an executable was found, not that the client is signed in, configured, or connected.
+Use **Refresh installed agents** to check again. If the running server cannot see a new
+PATH entry, enter the client’s absolute executable path instead; Manifold does not check
+or run that override.
+
+Choose Claude Code or Codex to copy a setup command, or choose **Other client** for the
+stdio configuration to add in any compatible MCP client. You run the command or edit the
+client settings yourself; Manifold does not start, install, sign in to, or configure a client.
+**Setup instructions copied** means the instructions are on your clipboard, not that the
+client is configured. The built-in Pi assistant stays separate and approval-only.
+For in-chat MCP App previews from a source checkout, build the optional preview with
+`npm --workspace manifold-assistant run build:preview`.
+
+After configuring the client, restart or reconnect it and ask it to call `connect_canvas`.
+Paste the private link into the setup panel: **Connection requested** means you can now
+review permissions in the current tab, not that the client has access. If the link points
+at another Manifold address, update the client’s `MANIFOLD_CANVAS_URL` to the address shown
+and request a fresh link. The permission prompt defaults to read-only. After the client
+connects, the canvas shows **Connected** and the granted scope. Only connect clients you
+trust: even read-only access includes canvas content, images and portable exports.
+
 ## Connect an MCP client
+
+To configure a client from the installed tools without using the canvas setup panel:
 
 1. Start the canvas separately. In a source checkout, run `make canvas` and leave
    it running. Do not start another process on an occupied port.

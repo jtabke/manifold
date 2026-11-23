@@ -9,6 +9,11 @@ import type { WorkspaceEdits } from "./workspaceFiles";
 import type { AssistantCanvasPort } from "../assistantCanvas";
 import type { AssistantObjectReference } from "../assistantReferences";
 import type {
+  AssistantToolActivity,
+  AssistantToolStatus,
+  AssistantTurnPhase,
+} from "../assistantTimeline";
+import type {
   AssistantPermission,
   AssistantSettings,
 } from "../assistantSettings";
@@ -21,16 +26,25 @@ export type AssistantTurn = {
   answer: string;
   references: AssistantObjectReference[];
   settings?: AssistantSettings;
+  phase: AssistantTurnPhase;
+  startedAt: number;
+  endedAt?: number;
+  error?: string;
+  tools: AssistantToolActivity[];
 };
 type Bridge = {
   socket: WebSocket;
   assistant: CanvasAssistant;
   active?: string;
+  activeTools: Set<string>;
+  stopping?: boolean;
+  stopTimer?: number;
   requestedSettings?: AssistantSettings;
   resolveConnection?: (ready: boolean) => void;
 };
 
 function disposeBridge(current: Bridge | undefined) {
+  clearTimeout(current?.stopTimer);
   current?.resolveConnection?.(false);
   current?.assistant.close();
   current?.socket.close();
@@ -78,7 +92,6 @@ export function useCanvasAssistant(
   const [proposals, setProposals] = useState<AssistantProposal[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [activity, setActivity] = useState("");
   const [permissions, changePermissions] =
     useState<AssistantPermission>("reviewed-edits");
   const permission = useRef<AssistantPermission>("reviewed-edits");
@@ -97,13 +110,39 @@ export function useCanvasAssistant(
       setError((failure as Error).message);
     }
   };
-  const disconnect = () => {
+  const updateTurn = (
+    id: string,
+    update: (turn: AssistantTurn) => AssistantTurn,
+  ) =>
+    setTurns((previous) =>
+      previous.map((turn) => (turn.id === id ? update(turn) : turn)),
+    );
+  const endTurn = (
+    id: string,
+    phase: "complete" | "failed" | "stopped" | "disconnected",
+    error?: string,
+  ) => {
+    const endedAt = performance.now();
+    updateTurn(id, (turn) => ({
+      ...turn,
+      phase,
+      endedAt,
+      error,
+      tools: turn.tools.map((tool) =>
+        tool.status === "running"
+          ? { ...tool, status: phase === "stopped" ? "stopped" : "incomplete" }
+          : tool,
+      ),
+    }));
+  };
+  const disconnect = (message?: string) => {
     const current = bridge.current;
     bridge.current = undefined;
+    if (current?.active) endTurn(current.active, "disconnected", message);
+    else if (message) setError(message);
     disposeBridge(current);
     setConnection("offline");
     setBusy(false);
-    setActivity("");
     setProposals([]);
     setSettings(undefined);
   };
@@ -134,13 +173,13 @@ export function useCanvasAssistant(
           "Paste the private ws://127.0.0.1 connection URL printed by the companion",
         );
       disconnect();
-      setTurns([]);
       setError("");
       setConnection("connecting");
       const socket = new WebSocket(endpoint);
       const current: Bridge = {
         socket,
         assistant: createCanvasAssistant(session),
+        activeTools: new Set(),
       };
       current.assistant.setPermissions(permission.current);
       const connected = new Promise<boolean>((resolve) => {
@@ -169,8 +208,75 @@ export function useCanvasAssistant(
             setError(message.message);
             return;
           }
-          if (!current.active || message.requestId !== current.active) return;
-          if (message.type === "settings") {
+          const requestId = current.active;
+          if (!requestId || message.requestId !== requestId) return;
+          if (message.type === "done" || message.type === "error") {
+            current.assistant.end(requestId);
+            current.active = undefined;
+            current.requestedSettings = undefined;
+            current.activeTools.clear();
+            const stopped = current.stopping || message.cancelled;
+            current.stopping = false;
+            clearTimeout(current.stopTimer);
+            current.stopTimer = undefined;
+            setBusy(false);
+            endTurn(
+              requestId,
+              stopped
+                ? "stopped"
+                : message.type === "error"
+                  ? "failed"
+                  : "complete",
+              !stopped && message.type === "error"
+                ? String(message.message).slice(0, 1000)
+                : undefined,
+            );
+          } else if (message.type === "tool_activity") {
+            const status = message.status as AssistantToolStatus;
+            if (
+              typeof message.id !== "string" ||
+              ![
+                "complete",
+                "failed",
+                "stopped",
+                "blocked",
+                "timeout",
+                "limit",
+                "incomplete",
+              ].includes(status)
+            )
+              return;
+            current.activeTools.delete(message.id);
+            updateTurn(requestId, (turn) => {
+              if (turn.tools.some((tool) => tool.id === message.id))
+                return {
+                  ...turn,
+                  tools: turn.tools.map((tool) =>
+                    tool.id === message.id ? { ...tool, status } : tool,
+                  ),
+                };
+              if (
+                (status !== "blocked" && status !== "limit") ||
+                turn.tools.length >= 51
+              )
+                return turn;
+              return {
+                ...turn,
+                tools: [
+                  ...turn.tools,
+                  { id: message.id, name: String(message.name ?? ""), status },
+                ],
+              };
+            });
+          } else if (current.stopping) {
+            return;
+          } else if (message.type === "phase") {
+            if (message.phase === "reasoning" || message.phase === "waiting")
+              updateTurn(requestId, (turn) => ({
+                ...turn,
+                phase: message.phase,
+              }));
+          } else if (message.type === "settings") {
             const accepted = connectionSettings(message.settings),
               requested = current.requestedSettings;
             if (
@@ -183,37 +289,37 @@ export function useCanvasAssistant(
             )
               throw Error("Companion settings do not match this request");
             setSettings(accepted);
-            setTurns((previous) =>
-              previous.map((turn) =>
-                turn.id === message.requestId
-                  ? { ...turn, settings: accepted }
-                  : turn,
-              ),
-            );
+            updateTurn(requestId, (turn) => ({ ...turn, settings: accepted }));
           } else if (message.type === "text") {
-            setActivity("Writing a response…");
-            setTurns((previous) =>
-              previous.map((turn) =>
-                turn.id === message.requestId
-                  ? { ...turn, answer: turn.answer + message.text }
-                  : turn,
-              ),
-            );
+            if (typeof message.text === "string")
+              updateTurn(requestId, (turn) => ({
+                ...turn,
+                phase: "writing",
+                answer: turn.answer + message.text,
+              }));
           } else if (message.type === "tool") {
-            setActivity(
-              (
-                {
-                  inspect_workspace: "Reading the worksheet…",
-                  inspect_canvas: "Inspecting canvas layout…",
-                  inspect_plot: "Reading plot data…",
-                  look_at_canvas: "Looking at the canvas image…",
-                  capabilities: "Checking available operations…",
-                  prepare_edit: "Preparing an edit for review…",
-                } as Record<string, string>
-              )[message.name] || "Inspecting the canvas…",
+            const { id, name } = message;
+            if (
+              typeof id !== "string" ||
+              typeof name !== "string" ||
+              !current.assistant.active(requestId)
+            )
+              return;
+            current.activeTools.add(id);
+            updateTurn(requestId, (turn) =>
+              turn.tools.length < 51
+                ? {
+                    ...turn,
+                    phase: "waiting",
+                    tools: [...turn.tools, { id, name, status: "running" }],
+                  }
+                : turn,
             );
+            const stillRunning = () =>
+              bridge.current === current &&
+              current.assistant.active(requestId) &&
+              current.activeTools.has(id);
             try {
-              if (!current.assistant.active(message.requestId)) return;
               if (message.name === "look_at_canvas" && edits.read().editing)
                 throw Error(
                   "Finish or cancel the current canvas edit before capturing an image",
@@ -235,11 +341,7 @@ export function useCanvasAssistant(
                         message.name,
                         message.args,
                       );
-              if (
-                bridge.current !== current ||
-                !current.assistant.active(message.requestId)
-              )
-                return;
+              if (!stillRunning()) return;
               if (message.name === "look_at_canvas" && edits.read().editing)
                 throw Error(
                   "Canvas editing began during capture; finish or cancel the edit and look again",
@@ -256,79 +358,72 @@ export function useCanvasAssistant(
                   "Canvas tool result is too large; inspect a smaller page or one object",
                 );
               socket.send(response);
-              if (
-                [
-                  "inspect_workspace",
-                  "inspect_canvas",
-                  "inspect_plot",
-                ].includes(message.name)
-              ) {
-                const references = (
-                  result as { references: readonly AssistantObjectReference[] }
-                ).references;
-                setTurns((previous) =>
-                  previous.map((turn) =>
-                    turn.id === message.requestId
-                      ? {
-                          ...turn,
-                          references: [
-                            ...new Map(
-                              [...turn.references, ...references].map(
-                                (reference) => [reference.href, reference],
-                              ),
-                            ).values(),
-                          ],
-                        }
-                      : turn,
-                  ),
-                );
-              }
-              setActivity("Thinking…");
+              const references = [
+                "inspect_workspace",
+                "inspect_canvas",
+                "inspect_plot",
+              ].includes(name)
+                ? (
+                    result as {
+                      references: readonly AssistantObjectReference[];
+                    }
+                  ).references
+                : [];
+              current.activeTools.delete(id);
+              updateTurn(requestId, (turn) => ({
+                ...turn,
+                references: references.length
+                  ? [
+                      ...new Map(
+                        [...turn.references, ...references].map((reference) => [
+                          reference.href,
+                          reference,
+                        ]),
+                      ).values(),
+                    ]
+                  : turn.references,
+                tools: turn.tools.map((tool) =>
+                  tool.id === id
+                    ? {
+                        ...tool,
+                        status: "complete",
+                        references: references.slice(0, 3),
+                      }
+                    : tool,
+                ),
+              }));
             } catch (failure) {
-              if (
-                bridge.current !== current ||
-                !current.assistant.active(message.requestId)
-              )
-                return;
+              if (!stillRunning()) return;
+              const error =
+                failure instanceof Error
+                  ? failure.message
+                  : "Canvas tool failed";
+              const note =
+                name === "look_at_canvas" && error.includes("canvas edit")
+                  ? "Finish or cancel the open canvas edit, then request another capture."
+                  : undefined;
               socket.send(
-                JSON.stringify({
-                  type: "tool_result",
-                  id: message.id,
-                  requestId: message.requestId,
-                  error: (failure as Error).message,
-                }),
+                JSON.stringify({ type: "tool_result", id, requestId, error }),
               );
+              current.activeTools.delete(id);
+              updateTurn(requestId, (turn) => ({
+                ...turn,
+                tools: turn.tools.map((tool) =>
+                  tool.id === id ? { ...tool, status: "failed", note } : tool,
+                ),
+              }));
             }
-          } else if (message.type === "done" || message.type === "error") {
-            current.assistant.end(message.requestId);
-            current.active = undefined;
-            current.requestedSettings = undefined;
-            setBusy(false);
-            setActivity(
-              message.cancelled
-                ? "Stopped. Nothing was applied automatically."
-                : "",
-            );
-            if (message.type === "error") setError(message.message);
           }
         } catch {
-          setError("Invalid companion response; disconnect and try again");
-          disconnect();
+          disconnect("Invalid companion response. Reconnect to try again.");
         }
-      };
-      socket.onerror = () => {
-        if (bridge.current === current)
-          setError(
-            "Could not connect the assistant. Disconnect and retry, or refresh your Pi configuration.",
-          );
       };
       socket.onclose = () => {
         if (bridge.current !== current) return;
-        disconnect();
-        setError(
-          (previous) =>
-            previous ||
-            "Companion disconnected. Pending proposals were discarded; accepted edits are preserved.",
+        disconnect(
+          current.resolveConnection
+            ? "Could not connect the assistant. Check Pi configuration and try again."
+            : "Reconnect to continue. Pending proposals were discarded; accepted canvas edits are preserved.",
         );
       };
       return connected;
@@ -386,16 +481,19 @@ export function useCanvasAssistant(
           selection: attached,
           answer: "",
           references: [],
+          phase: "waiting",
+          startedAt: performance.now(),
+          tools: [],
           ...(requested ? { settings: requested } : {}),
         },
       ]);
       setBusy(true);
       setError("");
-      setActivity("Thinking…");
       current.socket.send(
         JSON.stringify({
           type: "prompt",
           requestId: id,
+          activity: true,
           text: text.trim(),
           selection: attached,
           ...(requested ? { settings: requested } : {}),
@@ -404,17 +502,17 @@ export function useCanvasAssistant(
       return true;
     } catch (failure) {
       const current = bridge.current;
+      const message =
+        failure instanceof Error
+          ? failure.message
+          : "Could not send the request";
       if (current?.active) {
+        endTurn(current.active, "failed", message);
         current.assistant.end(current.active);
         current.active = undefined;
         current.requestedSettings = undefined;
-      }
+      } else setError(message);
       setBusy(false);
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "Could not send the request",
-      );
       return false;
     } finally {
       submission.current = false;
@@ -423,13 +521,25 @@ export function useCanvasAssistant(
   };
   const stop = () => {
     const current = bridge.current;
-    if (!current?.active) return;
+    if (!current?.active || current.stopping) return;
     // Revoke browser tool authority immediately, even before Pi acknowledges cancellation.
-    current.assistant.end(current.active);
-    current.socket.send(
-      JSON.stringify({ type: "cancel", requestId: current.active }),
-    );
-    setActivity("Stopping…");
+    const id = current.active;
+    current.stopping = true;
+    current.assistant.end(id);
+    updateTurn(id, (turn) => ({ ...turn, phase: "stopping" }));
+    try {
+      current.socket.send(JSON.stringify({ type: "cancel", requestId: id }));
+      current.stopTimer = window.setTimeout(() => {
+        if (bridge.current === current && current.active === id)
+          disconnect(
+            "Stop was not acknowledged. Canvas-tool access was revoked and the connection closed.",
+          );
+      }, 10_000);
+    } catch {
+      disconnect(
+        "The companion could not acknowledge Stop. The connection was closed.",
+      );
+    }
   };
   const resolve = (proposal: AssistantProposal, apply: boolean) => {
     try {
@@ -454,12 +564,11 @@ export function useCanvasAssistant(
     busy,
     submitting,
     error,
-    activity,
     settings,
     permissions,
     setPermissions,
     connect,
-    disconnect,
+    disconnect: () => disconnect(),
     send,
     stop,
     resolve,

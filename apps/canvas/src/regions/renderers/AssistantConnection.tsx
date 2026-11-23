@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import type { AssistantConnectionState as Connection } from "../app/useCanvasAssistant";
 import type {
   AssistantPermission,
@@ -249,6 +250,11 @@ export function useAssistantSetup(
     preferencesLocked,
     load,
     start,
+    cancelStart() {
+      pending.current?.abort();
+      pending.current = undefined;
+      setStarting(false);
+    },
     chooseProvider(id: string) {
       if (preferencesLocked || connection !== "offline") return;
       const next = configuration?.providers.find((item) => item.id === id);
@@ -292,7 +298,7 @@ function thinkingLabel(level: string) {
     : level.charAt(0).toUpperCase() + level.slice(1);
 }
 
-function ComposerPreferences({
+export function AssistantModelPicker({
   setup,
 }: {
   setup: ReturnType<typeof useAssistantSetup>;
@@ -367,22 +373,29 @@ function ComposerPreferences({
       });
   }, [open, highlighted, id]);
   return (
-    <div
-      className="assistant-preferences is-compact"
-      role="group"
-      aria-label="Request settings"
-    >
-      <div className="assistant-model-choice" ref={surface}>
-        <button
-          ref={trigger}
-          type="button"
-          className="assistant-model-trigger"
-          aria-label="Choose assistant model and thinking"
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          aria-controls={`${id}-picker`}
-          disabled={setup.preferencesLocked || !setup.models.length}
-          onClick={() => {
+    <div className="assistant-model-choice" ref={surface}>
+      <button
+        ref={trigger}
+        type="button"
+        className="assistant-model-trigger"
+        aria-label="Choose assistant model and thinking"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={`${id}-picker`}
+        disabled={setup.preferencesLocked || !setup.models.length}
+        onClick={() => {
+          setQuery("");
+          setHighlighted(
+            Math.max(
+              0,
+              setup.models.findIndex((item) => item.id === setup.model),
+            ),
+          );
+          setOpen(!open);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
             setQuery("");
             setHighlighted(
               Math.max(
@@ -390,181 +403,174 @@ function ComposerPreferences({
                 setup.models.findIndex((item) => item.id === setup.model),
               ),
             );
-            setOpen(!open);
-          }}
+            setOpen(true);
+          }
+        }}
+        title={`${setup.provider}/${setup.model} · Thinking ${thinkingLabel(setup.thinking)}`}
+      >
+        <span className="assistant-model-display">
+          <span>{selectedModel?.name || setup.model || "Choose a model"}</span>
+          {selectedModel && (
+            <small>Thinking {thinkingLabel(setup.thinking)}</small>
+          )}
+        </span>
+        <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          id={`${id}-picker`}
+          className="assistant-model-picker"
+          style={{ maxHeight: pickerHeight, width: pickerWidth }}
+          role="dialog"
+          aria-label="Assistant model and thinking"
           onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
+            if (event.key === "Escape" && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              setQuery("");
-              setHighlighted(
-                Math.max(
-                  0,
-                  setup.models.findIndex((item) => item.id === setup.model),
-                ),
-              );
-              setOpen(true);
+              event.stopPropagation();
+              dismiss();
             }
           }}
-          title={`${setup.provider}/${setup.model} · Thinking ${thinkingLabel(setup.thinking)}`}
+          onBlur={(event) => {
+            if (!surface.current?.contains(event.relatedTarget as Node | null))
+              setOpen(false);
+          }}
         >
-          <span>{selectedModel?.name || setup.model || "Choose a model"}</span>
-          <small>Thinking {thinkingLabel(setup.thinking)} ▾</small>
-        </button>
-        {open && (
-          <div
-            id={`${id}-picker`}
-            className="assistant-model-picker"
-            style={{ maxHeight: pickerHeight, width: pickerWidth }}
-            role="dialog"
-            aria-label="Assistant model and thinking"
+          <input
+            ref={search}
+            type="search"
+            role="combobox"
+            aria-label="Search assistant models"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls={`${id}-models`}
+            aria-activedescendant={
+              models[highlighted] ? `${id}-model-${highlighted}` : undefined
+            }
+            placeholder="Search models…"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setHighlighted(0);
+            }}
             onKeyDown={(event) => {
-              if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
-                event.stopPropagation();
-                dismiss();
+                if (models.length)
+                  setHighlighted(
+                    (previous) =>
+                      (previous +
+                        (event.key === "ArrowDown" ? 1 : models.length - 1)) %
+                      models.length,
+                  );
+              } else if (event.key === "Enter") {
+                event.preventDefault();
+                if (models[highlighted]) choose(models[highlighted].id);
               }
             }}
-            onBlur={(event) => {
-              if (
-                !surface.current?.contains(event.relatedTarget as Node | null)
-              )
-                setOpen(false);
-            }}
+          />
+          <div
+            id={`${id}-models`}
+            className="assistant-model-options"
+            role="listbox"
+            aria-label="Available assistant models"
           >
-            <input
-              ref={search}
-              type="search"
-              role="combobox"
-              aria-label="Search assistant models"
-              aria-autocomplete="list"
-              aria-expanded="true"
-              aria-controls={`${id}-models`}
-              aria-activedescendant={
-                models[highlighted] ? `${id}-model-${highlighted}` : undefined
-              }
-              placeholder="Search models…"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setHighlighted(0);
-              }}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return;
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  if (models.length)
-                    setHighlighted(
-                      (previous) =>
-                        (previous +
-                          (event.key === "ArrowDown" ? 1 : models.length - 1)) %
-                        models.length,
-                    );
-                } else if (event.key === "Enter") {
-                  event.preventDefault();
-                  if (models[highlighted]) choose(models[highlighted].id);
-                }
-              }}
-            />
-            <div
-              id={`${id}-models`}
-              className="assistant-model-options"
-              role="listbox"
-              aria-label="Available assistant models"
-            >
-              {models.map((item, index) => (
-                <button
-                  id={`${id}-model-${index}`}
-                  key={item.id}
-                  type="button"
-                  role="option"
-                  tabIndex={-1}
-                  aria-selected={item.id === setup.model}
-                  data-highlighted={index === highlighted}
-                  onMouseMove={() => setHighlighted(index)}
-                  onClick={() => choose(item.id)}
-                >
-                  <span>{item.name || item.id}</span>
-                  {item.name !== item.id && <small>{item.id}</small>}
-                </button>
-              ))}
-            </div>
-            {!models.length && <p role="status">No matching models.</p>}
-            <label>
-              Thinking effort
-              <select
-                aria-label="Assistant thinking"
-                value={setup.thinking}
-                disabled={
-                  setup.preferencesLocked || setup.thinkingLevels.length < 2
-                }
-                onChange={(event) => setup.chooseThinking(event.target.value)}
+            {models.map((item, index) => (
+              <button
+                id={`${id}-model-${index}`}
+                key={item.id}
+                type="button"
+                role="option"
+                tabIndex={-1}
+                aria-selected={item.id === setup.model}
+                data-highlighted={index === highlighted}
+                onMouseMove={() => setHighlighted(index)}
+                onClick={() => choose(item.id)}
               >
-                {setup.thinkingLevels.map((level) => (
-                  <option key={level} value={level}>
-                    {thinkingLabel(level)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {setup.thinkingLevels.length < 2 && (
-              <small>
-                This model uses {thinkingLabel(setup.thinking).toLowerCase()}{" "}
-                thinking.
-              </small>
-            )}
-            <button
-              type="button"
-              className="assistant-picker-done"
-              onClick={() => dismiss()}
-            >
-              Done
-            </button>
+                <span>{item.name || item.id}</span>
+                {item.name !== item.id && <small>{item.id}</small>}
+              </button>
+            ))}
           </div>
-        )}
-      </div>
-      <label>
-        <span className="assistant-visually-hidden">Request access</span>
-        <select
-          aria-label="Assistant permissions"
-          value={setup.permissions}
-          disabled={setup.preferencesLocked}
-          title={
-            setup.permissions === "read-only"
-              ? "Inspect and explain; editing tools are disabled"
-              : "Propose edits; you approve each change"
-          }
-          onChange={(event) =>
-            setup.choosePermissions(event.target.value as AssistantPermission)
-          }
-        >
-          <option value="read-only">Read-only</option>
-          <option value="reviewed-edits">Review edits</option>
-        </select>
-      </label>
+          {!models.length && <p role="status">No matching models.</p>}
+          <label>
+            Thinking effort
+            <select
+              aria-label="Assistant thinking"
+              value={setup.thinking}
+              disabled={
+                setup.preferencesLocked || setup.thinkingLevels.length < 2
+              }
+              onChange={(event) => setup.chooseThinking(event.target.value)}
+            >
+              {setup.thinkingLevels.map((level) => (
+                <option key={level} value={level}>
+                  {thinkingLabel(level)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {setup.thinkingLevels.length < 2 && (
+            <small>
+              This model uses {thinkingLabel(setup.thinking).toLowerCase()}{" "}
+              thinking.
+            </small>
+          )}
+          <button
+            type="button"
+            className="assistant-picker-done"
+            onClick={() => dismiss()}
+          >
+            Done
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-export function AssistantPreferences({
+export function AssistantPermissions({
   setup,
-  compact = false,
+  label,
 }: {
   setup: ReturnType<typeof useAssistantSetup>;
-  compact?: boolean;
+  label: string;
 }) {
-  if (compact) return <ComposerPreferences setup={setup} />;
+  return (
+    <select
+      aria-label={label}
+      value={setup.permissions}
+      disabled={setup.preferencesLocked}
+      title={
+        setup.permissions === "read-only"
+          ? "Inspect and explain; editing tools are disabled"
+          : "Propose edits; you approve each change"
+      }
+      onChange={(event) =>
+        setup.choosePermissions(event.target.value as AssistantPermission)
+      }
+    >
+      <option value="read-only">Read-only</option>
+      <option value="reviewed-edits">Review edits</option>
+    </select>
+  );
+}
+
+function AssistantPreferences({
+  setup,
+}: {
+  setup: ReturnType<typeof useAssistantSetup>;
+}) {
   return (
     <div
-      className={
-        compact ? "assistant-preferences is-compact" : "assistant-preferences"
-      }
+      className="assistant-preferences"
       role="group"
-      aria-label={compact ? "Request settings" : "Assistant preferences"}
+      aria-label="Assistant preferences"
     >
       <label>
         Model
         <select
-          aria-label={compact ? "Assistant model" : "Model"}
+          aria-label="Model"
           value={setup.model}
           disabled={setup.preferencesLocked || !setup.models.length}
           onChange={(event) => setup.chooseModel(event.target.value)}
@@ -582,7 +588,7 @@ export function AssistantPreferences({
       <label>
         Thinking
         <select
-          aria-label={compact ? "Assistant thinking" : "Thinking"}
+          aria-label="Thinking"
           value={setup.thinking}
           disabled={setup.preferencesLocked || setup.thinkingLevels.length < 2}
           onChange={(event) => setup.chooseThinking(event.target.value)}
@@ -596,17 +602,7 @@ export function AssistantPreferences({
       </label>
       <label>
         Access
-        <select
-          aria-label={compact ? "Assistant permissions" : "Permissions"}
-          value={setup.permissions}
-          disabled={setup.preferencesLocked}
-          onChange={(event) =>
-            setup.choosePermissions(event.target.value as AssistantPermission)
-          }
-        >
-          <option value="read-only">Read-only</option>
-          <option value="reviewed-edits">Review edits</option>
-        </select>
+        <AssistantPermissions setup={setup} label="Permissions" />
       </label>
     </div>
   );

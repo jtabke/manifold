@@ -93,7 +93,9 @@ The assistant is optional: the canvas works without it. Start Manifold normally 
 `make canvas`; no second terminal, separate companion startup or copied connection URL is needed.
 
 1. Right-click a canvas point and choose **Ask agent** to open the dockable Agent panel.
-   You can also use **Ask agent** on a scalar model card or in the document header.
+   You can also use **Ask agent** on a scalar model card or choose **Ask agent → Use built-in Pi**
+   in the document header. Use **Connect an external agent** in that menu to
+   [set up a separate MCP client](agent-tools.md#use-an-installed-agent-from-the-canvas).
    The invocation point is retained as context; move or collapse the panel without changing it.
 2. Type a question or request, such as “Set displacement to 3 mm and explain the effect.”
    **Enter** sends; **Shift+Enter** inserts a newline. The first request connects automatically
@@ -123,10 +125,11 @@ controls also accept arrow keys, with Shift for larger steps. **Escape** during 
 cancels that gesture. Floating geometry stays within the viewport and is transient; on small screens
 the floating panel becomes a bottom sheet rather than a movable window.
 
-**Minimize canvas assistant**, or **Escape** outside a gesture, hides the panel without stopping the
-request or clearing conversation, drafts or pending proposals. The Agent pill shows working/review
-status; click it to resume. The document-header **Ask agent** button also minimizes or restores the
-panel. **End assistant session** explicitly disconnects, cancels pending setup and discards the
+Use **Expand chat** for a wider transcript or diff, then **Exit expanded chat** (or **Escape**) to
+return without changing where the panel is docked. **Minimize canvas assistant** hides the panel
+without stopping the request or clearing conversation, drafts or pending proposals. The Agent pill shows working/review
+status; click it to resume. **Ask agent → Use built-in Pi** also brings the panel back.
+**End assistant session** explicitly disconnects, cancels pending setup and discards the
 conversation and unaccepted proposals. Accepted edits remain in the worksheet. Dock/float/minimize
 changes do not reconnect or send model requests; reloading does not retain the transient conversation.
 
@@ -137,22 +140,32 @@ in that request, not guesses based on names; the panel displays the inspected la
 removed or unavailable targets report the limitation instead of navigating elsewhere. These links
 are navigation aids, not evidence that a claim or numerical result has been validated.
 
-Proposal cards show compact input summaries such as **Displacement: 2 mm → 3 mm** before approval.
-Source diffs and full diagnostics remain expandable. **Show on canvas** actions locate and highlight
-an existing visible target without applying the edit. New content is available on the canvas only
-after approval; unavailable targets are reported rather than silently accepted.
-Tool progress distinguishes worksheet inspection, plot reads, canvas images and preparing an edit.
-The **Stop request** control remains available while a request is running.
+Proposal cards show input changes such as **Displacement: 2 mm → 3 mm**, changed constraint
+outcomes, and whether a computation result is not current. **Review changes and diagnostics** opens
+source diffs and validation findings. Proposal validation does not run computation or assess physical
+validity. **Show on canvas** highlights an existing target without applying the edit; new content is
+visible only after you choose **Apply edit**.
+
+Each turn shows its current phase and keeps a collapsible record of its canvas actions, including
+failures. **Waiting for model** is the default; **Model is reasoning** appears only if Pi reports that
+phase. Reasoning text and raw tool payloads are not shown. Reading earlier messages, selecting text
+or opening details pauses scroll-follow. Use **Jump to latest** to resume it.
+
+The composer starts with room for two lines and grows as you type. Press **Enter** to send or
+**Shift+Enter** for a new line. While a request runs you can draft the next one. **Stop** immediately
+revokes canvas-tool access and keeps any partial answer. Failed, stopped, and disconnected turns
+stay in the transcript. **Edit and resend** loads the original prompt into an empty composer
+without sending or replacing a draft.
 
 Use the model/thinking control beside the composer to search available models and choose a
 supported thinking level. Choices apply to the next request; switching models within the current
 provider preserves the conversation. Each response identifies its model, thinking level and access
 mode. Controls are locked during a request so its settings cannot change underneath it.
 
-The adjacent permissions control offers **Read-only** for inspection and explanation, or
-**Review edits** for proposed changes that you approve individually. Switching to read-only
-immediately dismisses pending edit proposals; switching back does not revive them. Neither mode
-permits shell access, automatic computation or unreviewed application of edits.
+Below the composer, choose **Read-only** for inspection and explanation or **Review edits** for
+proposed changes you approve individually. **Access details** explains what the model can read.
+Switching to read-only immediately dismisses pending edit proposals; switching back does not
+revive them. Neither mode permits shell access, automatic computation or unreviewed edits.
 
 Provider and credential configuration is behind the **Assistant settings** gear button. Existing Pi
 configuration is read from `~/.pi/agent` (or `PI_CODING_AGENT_DIR` set when starting Manifold).

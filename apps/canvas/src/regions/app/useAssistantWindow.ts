@@ -56,8 +56,10 @@ export function useAssistantWindow(anchor: Point) {
   useEffect(() => {
     const resize = () => {
       gesture.current = undefined;
-      setCompact(window.innerWidth <= 600);
-      setBounds((value) => constrain(value));
+      const sheet = window.innerWidth <= 600;
+      setCompact(sheet);
+      // The compact sheet uses CSS geometry; keep the desktop position for when it returns.
+      if (!sheet) setBounds((value) => constrain(value));
     };
     const blur = () => {
       cancel();

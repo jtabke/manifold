@@ -115,6 +115,9 @@ try {
   await page.goto(base);
   const before = await readWorkspace(page);
   await page.getByRole("button", { name: "Ask agent", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Use built-in Pi", exact: true })
+    .click();
   const panel = page.getByRole("dialog", {
       name: "Canvas assistant Pi · experimental",
     }),

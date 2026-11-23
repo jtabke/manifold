@@ -357,7 +357,7 @@
   bottom: 25%;
   width: 100px;
 }
-.wc-panel .canvas-assistant.is-embedded {
+.wc-panel .canvas-assistant.is-embedded:not(.is-reading) {
   position: static;
   width: 100%;
   max-height: none;

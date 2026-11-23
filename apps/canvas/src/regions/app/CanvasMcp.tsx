@@ -1,4 +1,11 @@
-import { useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { Plug, X } from "lucide-react";
 import { createMcpCanvas } from "../mcp";
@@ -6,6 +13,7 @@ import { mcpErrorData, McpError, type McpScope } from "../mcpProtocol";
 import "../styles/mcp.css";
 import type { RegionSession } from "../document";
 import type { AssistantCanvasPort } from "../assistantCanvas";
+import { ExternalAgentSetup } from "../renderers/ExternalAgentSetup";
 import type { WorkspaceEdits } from "./workspaceFiles";
 
 type Owner = ReturnType<typeof createMcpCanvas>;
@@ -44,8 +52,8 @@ function clearMcpFragment() {
   window.history.replaceState(null, "", url);
 }
 
-function requestedEndpoint() {
-  const value = new URLSearchParams(window.location.hash.slice(1)).get("mcp");
+function requestedEndpoint(fragment = window.location.hash) {
+  const value = new URLSearchParams(fragment.slice(1)).get("mcp");
   if (!value) return;
   try {
     const url = new URL(value);
@@ -65,14 +73,41 @@ function requestedEndpoint() {
   }
 }
 
+const invalidLink = "Paste the full private link returned by connect_canvas.";
+const connectionFailed =
+  "Keep your client running, call connect_canvas again, and paste its new link under Ask agent → Connect an external agent.";
+
+function readSetupLink(
+  value: string,
+): { endpoint: string } | { error: string } {
+  if (value.length > 4096) return { error: invalidLink };
+  try {
+    const page = new URL(value);
+    const endpoint = requestedEndpoint(page.hash);
+    if (!endpoint || page.username || page.password)
+      return { error: invalidLink };
+    if (page.origin !== window.location.origin)
+      return {
+        error: `This link is for a different Manifold address. Set MANIFOLD_CANVAS_URL in your client’s server entry to ${window.location.origin}/, reconnect the client, and call connect_canvas again.`,
+      };
+    return { endpoint };
+  } catch {
+    return { error: invalidLink };
+  }
+}
+
 /** A private fragment requests a connection. Only a human's selected scope grants authority. */
 export function CanvasMcp({
   statusHost,
+  setupOpen,
+  closeSetup,
   session,
   edits,
   canvas,
 }: {
   statusHost: HTMLElement | null;
+  setupOpen: boolean;
+  closeSetup: () => void;
   session: RegionSession;
   edits: WorkspaceEdits;
   canvas: AssistantCanvasPort;
@@ -91,8 +126,12 @@ export function CanvasMcp({
     if (panel.current?.contains(document.activeElement))
       indicator.current?.focus({ preventScroll: true });
   };
+  useLayoutEffect(() => {
+    if (expanded && endpoint && !setupOpen)
+      panel.current?.focus({ preventScroll: true });
+  }, [expanded, endpoint, setupOpen]);
   useEffect(() => {
-    if (!expanded || !endpoint) return;
+    if (!expanded || !endpoint || setupOpen) return;
     const outside = (event: PointerEvent) => {
       const target = event.target as Node;
       if (
@@ -103,30 +142,33 @@ export function CanvasMcp({
     };
     document.addEventListener("pointerdown", outside, true);
     return () => document.removeEventListener("pointerdown", outside, true);
-  }, [expanded, endpoint]);
+  }, [expanded, endpoint, setupOpen]);
   const [status, setStatus] = useState("disconnected");
   const [agent, setAgent] = useState("External agent");
   const [view, setView] = useState<ReturnType<Owner["state"]>>();
   const [error, setError] = useState("");
   const bridge = useRef<
-    { socket: WebSocket; owner?: Owner; unsubscribe?: () => void } | undefined
+    | {
+        socket: WebSocket;
+        owner?: Owner;
+        unsubscribe?: () => void;
+        ready?: boolean;
+      }
+    | undefined
   >(undefined);
-  const disconnect = () => {
+  const disconnect = useCallback(() => {
     const current = bridge.current;
     bridge.current = undefined;
     current?.unsubscribe?.();
     current?.owner?.close();
     current?.socket.close();
-  };
+  }, []);
   useEffect(() => {
-    if (endpoint) clearMcpFragment();
+    if (endpoint && requestedEndpoint()) clearMcpFragment();
     return disconnect;
-  }, [endpoint, session]);
-  useEffect(() => {
-    const requested = () => {
-      const candidate = requestedEndpoint();
-      if (!candidate) return;
-      clearMcpFragment();
+  }, [endpoint, session, disconnect]);
+  const receiveRequest = useCallback(
+    (candidate: string) => {
       disconnect();
       setEndpoint(candidate);
       setExpanded(true);
@@ -136,31 +178,64 @@ export function CanvasMcp({
       setStatus("disconnected");
       setView(undefined);
       setError("");
+      if (setupOpen) closeSetup();
+    },
+    [closeSetup, disconnect, setupOpen],
+  );
+  useEffect(() => {
+    const requested = () => {
+      const candidate = requestedEndpoint();
+      if (!candidate) return;
+      clearMcpFragment();
+      receiveRequest(candidate);
     };
     window.addEventListener("hashchange", requested);
     return () => window.removeEventListener("hashchange", requested);
-  }, [session]);
-  if (!endpoint) return null;
+  }, [receiveRequest]);
+  const setup = setupOpen ? (
+    <ExternalAgentSetup
+      close={closeSetup}
+      requestConnection={(value) => {
+        const result = readSetupLink(value);
+        if ("error" in result) return result.error;
+        // Keep the current canvas URL; never write a pasted token to history.
+        receiveRequest(result.endpoint);
+        return "";
+      }}
+    />
+  ) : null;
+  if (!endpoint) return setup;
   const connect = () => {
     disconnect();
     setView(undefined);
     setError("");
     setAgent("External agent");
     setStatus("connecting");
-    const socket = new WebSocket(endpoint);
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(endpoint);
+    } catch {
+      setStatus("connection failed");
+      setError(connectionFailed);
+      return;
+    }
     const current: NonNullable<typeof bridge.current> = { socket };
     bridge.current = current;
+    const fail = () => {
+      disconnect();
+      setStatus("connection failed");
+      setError(connectionFailed);
+    };
     socket.onclose = () => {
-      if (bridge.current === current) {
+      if (bridge.current !== current) return;
+      if (!current.ready) fail();
+      else {
         disconnect();
         setStatus("disconnected");
       }
     };
     socket.onerror = () => {
-      if (bridge.current === current) {
-        disconnect();
-        setStatus("connection failed");
-      }
+      if (bridge.current === current) fail();
     };
     socket.onmessage = async (event) => {
       if (bridge.current !== current) return;
@@ -202,6 +277,7 @@ export function CanvasMcp({
           return;
         }
         if (message.type === "ready" && current.owner) {
+          current.ready = true;
           setStatus("connected");
           setWasConnected(true);
           closePanel();
@@ -258,7 +334,7 @@ export function CanvasMcp({
       : 0;
   const summary =
     status === "connected"
-      ? "Agent connected"
+      ? `Connected · ${permission.label}`
       : status === "connecting"
         ? "Connecting agent…"
         : status === "connection failed"
@@ -268,16 +344,17 @@ export function CanvasMcp({
             : "Connection requested";
   return (
     <>
+      {setup}
       {statusHost &&
         createPortal(
           <button
             ref={indicator}
             className="er-mcp-indicator"
             aria-label="External agent connection"
-            aria-expanded={expanded}
-            data-canvas-controls={expanded ? "" : undefined}
+            aria-expanded={expanded && !setupOpen}
+            data-canvas-controls={expanded && !setupOpen ? "" : undefined}
             onKeyDown={(event) => {
-              if (expanded && event.key === "Escape") {
+              if (expanded && !setupOpen && event.key === "Escape") {
                 event.preventDefault();
                 event.stopPropagation();
                 closePanel();
@@ -286,15 +363,11 @@ export function CanvasMcp({
             aria-controls={panelId}
             data-status={status}
             data-scope={scope}
-            title={`${summary}${connected ? ` · ${permission.label} · Client-reported name: ${agent}` : ""}`}
+            title={`${summary}${status === "connected" ? ` · Client-reported name: ${agent}` : ""}`}
             onClick={() => {
-              if (expanded) closePanel();
-              else {
-                setExpanded(true);
-                requestAnimationFrame(() =>
-                  panel.current?.focus({ preventScroll: true }),
-                );
-              }
+              if (setupOpen) closeSetup();
+              if (expanded && !setupOpen) closePanel();
+              else setExpanded(true);
             }}
           >
             <Plug size={15} />
@@ -310,7 +383,6 @@ export function CanvasMcp({
             )}
             <span className="er-mcp-announcement" role="status">
               {summary}
-              {status === "connected" ? ` · ${permission.label}` : ""}
               {pending
                 ? ` · ${pending} proposal${pending === 1 ? "" : "s"} awaiting your review`
                 : ""}
@@ -318,7 +390,7 @@ export function CanvasMcp({
           </button>,
           statusHost,
         )}
-      {expanded && (
+      {expanded && !setupOpen && (
         <section
           id={panelId}
           ref={panel}
@@ -336,11 +408,7 @@ export function CanvasMcp({
           }}
         >
           <header>
-            <strong>
-              {!connected && !wasConnected
-                ? "Connect an external agent?"
-                : `External agent: ${status}`}
-            </strong>
+            <strong>{summary}</strong>
             <button
               aria-label="Close agent connection details"
               title="Close details without disconnecting"
@@ -351,7 +419,8 @@ export function CanvasMcp({
           </header>
           {connected && (
             <p>
-              Client-reported name: <b>{agent}</b> · Granted scope:{" "}
+              Client-reported name: <b>{agent}</b> ·{" "}
+              {status === "connected" ? "Granted scope" : "Requested scope"}:{" "}
               {permission.label}
             </p>
           )}
@@ -372,9 +441,9 @@ export function CanvasMcp({
           </label>
           {!connected ? (
             <p>
-              {permission.description} Your content may reach the agent's model
-              provider. Only enable for an agent you trust. Permission lasts for
-              this connection only.
+              No access until you enable it. {permission.description} Your
+              content may reach the agent's model provider. Only enable for an
+              agent you trust. Permission lasts for this connection only.
             </p>
           ) : (
             <p>
@@ -409,6 +478,7 @@ export function CanvasMcp({
                 setEndpoint(undefined);
                 setView(undefined);
                 setStatus("disconnected");
+                closeSetup();
               }}
             >
               {wasConnected ? "Remove connection" : "Decline connection"}

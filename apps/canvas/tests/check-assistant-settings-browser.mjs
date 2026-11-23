@@ -131,6 +131,9 @@ try {
   await readWorkspace(page);
   const original = await readWorkspaceBytes(page);
   await page.getByRole("button", { name: "Ask agent", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Use built-in Pi", exact: true })
+    .click();
   const panel = page.getByRole("dialog", {
       name: "Canvas assistant Pi · experimental",
       exact: true,
@@ -210,7 +213,7 @@ try {
   await search.press("Escape");
   await permissions.selectOption("reviewed-edits");
   await ask("Propose the first note");
-  await expect(panel.getByRole("article").last()).toContainText("pending");
+  await expect(panel.getByRole("article").last()).toContainText("Not applied");
   await expect(panel.locator(".assistant-turn")).toHaveCount(2);
   assert.equal(sessions, 1, "model switches retain the actual agent session");
   assert.equal(connections.length, 1, "model switches do not reconnect");
@@ -221,7 +224,9 @@ try {
   });
   assert.equal(await readWorkspaceBytes(page), original);
   await permissions.selectOption("read-only");
-  await expect(panel.getByRole("article").last()).toContainText("dismissed");
+  await expect(
+    panel.getByRole("article").last().getByText("Dismissed", { exact: true }),
+  ).toBeVisible();
   await expect(
     panel.getByRole("button", { name: "Apply edit" }),
   ).toBeDisabled();
@@ -231,7 +236,9 @@ try {
   ).toBeDisabled();
   await ask("Propose a fresh note");
   await panel.getByRole("button", { name: "Apply edit" }).last().click();
-  await expect(panel.getByRole("article").last()).toContainText("applied");
+  await expect(
+    panel.getByRole("article").last().getByText("Applied", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.locator(".er-note").filter({ hasText: "Reviewed settings note" }),
   ).toHaveCount(1);

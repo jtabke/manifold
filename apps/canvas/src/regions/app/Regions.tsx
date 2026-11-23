@@ -63,6 +63,7 @@ import {
   createElement,
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -235,11 +236,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   const [assistantPresentation, setAssistantPresentation] = useState({
     floating: false,
     minimized: false,
+    readingExpanded: false,
   });
   const detachedPanels = useMemo(
     () =>
       assistantOpen &&
-      (assistantPresentation.floating || assistantPresentation.minimized)
+      (assistantPresentation.floating ||
+        assistantPresentation.minimized ||
+        assistantPresentation.readingExpanded)
         ? ["assistant" as const]
         : [],
     [assistantOpen, assistantPresentation],
@@ -250,6 +254,11 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
   });
   const [assistantPoint, setAssistantPoint] = useState<Point>({ x: 0, y: 0 });
   const assistantButton = useRef<HTMLButtonElement>(null);
+  const [externalAgentSetupOpen, setExternalAgentSetupOpen] = useState(false);
+  const closeExternalAgentSetup = useCallback(() => {
+    setExternalAgentSetupOpen(false);
+    assistantButton.current?.focus({ preventScroll: true });
+  }, []);
   const [mcpStatusHost, setMcpStatusHost] = useState<HTMLDivElement | null>(
     null,
   );
@@ -3391,6 +3400,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       >
         <CanvasMcp
           statusHost={mcpStatusHost}
+          setupOpen={externalAgentSetupOpen}
+          closeSetup={closeExternalAgentSetup}
           session={session}
           edits={workspaceEdits}
           canvas={agentCanvas}
@@ -3624,36 +3635,40 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 ) || "—"}
               </kbd>
             </button>
-            <button
-              ref={assistantButton}
-              aria-label="Ask agent"
-              className="er-agent-button"
-              aria-expanded={assistantOpen && !assistantPresentation.minimized}
-              onClick={() => {
-                if (assistantOpen && !assistantPresentation.minimized) {
-                  setAssistantPresentation((value) => ({
-                    ...value,
-                    minimized: true,
-                  }));
-                  return;
-                }
-                const rect = canvas.current?.getBoundingClientRect();
-                openAssistant(
-                  lastCanvasPress.current?.point ||
-                    actionPointer.current || {
-                      x: rect
-                        ? rect.left + rect.width / 2
-                        : window.innerWidth / 2,
-                      y: rect
-                        ? rect.top + rect.height / 2
-                        : window.innerHeight / 2,
-                    },
-                );
-              }}
+            <CanvasCommandMenu
+              label="Ask agent"
+              icon={<Sparkles size={16} />}
+              align="right"
+              triggerRef={assistantButton}
+              triggerClassName="er-agent-button"
             >
-              <Sparkles size={16} />
-              <span>Ask agent</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setExternalAgentSetupOpen(false);
+                  const rect = canvas.current?.getBoundingClientRect();
+                  openAssistant(
+                    lastCanvasPress.current?.point ||
+                      actionPointer.current || {
+                        x: rect
+                          ? rect.left + rect.width / 2
+                          : window.innerWidth / 2,
+                        y: rect
+                          ? rect.top + rect.height / 2
+                          : window.innerHeight / 2,
+                      },
+                  );
+                }}
+              >
+                Use built-in Pi
+              </button>
+              <button
+                type="button"
+                onClick={() => setExternalAgentSetupOpen(true)}
+              >
+                Connect an external agent
+              </button>
+            </CanvasCommandMenu>
             <button
               aria-label="Download file"
               className="er-download-button"
@@ -3921,6 +3936,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               <CanvasAssistant
                 floating={assistantPresentation.floating}
                 minimized={assistantPresentation.minimized}
+                readingExpanded={assistantPresentation.readingExpanded}
                 changePresentation={(value) => {
                   if (
                     !value.floating &&
@@ -3928,7 +3944,10 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                     !chrome.show("assistant", true)
                   )
                     return;
-                  setAssistantPresentation(value);
+                  setAssistantPresentation({
+                    ...value,
+                    readingExpanded: value.readingExpanded ?? false,
+                  });
                 }}
                 reveal={async (id, input) => {
                   const views = [...session.document.views.entries()]
@@ -4028,6 +4047,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                   setAssistantPresentation({
                     floating: false,
                     minimized: false,
+                    readingExpanded: false,
                   });
                   assistantButton.current?.focus();
                 }}

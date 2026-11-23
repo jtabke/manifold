@@ -8,6 +8,10 @@ built tools package as well as the source checkout.
 
 ## Configure a client
 
+The local canvas offers [installed-agent setup](../guides/agent-tools.md#use-an-installed-agent-from-the-canvas)
+for Claude Code and Codex, plus generic stdio setup for other compatible clients. Detection
+is not a compatibility requirement or a permission grant.
+
 Requires Node 22.18+ and a separately running canvas (`make canvas` from a checkout).
 For the built package, follow the [installation guide](../guides/agent-tools.md), run
 `manifold doctor`, then copy the output of `manifold mcp-config` into your client.

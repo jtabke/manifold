@@ -167,6 +167,7 @@ try {
   expect((await saved()).layout.toolbar).toBe("bottom");
   // Tab switches and docking never discard assistant drafts or restart its component.
   await button("Ask agent").click();
+  await button("Use built-in Pi").click();
   const prompt = page.getByRole("textbox", {
     name: "Ask about or edit the canvas",
   });

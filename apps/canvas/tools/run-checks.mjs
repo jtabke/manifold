@@ -94,6 +94,7 @@ const names = [
   "check-canvas-assistant-browser.mjs",
   "check-assistant-rendering-browser.mjs",
   "check-assistant-settings-browser.mjs",
+  "check-external-agent-setup-browser.mjs",
   "check-canvas-mcp-browser.mjs",
   "check-portable-scene-browser.mjs",
   "check-layout-gestures-browser.mjs",
