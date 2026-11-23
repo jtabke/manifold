@@ -2,11 +2,16 @@ import { decodeWorkspace, STORAGE } from "../artifacts.ts";
 import { openCanvasStore, type CanvasLocalStore } from "./canvasLocalStore.ts";
 import type { CanvasRecovery } from "./canvasDocument.ts";
 import { SCENE_STORAGE } from "../canvasScene.ts";
+import {
+  readWorkspaceFileLink,
+  type WorkspaceFileLink,
+} from "./workspaceFileLink.ts";
 export type InitialWorkspace = {
   data?: Awaited<ReturnType<typeof decodeWorkspace>> & {
     recovery?: CanvasRecovery;
   };
   store?: CanvasLocalStore;
+  fileLink?: WorkspaceFileLink;
   error?: string;
   blocked?: boolean;
   legacyRescue?: string;
@@ -61,7 +66,10 @@ export async function bootstrapCanvas(): Promise<InitialWorkspace> {
     const loaded = await store.load({}, legacyScene);
     if (loaded) {
       markCanvasPrimary(STORAGE);
-      return { data: loaded, store };
+      const fileLink = await readWorkspaceFileLink(STORAGE).catch(
+        () => undefined,
+      );
+      return { data: loaded, store, fileLink };
     }
   } catch (error) {
     return {

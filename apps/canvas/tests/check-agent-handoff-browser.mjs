@@ -160,10 +160,10 @@ async function save(page, name) {
     .click();
   await page
     .getByRole("textbox", { name: "Search commands", exact: true })
-    .fill("Save workspace file");
+    .fill("Download workspace copy");
   const event = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: "Save workspace file", exact: true })
+    .getByRole("button", { name: "Download workspace copy", exact: true })
     .click();
   const download = await event;
   expect(download.suggestedFilename()).toBe(

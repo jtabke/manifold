@@ -425,6 +425,19 @@ export class RegionSession {
       typeof update === "function" ? update(this.artifacts) : update;
     this.apply(this.state, false, undefined, artifacts);
   };
+  /** Replace the disk-backed snapshot through the existing validated owner. */
+  open(recovery: CanvasRecovery) {
+    this.documentOwner.open(recovery);
+    this.cursors = [];
+    this.cursorOrigin = undefined;
+    this.cursorPage = undefined;
+    this.past = [];
+    this.future = [];
+    this.recent.clear();
+    this.loadedArtifacts = this.artifacts.map(({ id }) => id);
+    this.computationOwner?.pauseImported(this.loadedArtifacts);
+    this.emit();
+  }
   private computationOwner?: ReturnType<typeof createArtifactComputations>;
   private loadedArtifacts: string[] = [];
   get computations(): ReturnType<typeof createArtifactComputations> {

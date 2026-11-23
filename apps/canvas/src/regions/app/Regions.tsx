@@ -24,6 +24,7 @@ import { CanvasDocumentTitle } from "../renderers/CanvasDocumentTitle";
 import {
   documentTitle,
   documentFilename,
+  titleFromFilename,
   UNTITLED_DOCUMENT,
 } from "../documentTitle";
 import { CanvasSelectionToolbar } from "../renderers/CanvasSelectionToolbar";
@@ -80,6 +81,7 @@ import {
   GripVertical,
   FilePlus2,
   Download,
+  Save,
   ChevronDown,
   Sparkles,
   Layers,
@@ -136,6 +138,14 @@ import {
   createEditBuffers,
   type WorkspaceEdits,
 } from "./workspaceFiles";
+import {
+  fileVersion,
+  workspaceFilePicker,
+  workspaceSavePicker,
+  writeWorkspaceFile,
+  type WorkspaceFileHandle,
+} from "./workspaceFileLink";
+import { useLinkedWorkspaceFile } from "./useLinkedWorkspaceFile";
 import { type InitialWorkspace } from "./canvasBootstrap";
 import { ArtifactComputationProvider } from "./artifactRuntime";
 import { REGION_STEP, regionAdvance, freeRegionPosition } from "../pageLayout";
@@ -626,11 +636,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       return undefined;
     }
   });
-  const title = page.title ?? legacyTitle ?? UNTITLED_DOCUMENT;
+  const linkedTitle =
+    saved.fileLink && titleFromFilename(saved.fileLink.handle.name);
+  const title = page.title ?? linkedTitle ?? legacyTitle ?? UNTITLED_DOCUMENT;
   useEffect(() => {
     document.title = `${title} — Manifold`;
     if (!artifactMode) return;
-    if (page.title === undefined && legacyTitle)
+    if (page.title === undefined && legacyTitle && !saved.fileLink)
       session.renameDocument(legacyTitle);
     if (page.title !== undefined) {
       try {
@@ -1777,8 +1789,8 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         event.preventDefault();
         event.stopPropagation();
         if (!event.repeat) {
-          if (event.key.toLowerCase() === "s") void exportArtifacts();
-          else workspaceFile.current?.click();
+          if (event.key.toLowerCase() === "s") void saveWorkspaceFile();
+          else void pickWorkspace();
         }
       }
     };
@@ -2309,28 +2321,63 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
       setPalette(undefined);
     }
   };
-  const exportArtifacts = async (savedWork = false) => {
-    try {
-      const text = savedWork
-        ? await workspace.rescueSaved()
-        : await workspace.export(workspaceEdits);
-      if (text === undefined) {
-        setMessage("Finish or cancel pending edits before continuing.");
-        return;
-      }
-      const blob = new Blob([text], { type: "application/json" });
-      const url = URL.createObjectURL(blob),
-        link = document.createElement("a");
-      link.href = url;
-      link.download = savedWork
+  const savePicker = workspaceSavePicker();
+  const saveWorkspaceFile = async (
+    mode: "save" | "download" | "rescue" = "save",
+  ) => {
+    const filename = () =>
+      mode === "rescue"
         ? "manifold-saved-workspace.manifold"
-        : documentFilename(session.state.title);
-      link.click();
-      if (!savedWork) workspace.acknowledgeExport(text);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setMessage(
-        "Workspace download started. Keep the .manifold file as a backup or to open on another device. Further edits autosave only in this browser, not to that file.",
+        : documentFilename(session.state.title ?? linkedTitle);
+    const picker = mode === "download" ? undefined : savePicker;
+    let destination: FileSystemFileHandle | undefined;
+    try {
+      const result = await workspace.export(
+        mode === "rescue" ? "rescue" : workspaceEdits,
+        async () => {
+          if (picker) {
+            try {
+              destination = await picker({
+                suggestedName: filename(),
+                types: [
+                  {
+                    description: "Manifold workspace",
+                    accept: { "application/json": [".manifold"] },
+                  },
+                ],
+                excludeAcceptAllOption: true,
+              });
+            } catch (error) {
+              if ((error as Error).name === "AbortError") return;
+              throw error;
+            }
+          }
+          return async (text) => {
+            const blob = new Blob([text], { type: "application/json" });
+            if (destination) {
+              await writeWorkspaceFile(destination, blob);
+            } else {
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = filename();
+              try {
+                link.click();
+              } finally {
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              }
+            }
+          };
+        },
       );
+      if (result === "unfinished")
+        setMessage("Finish or cancel pending edits before continuing.");
+      else if (result === "saved")
+        setMessage(
+          destination
+            ? `Workspace saved to ${destination.name}. Further edits autosave only in this browser.`
+            : "Workspace download started. Keep the .manifold file as a backup or to open on another device. Further edits autosave only in this browser, not to that file.",
+        );
     } catch (error) {
       setMessage(`Could not save workspace file: ${(error as Error).message}`);
     }
@@ -2725,6 +2772,47 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
   });
+  const fileLink = useLinkedWorkspaceFile(
+    saved.fileLink,
+    STORAGE,
+    workspace,
+    workspaceEdits,
+    () =>
+      !!(
+        exploration ||
+        gestureActive ||
+        cleanupOpen ||
+        authoringModel ||
+        referenceEditor ||
+        modelReview ||
+        hierarchy.transitioning ||
+        spatial.moving() ||
+        directDrag.current !== undefined ||
+        marqueeGesture.current ||
+        dataGesture.current ||
+        linkGesture.current
+      ),
+  );
+  const fileLinkNotice = {
+    watching: "",
+    waiting:
+      "File changed on disk. Waiting for the current canvas activity to finish.",
+    permission:
+      "File updates paused. Choose Resume file updates under File to restore read access.",
+    unavailable:
+      "The linked file is unavailable. Updates resume when Manifold can read it again.",
+    invalid:
+      "The file changed on disk but could not be opened. The current canvas is unchanged.",
+    "different-file":
+      "The linked file now contains a different workspace. Open it separately to view it.",
+    "local-changes":
+      "The file changed on disk and this canvas has local changes. Your work is preserved. Open the file separately to see the disk version.",
+    "link-save-failed":
+      "The canvas was updated, but the file link could not be saved for next time.",
+  }[fileLink.status];
+  const [fileNoticeDismissed, setFileNoticeDismissed] = useState(false);
+  useEffect(() => setFileNoticeDismissed(false), [fileLinkNotice]);
+  const visibleFileNotice = !fileNoticeDismissed && fileLinkNotice;
   const agentCanvas: import("../assistantCanvas").AssistantCanvasPort = {
     inspect: () => ({
       selection: [
@@ -2762,13 +2850,45 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
     setAssistantPresentation((value) => ({ ...value, minimized: false }));
     return true;
   };
-  const openWorkspace = async (file: File) => {
+  const openWorkspace = async (file: File, handle?: WorkspaceFileHandle) => {
     try {
-      const search = await workspace.open(file, workspaceEdits);
+      const search = await workspace.open(
+        file,
+        workspaceEdits,
+        handle && { handle, version: fileVersion(file) },
+      );
       if (search) window.location.href = search;
       else setMessage("Finish or cancel pending edits before continuing.");
     } catch (error) {
       setMessage(`Could not open workspace: ${(error as Error).message}`);
+    }
+  };
+  const pickWorkspace = async () => {
+    const picker = artifactMode ? workspaceFilePicker() : undefined;
+    if (!picker) {
+      workspaceFile.current?.click();
+      return;
+    }
+    try {
+      const [handle] = await picker({
+        types: [
+          {
+            description: "Manifold workspace",
+            accept: { "application/json": [".manifold", ".json"] },
+          },
+        ],
+      });
+      if (handle)
+        await openWorkspace(
+          await handle.getFile(),
+          /\.manifold$/i.test(handle.name) ? handle : undefined,
+        );
+    } catch (error) {
+      const { name, message } = error as Error;
+      if (name === "SecurityError" || name === "NotSupportedError")
+        workspaceFile.current?.click();
+      else if (name !== "AbortError")
+        setMessage(`Could not open workspace: ${message}`);
     }
   };
   const newCanvas = async () => {
@@ -3135,8 +3255,9 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
         "history.open": () => {
           if (finishCommandEdit()) setHistory(true);
         },
-        "workspace.open": () => workspaceFile.current?.click(),
-        "workspace.export": () => void exportArtifacts(),
+        "workspace.open": () => void pickWorkspace(),
+        "workspace.export": () => void saveWorkspaceFile(),
+        "workspace.download": () => void saveWorkspaceFile("download"),
         "workspace.cleanup": () => {
           if (finishCommandEdit()) setCleanupOpen(true);
         },
@@ -3526,11 +3647,32 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               aria-label="Open workspace"
               title="Open a .manifold file · Ctrl/Cmd+O · keeps current work in this browser"
               aria-keyshortcuts="Control+O Meta+O"
-              onClick={() => workspaceFile.current?.click()}
+              onClick={() => void pickWorkspace()}
             >
               <FileInput size={16} />
               <span>Open file…</span>
             </button>
+            {saved.fileLink && (
+              <>
+                <small aria-label="Linked workspace file">
+                  Live file: {saved.fileLink.handle.name}
+                </small>
+                {fileLinkNotice && <small>{fileLinkNotice}</small>}
+                {fileLink.status === "permission" && (
+                  <button
+                    onClick={() =>
+                      void fileLink.resume().catch(() => {
+                        setMessage(
+                          "File access could not be restored. Open the file again to reconnect.",
+                        );
+                      })
+                    }
+                  >
+                    Resume file updates
+                  </button>
+                )}
+              </>
+            )}
             <span className="er-command-heading">Insert</span>
             <button
               aria-label="Import CSV measurements"
@@ -3604,7 +3746,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 className="er-save-status"
                 data-saved={session.isSaved && !storageError}
                 aria-label="Workspace save status"
-                title="Autosaved in this browser on this device only. Use Download for a portable backup; downloaded files are not updated automatically."
+                title="Autosaved in this browser on this device only. Save a portable file for backup; it is not updated automatically."
               >
                 <span>
                   {storageError
@@ -3670,14 +3812,14 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
               </button>
             </CanvasCommandMenu>
             <button
-              aria-label="Download file"
+              aria-label={savePicker ? "Save file" : "Download file"}
               className="er-download-button"
-              title="Download a .manifold file · Ctrl/Cmd+S · separate from browser autosave"
+              title={`${savePicker ? "Choose where to save" : "Download"} a .manifold file · Ctrl/Cmd+S · separate from browser autosave`}
               aria-keyshortcuts="Control+S Meta+S"
-              onClick={() => void exportArtifacts()}
+              onClick={() => void saveWorkspaceFile()}
             >
-              <Download size={16} />
-              <span>Download</span>
+              {savePicker ? <Save size={16} /> : <Download size={16} />}
+              <span>{savePicker ? "Save file…" : "Download"}</span>
             </button>
           </div>
           {contexts.length > 1 && (
@@ -4375,7 +4517,28 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 }
                 const file = e.dataTransfer.files[0];
                 if (/\.(manifold|json)$/i.test(file.name)) {
-                  void openWorkspace(file);
+                  const item = e.dataTransfer.items[0] as
+                    | (DataTransferItem & {
+                        getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>;
+                      })
+                    | undefined;
+                  if (
+                    artifactMode &&
+                    /\.manifold$/i.test(file.name) &&
+                    item?.getAsFileSystemHandle
+                  ) {
+                    void item
+                      .getAsFileSystemHandle()
+                      .catch(() => null)
+                      .then((handle) =>
+                        openWorkspace(
+                          file,
+                          handle?.kind === "file"
+                            ? (handle as WorkspaceFileHandle)
+                            : undefined,
+                        ),
+                      );
+                  } else void openWorkspace(file);
                   return;
                 }
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -6413,12 +6576,12 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
             </button>
           </aside>
         )}
-        {message && (
+        {(message || visibleFileNotice) && (
           <div
             className="er-message"
             role="status"
             style={
-              feedback.at
+              message && feedback.at
                 ? {
                     left: `clamp(12px, ${feedback.at.x}px, calc(100vw - 352px))`,
                     top: `clamp(12px, ${feedback.at.y + 8}px, calc(100vh - 132px))`,
@@ -6429,8 +6592,13 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 : undefined
             }
           >
-            {message}
-            <button aria-label="Dismiss message" onClick={() => setMessage("")}>
+            {message || visibleFileNotice}
+            <button
+              aria-label="Dismiss message"
+              onClick={() =>
+                message ? setMessage("") : setFileNoticeDismissed(true)
+              }
+            >
               <X size={13} />
             </button>
           </div>
@@ -6439,7 +6607,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
           <aside className="er-storage-error" role="status">
             {storageError}
             {saved?.blocked && (workspace.store() || saved.legacyRescue) && (
-              <button onClick={() => void exportArtifacts(true)}>
+              <button onClick={() => void saveWorkspaceFile("rescue")}>
                 Save recovered file
               </button>
             )}
@@ -6448,7 +6616,7 @@ export default function Regions({ initial }: { initial: InitialWorkspace }) {
                 <button onClick={() => void saveLocal()}>
                   Retry local save
                 </button>
-                <button onClick={() => void exportArtifacts()}>
+                <button onClick={() => void saveWorkspaceFile()}>
                   Save current work to file
                 </button>
               </>

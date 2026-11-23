@@ -19,6 +19,9 @@ try {
   });
   page.setDefaultTimeout(10000);
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    window.showSaveFilePicker = undefined;
+  });
   await page.goto(base);
   await startWriting(page);
   const writer = page.getByLabel("Write an engineering region", {

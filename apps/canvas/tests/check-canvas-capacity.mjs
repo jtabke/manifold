@@ -121,7 +121,13 @@ const backup = canvasWorkspace({
     throw Error("Rescue must not open a new write binding");
   },
 });
-assert.equal(await backup.rescueSaved(), legacyText);
+assert.equal(
+  await backup.export(
+    "rescue",
+    async () => (text) => assert.equal(text, legacyText),
+  ),
+  "saved",
+);
 minimal.dispose();
 const budget = new CanvasStorageBudget();
 assert.equal(

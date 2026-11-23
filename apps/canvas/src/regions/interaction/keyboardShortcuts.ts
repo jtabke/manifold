@@ -17,7 +17,7 @@ const shortcutGroups: Record<string, readonly ShortcutEntry[]> = {
     [
       "⌘ / Ctrl + S",
       "Save workspace file",
-      "Downloads a portable .manifold copy after finishing pending edits. Browser autosave does not update downloaded files.",
+      "Choose where to save a portable .manifold copy, or download it if your browser has no save picker. Browser autosave does not update that file.",
     ],
     [
       "⌘ / Ctrl + O",

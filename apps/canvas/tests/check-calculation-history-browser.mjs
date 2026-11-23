@@ -153,7 +153,7 @@ try {
     .click();
   // Initiate a fresh export with the listener installed before its command.
   const event = page.waitForEvent("download");
-  await command(page, "Save workspace file");
+  await command(page, "Download workspace copy");
   const download = await event,
     bytes = await readFile(await download.path(), "utf8"),
     decoded = await decodeWorkspace(bytes);

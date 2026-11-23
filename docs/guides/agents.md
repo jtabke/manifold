@@ -189,7 +189,10 @@ Return the candidate path and summarize:
 - Which computations ran and whether their evidence is current.
 - Any unresolved diagnostics, failed outcomes, or scope limitations.
 
-Open the returned native file in the canvas for visual review. No open browser tab is
-updated automatically. Keep the baseline and candidate separate until the reviewer accepts
-the change. For scripted error recovery, use the [exit codes and error codes](../reference/cli.md#file-safety-and-errors),
+Open the returned native file in the canvas for visual review. Creating a separate candidate
+does not update a canvas watching the baseline. Keep the two files separate until the reviewer
+accepts the change. If the reviewed candidate replaces the file a canvas is following, the
+[linked canvas](canvas.md#save-open-and-share) picks up the change unless it has local
+edits. For agents that should edit the open canvas directly, use [live canvas MCP](../reference/mcp.md).
+For scripted error recovery, use the [exit codes and error codes](../reference/cli.md#file-safety-and-errors),
 not English message matching.

@@ -19,6 +19,9 @@ const browser = await chromium.launch({ ...browserOptions(), headless: true }),
   errors = [];
 try {
   const page = await browser.newPage();
+  await page.addInitScript(() => {
+    window.showSaveFilePicker = undefined;
+  });
   page.setDefaultTimeout(15000);
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(base);
@@ -89,6 +92,9 @@ try {
   );
   const legacyContext = await browser.newContext(),
     legacy = await legacyContext.newPage();
+  await legacy.addInitScript(() => {
+    window.showSaveFilePicker = undefined;
+  });
   legacy.on("pageerror", (error) => errors.push(error.message));
   await legacy.addInitScript(
     (text) => localStorage.setItem("manifold.artifact-experiment.v1", text),

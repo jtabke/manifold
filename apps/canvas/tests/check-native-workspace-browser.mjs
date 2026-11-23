@@ -48,6 +48,10 @@ try {
     viewport: { width: 1440, height: 1000 },
   });
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    window.showOpenFilePicker = undefined;
+    window.showSaveFilePicker = undefined;
+  });
   page.setDefaultTimeout(10000);
   page.on("pageerror", (error) => errors.push(error.message));
   let executions = 0;

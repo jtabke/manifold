@@ -1,6 +1,12 @@
+import { webHash } from "@manifold/foundation";
 import { titleFromFilename } from "../documentTitle.ts";
-import { checkWorkspaceFileSize } from "./workspaceCodec.ts";
-import { archiveLoaded } from "./workspaceCodec.ts";
+import { archiveLoaded, checkWorkspaceFileSize } from "./workspaceCodec.ts";
+import {
+  saveWorkspaceFileLink,
+  removeWorkspaceFileLink,
+  type WorkspaceVersion,
+  type WorkspaceFileLink,
+} from "./workspaceFileLink.ts";
 import { canvasSchemas } from "./canvasDocument.ts";
 import { archive, decodeWorkspace, inspectWorkspace } from "../artifacts.ts";
 import { RegionSession } from "../document.ts";
@@ -63,6 +69,14 @@ export function createEditBuffers() {
 }
 export type EditBuffers = ReturnType<typeof createEditBuffers>;
 
+function workspaceVersion(session: RegionSession): WorkspaceVersion {
+  return {
+    document: session.document.document,
+    root: session.document.id,
+    evidence: session.evidenceSequence,
+  };
+}
+
 /** One I/O lifecycle over the existing owner and store; no additional accepted state. */
 export function canvasWorkspace(config: {
   session: RegionSession;
@@ -97,10 +111,7 @@ export function canvasWorkspace(config: {
     evidence: session.evidenceSequence,
     ...edits.read(),
   });
-  let exported: ReturnType<typeof capture> | undefined,
-    pendingExport:
-      | { text: string; capture: ReturnType<typeof capture> }
-      | undefined;
+  let exported: ReturnType<typeof capture> | undefined;
   const matchesExport = (before: ReturnType<typeof capture>) =>
     exported !== undefined &&
     exported.document === before.document &&
@@ -204,53 +215,89 @@ export function canvasWorkspace(config: {
     unchanged(before, edits);
     return before;
   }
+  async function readSaved() {
+    if (config.legacyRescue !== undefined) {
+      const inspected = await inspectWorkspace(
+        config.legacyRescue,
+        config.legacyScene,
+      );
+      if (config.legacyScene !== undefined)
+        return archiveLoaded(inspected.recovery.foundation, canvasSchemas);
+      return config.legacyRescue;
+    }
+    if (!store) throw Error("Saved workspace storage is unavailable.");
+    return store.exportSaved(config.legacyScene);
+  }
   return Object.freeze({
     save,
     store: () => store,
-    rescueSaved: () =>
+    export: (
+      source: WorkspaceEdits | "rescue",
+      select: () => Promise<
+        ((text: string) => void | Promise<void>) | undefined
+      >,
+    ) =>
       transition(async () => {
-        if (config.legacyRescue !== undefined) {
-          const inspected = await inspectWorkspace(
-            config.legacyRescue,
-            config.legacyScene,
-          );
-          if (config.legacyScene !== undefined)
-            return archiveLoaded(inspected.recovery.foundation, canvasSchemas);
-          return config.legacyRescue;
+        // Select within the initiating gesture, before asynchronous edit settling.
+        const deliver = await select();
+        if (!deliver) return "cancelled";
+        if (source === "rescue") {
+          await deliver(await readSaved());
+        } else {
+          if (!(await finish(source))) return "unfinished";
+          const before = capture(source);
+          await deliver(archive(session.native(session.capture())));
+          // Only successfully delivered bytes can protect this exact work on leaving.
+          exported = before;
         }
-        if (!store) throw Error("Saved workspace storage is unavailable.");
-        return store.exportSaved(config.legacyScene);
+        return "saved";
       }),
-    export: (edits: WorkspaceEdits) =>
-      transition(async () => {
-        if (!(await finish(edits))) return;
-        const before = capture(edits),
-          saved = session.capture(),
-          text = archive(session.native(saved));
-        pendingExport = { text, capture: before };
-        return text;
-      }),
-    /** The host acknowledges only after handing the emitted bytes to the download mechanism. */
-    acknowledgeExport(text: string) {
-      if (!pendingExport || pendingExport.text !== text) return false;
-      exported = pendingExport.capture;
-      pendingExport = undefined;
-      return true;
-    },
     newCanvas: (edits: WorkspaceEdits) =>
       transition(async () => {
         if (!(await readyToLeave(edits))) return;
         return newSearch();
       }),
+    refreshLinkedFile(
+      data: Awaited<ReturnType<typeof decodeWorkspace>>,
+      base: WorkspaceVersion,
+      edits: WorkspaceEdits,
+      busy: boolean,
+    ): WorkspaceVersion | "different-file" | "local-changes" | "waiting" {
+      const current = workspaceVersion(session);
+      if (data.document.document !== base.document) return "different-file";
+      if (
+        current.document !== base.document ||
+        current.root !== base.root ||
+        current.evidence !== base.evidence
+      )
+        return "local-changes";
+      if (
+        transitioning ||
+        saving ||
+        config.blocked ||
+        error ||
+        !session.isSaved ||
+        busy ||
+        edits.read().editing ||
+        session.foundation.preview() ||
+        session.executionDiagnostics.running ||
+        session.executionDiagnostics.queued
+      )
+        return "waiting";
+      session.open(data.recovery);
+      return workspaceVersion(session);
+    },
     open: (
       file: Pick<File, "size" | "text"> & { name?: string },
       edits: WorkspaceEdits,
+      link?: Pick<WorkspaceFileLink, "handle" | "version">,
     ) =>
       transition(async () => {
         checkWorkspaceFileSize(file.size);
         const before = capture(edits),
-          incoming = await stageWorkspaceFile(await file.text());
-        if (incoming.state.title === undefined && file.name)
+          text = await file.text(),
+          incoming = await stageWorkspaceFile(text);
+        if (!link && incoming.state.title === undefined && file.name)
           incoming.renameDocument(titleFromFilename(file.name));
         unchanged(
           before,
@@ -262,13 +309,22 @@ export function canvasWorkspace(config: {
         const search = newSearch(),
           key = workspaceStorage("manifold.artifact-experiment.v1", search),
           target = await openStore(key);
-        let staged = false;
+        let staged = false,
+          linked = false;
         try {
           try {
             if (await target.load())
               throw Error("The destination canvas already exists.");
             staged = true;
             await target.save(incoming);
+            if (link) {
+              await saveWorkspaceFileLink(key, {
+                ...link,
+                base: workspaceVersion(incoming),
+                digest: await webHash(text),
+              });
+              linked = true;
+            }
           } finally {
             target.close();
           }
@@ -277,7 +333,11 @@ export function canvasWorkspace(config: {
           staged = false;
           return search;
         } finally {
-          if (staged) await discard(key).catch(() => {});
+          incoming.dispose();
+          if (staged) {
+            if (linked) await removeWorkspaceFileLink(key).catch(() => {});
+            await discard(key).catch(() => {});
+          }
         }
       }),
   });

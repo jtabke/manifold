@@ -126,10 +126,14 @@ async function setup(options = {}) {
   };
 }
 
+const noOpDestination = async () => () => {};
 async function download(workspace, edits) {
-  const text = await workspace.export(edits);
+  let text;
+  const result = await workspace.export(edits, async () => (bytes) => {
+    text = bytes;
+  });
+  assert.equal(result, "saved");
   assert.equal(typeof text, "string");
-  assert.equal(workspace.acknowledgeExport(text), true);
   return text;
 }
 
@@ -151,7 +155,7 @@ async function download(workspace, edits) {
   h.session.undo();
   assert.equal(h.session.state.title, undefined);
   h.session.redo();
-  const bytes = await h.workspace.export(h.edits);
+  const bytes = await download(h.workspace, h.edits);
   assert.equal((await decodeWorkspace(bytes)).page.title, "Pump sizing");
   assert.equal(await h.workspace.save(), true);
   assert.equal(
@@ -183,6 +187,46 @@ async function download(workspace, edits) {
       () => validateWorkspaceData({ ...original, title }, h.session.artifacts),
       /Unsupported workspace/,
     );
+}
+
+// Linked refresh adopts exact file content without reviving the sampler or drafts.
+{
+  const h = await setup();
+  const detach = h.session.attach();
+  await h.workspace.save();
+  const base = {
+    document: h.session.document.document,
+    root: h.session.document.id,
+    evidence: h.session.evidenceSequence,
+  };
+  const candidate = await decodeWorkspace(archive(h.session.native()));
+  assert(candidate.artifacts.length > 0, "Exercise imported artifact demand");
+  h.buffer.editing = "worksheet";
+  assert.equal(
+    h.workspace.refreshLinkedFile(candidate, base, h.edits, false),
+    "waiting",
+  );
+  assert.equal(h.buffer.editing, "worksheet");
+  h.buffer.editing = undefined;
+  assert.deepEqual(
+    h.workspace.refreshLinkedFile(candidate, base, h.edits, false),
+    base,
+  );
+  assert.equal(
+    h.session.isSaved,
+    false,
+    "Refresh needs a new local acknowledgement",
+  );
+  assert.equal(h.session.computations.diagnostics().activeRequests, 0);
+  assert.equal(await h.workspace.save(), true);
+  h.session.renameDocument("My browser copy");
+  assert.equal(await h.workspace.save(), true);
+  assert.equal(
+    h.workspace.refreshLinkedFile(candidate, base, h.edits, false),
+    "local-changes",
+  );
+  assert.equal(h.session.state.title, "My browser copy");
+  detach();
 }
 
 // Concurrent saves share one promise; a late edit gets a fresh capture and acknowledgement.
@@ -266,12 +310,34 @@ for (const blocked of [false, true]) {
   await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
   await assert.rejects(h.workspace.open(file, h.edits), /Export current work/);
   assert.equal(h.destinations.size, 0);
-  const bytes = await h.workspace.export(h.edits);
+  assert.equal(
+    await h.workspace.export(
+      {
+        ...h.edits,
+        finish: () => assert.fail("a cancelled picker must not commit edits"),
+      },
+      async () => undefined,
+    ),
+    "cancelled",
+  );
+  const delivering = deferred(),
+    release = deferred();
+  const failed = h.workspace.export(h.edits, async () => async (bytes) => {
+    assert.equal(typeof bytes, "string");
+    delivering.resolve();
+    await release.promise;
+    throw Error("Could not write file");
+  });
+  await delivering.promise;
+  await assert.rejects(
+    h.workspace.newCanvas(h.edits),
+    /transition is already in progress/,
+  );
+  release.resolve();
+  await assert.rejects(failed, /Could not write file/);
   await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
   await assert.rejects(h.workspace.open(file, h.edits), /Export current work/);
-  assert.equal(h.workspace.acknowledgeExport("not the emitted bytes"), false);
-  assert.equal(h.workspace.acknowledgeExport(bytes), true);
-  assert.equal(h.workspace.acknowledgeExport(bytes), false);
+  await download(h.workspace, h.edits);
   h.buffer.draft = "new unaccepted text";
   await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
   h.buffer.draft = "";
@@ -307,7 +373,10 @@ for (const blocked of [false, true]) {
   h.session.native = () => {
     throw Error("Injected serialization failure");
   };
-  await assert.rejects(h.workspace.export(h.edits), /serialization failure/);
+  await assert.rejects(
+    h.workspace.export(h.edits, noOpDestination),
+    /serialization failure/,
+  );
   await assert.rejects(h.workspace.newCanvas(h.edits), /Export current work/);
   assert.equal(await h.backend.head(), null);
 }
@@ -343,12 +412,21 @@ for (const blocked of [false, true]) {
   const h = await setup();
   const refused = { ...h.edits, finish: () => false };
   assert.equal(await h.workspace.newCanvas(refused), undefined);
-  assert.equal(await h.workspace.export(refused), undefined);
+  assert.equal(
+    await h.workspace.export(
+      refused,
+      async () => () => assert.fail("refused edit must not write a file"),
+    ),
+    "unfinished",
+  );
   assert.equal(await h.backend.head(), null);
   h.session.native = () => {
     throw Error("Serialization failed");
   };
-  await assert.rejects(h.workspace.export(h.edits), /Serialization failed/);
+  await assert.rejects(
+    h.workspace.export(h.edits, noOpDestination),
+    /Serialization failed/,
+  );
   assert.equal(h.session.isSaved, false);
 }
 

@@ -30,6 +30,7 @@ type ShellAction =
   | "history.open"
   | "workspace.open"
   | "workspace.export"
+  | "workspace.download"
   | "workspace.cleanup"
   | "system.explore"
   | "marking.open";

@@ -61,7 +61,8 @@ or recovering errors. For TypeScript integrations use the
 6. **Hand back evidence.** Return the final candidate path, changed source/inputs with units,
    resulting values and constraint transitions, computation/outcome/currency, and unresolved
    diagnostics or limitations. Explicitly separate mathematical results from physical validity.
-   Follow any user-required report format. A returned file does not update an open browser tab.
+   Follow any user-required report format. A separate candidate does not update a canvas
+   following the original file.
 
 ## Failure and trust boundaries
 

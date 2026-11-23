@@ -1609,6 +1609,14 @@ export class CanvasDocument {
       edits = commands(doc, page, artifacts, canvasPage(doc));
     return this.applyCommands(edits, doc, checkpoint);
   }
+  open(recovery: CanvasRecovery) {
+    f.assert(this.#workspace, "A staging owner cannot open a workspace");
+    const next = recovery.foundation;
+    canvasSerial(next.document);
+    const result = this.#workspace.owner.open(this.reader.stamp(), next);
+    f.assert(result.ok, result.ok ? "" : result.error);
+    this.#saved = undefined;
+  }
   undo() {
     f.assert(
       this.#workspace,

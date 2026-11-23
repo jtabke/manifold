@@ -168,7 +168,8 @@ A retained receipt can contain a failed outcome. The CLI checks both completion 
 receipt outcome before reporting exit 0. A completed non-successful computation exits 4 and
 still saves the candidate archive when export succeeds, preserving available failure evidence.
 Receipts do not certify physical validity. Reopen the returned native file in the canvas for
-review and visual explanation; no live browser tab is automatically updated.
+review and visual explanation. Writing a separate candidate does not change the source file
+or a canvas following it.
 
 ## File safety and errors
 

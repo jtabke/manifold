@@ -182,6 +182,13 @@ export function createArtifactComputations(
     listeners.clear();
   }
   return Object.freeze({
+    pauseImported(artifacts: readonly string[]) {
+      paused.clear();
+      for (const id of artifacts) paused.add(id);
+      // The core has already cancelled the old binding's jobs.
+      running.clear();
+      errors.clear();
+    },
     setContexts(contexts: readonly string[]) {
       wanted = [...new Set(contexts)].filter((id) =>
         host.state.contexts.some((context) => context.id === id),

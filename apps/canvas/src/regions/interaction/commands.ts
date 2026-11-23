@@ -71,6 +71,7 @@ type SimpleOperation =
   | "history.open"
   | "workspace.open"
   | "workspace.export"
+  | "workspace.download"
   | "workspace.cleanup"
   | "system.explore"
   | "marking.open";
@@ -671,6 +672,7 @@ export function workspaceCommands(
     ["marking.open", "Marking menu (experimental)", "focus"],
     ["workspace.open", "Open workspace", "import"],
     ["workspace.export", "Save workspace file", "reference"],
+    ["workspace.download", "Download workspace copy", "reference"],
   ];
   if (c.supportsArtifacts)
     definitions.push([
@@ -704,7 +706,7 @@ export function workspaceCommands(
         id === "help.shortcuts"
           ? [label, "help", "hotkeys", "keys"]
           : id === "workspace.export"
-            ? [label, "export", "download", "backup", ".manifold"]
+            ? [label, "export", "save as", "backup", ".manifold"]
             : id === "workspace.open"
               ? [label, "file", "import", ".manifold"]
               : [label],

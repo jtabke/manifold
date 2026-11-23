@@ -427,7 +427,7 @@ reviewed interfaces; evaluation currently uses globally unique symbols.
 ## Save, open and share
 
 The document header groups **File**, the editable document name, local-save status,
-Search, Ask agent and **Download**. The row beneath groups Undo/Redo and canvas actions,
+Search, Ask agent and **Save file…**. The row beneath groups Undo/Redo and canvas actions,
 selection/ink/shape tools, and View/Pan/Zoom/Help. **View** contains Reveal,
 named viewpoints and System overview. Scenario controls appear in a separate labelled
 strip when alternatives exist. The compact authoring toolbar keeps **Select**, **Pen**,
@@ -446,14 +446,25 @@ precedence over the transport filename. Enter or blur keeps a rename; Escape can
 Undo/Redo restores accepted renames. Legacy browser-only names migrate into the document.
 Files currently contain one page, not a tabbed multi-page document.
 
-- **Download** in the header (Ctrl/Cmd+S) downloads a portable `.manifold` copy after
-  finishing pending edits. Keep a copy outside browser storage for backup or sharing.
-  Your browser controls the download location and whether to ask for a filename.
-  Later edits autosave only in this browser; use **Download** again for an updated copy.
-  This does not overwrite an opened file or keep a connection to it.
+- **Save file…** in the header (Ctrl/Cmd+S) lets you choose a folder and filename for a
+  portable `.manifold` copy in browsers that support the save picker. Once you choose a
+  destination, Manifold finishes pending edits and writes the workspace there. Cancelling
+  the picker does not start a download. Later edits still autosave only in the browser.
+- Search for **Download workspace copy** to use your browser's download behavior instead.
+  If your browser doesn't support the save picker, the header shows **Download** and
+  Ctrl/Cmd+S follows your browser's download settings, including whether to ask where to save.
 - **File → Open file…** (Ctrl/Cmd+O), or dropping a `.manifold`/legacy JSON file,
   validates the file and loads it under a fresh canvas URL after preserving current work.
   Cancelling the picker or choosing an invalid file leaves current work intact.
+- In browsers that grant file access, opening a `.manifold` file this way follows that same
+  file on disk. Look for **Live file** under **File**. While the tab is visible, validated
+  updates to the same document appear within a few seconds, without reopening the canvas.
+  If asked, choose **Resume file updates** under **File** to restore read access. Legacy JSON
+  and opens without a file handle are one-time imports.
+- A refresh waits for active edits or calculations to finish. If you changed the canvas locally,
+  Manifold keeps your work, even after it autosaves, and alerts you to the disk update. Open
+  the file separately to see that version. Invalid files or files containing a different
+  document don't replace the canvas. A refresh starts no jobs and resets session Undo/Redo.
 - The command palette also offers **Save workspace file** (searchable as “export”) and
   **Open workspace**. **Saved locally** means browser storage, not a file backup or cloud sync.
 
@@ -465,8 +476,8 @@ with the workspace, as described under [portable arrangements](#portable-arrange
 
 Local save failures show **Local save needs attention** and **Retry local save**. Saves detect conflicting
 changes from other tabs rather than silently overwriting them. If local saving is unavailable,
-**Download** preserves current work before **New canvas** or **Open workspace**. Any later edits
-or computation results require another download before leaving. The previous browser copy stays
+**Save file…** or **Download** preserves current work before **New canvas** or **Open workspace**.
+Any later edits or computation results require another file save before leaving. The previous browser copy stays
 intact. **Review workspace cleanup**
 reviews unused history and obsolete saved data separately; it preserves current work,
 alternatives, retained Undo and results for restorable artifacts.

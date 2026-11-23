@@ -39,6 +39,9 @@ try {
   const before = await readWorkspaceBytes(a),
     generation = JSON.parse(before).head.generation;
   const b = await context.newPage();
+  await b.addInitScript(() => {
+    window.showSaveFilePicker = undefined;
+  });
   b.setDefaultTimeout(10000);
   b.on("pageerror", (e) => errors.push(e.message));
   await b.goto(base);

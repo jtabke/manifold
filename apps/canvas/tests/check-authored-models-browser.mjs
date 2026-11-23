@@ -134,10 +134,10 @@ try {
     .click();
   await page
     .getByLabel("Search commands", { exact: true })
-    .fill("Save workspace file");
+    .fill("Download workspace copy");
   const download = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: "Save workspace file", exact: true })
+    .getByRole("button", { name: "Download workspace copy", exact: true })
     .click();
   const text = await readFile(await (await download).path(), "utf8");
   const verified = await stageWorkspaceFile(text);
